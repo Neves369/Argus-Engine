@@ -1,0 +1,82 @@
+.character-panel {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.character-panel--ally {
+  bottom: 48px;
+  left: 48px;
+}
+
+.character-panel--enemy {
+  top: 48px;
+  right: 48px;
+  flex-direction: row-reverse;
+}
+
+.character-panel--enemy .character-info {
+  align-items: flex-end;
+}
+
+.character-photo {
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  border: 2px solid #6b7280;
+  background: linear-gradient(135deg, #2e2a26, #17140f);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.character-photo.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.2s ease, filter 0.2s ease;
+}
+
+.character-photo.is-clickable:hover {
+  border-color: #9aa1ad;
+  filter: brightness(1.15);
+}
+
+.character-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.character-name {
+  font-family: var(--heading);
+  font-weight: 600;
+  font-size: 18px;
+  color: #e6d7b0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.character-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 150px;
+}
+
+.bar {
+  height: 10px;
+  border-radius: 5px;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 5px;
+}
+
+.bar-health .bar-fill {
+  background: linear-gradient(180deg, #9b3b3b, #5a1f1f);
+}
+
+.bar-mana .bar-fill {
+  background: linear-gradient(180deg, #3d6b8f, #1e3a5a);
+}

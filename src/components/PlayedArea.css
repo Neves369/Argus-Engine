@@ -1,0 +1,22 @@
+.played-area {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 20px;
+}
+
+.played-slot {
+  --tilt: 0deg;
+  width: 100px;
+  height: 145px;
+  transform: perspective(500px) rotateY(var(--tilt)) rotateX(20deg);
+  transform-origin: center bottom;
+}
+
+.played-slot .card {
+  width: 100px;
+  height: 145px;
+  cursor: default;
+}
