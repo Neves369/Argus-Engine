@@ -16,6 +16,14 @@ export interface SettingsSection {
   models: ModelConfig[];
 }
 
+export const CARD_AGENT_IDS = [
+  'fool',
+  'hermit',
+  'chariot',
+  'justice',
+  'mage',
+] as const;
+
 export const DEFAULT_SECTIONS: SettingsSection[] = [
   {
     id: 'agents',

@@ -11,6 +11,7 @@ import Modal from "./components/Modal";
 import PlayedArea from "./components/PlayedArea";
 import Sessions from "./components/Sessions";
 import Settings from "./components/Settings";
+import { buildTurnPayload, sendTurn } from "./api/turn";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -28,6 +29,14 @@ function App() {
     setPlayedCards((prev) => prev.filter((cardId) => cardId !== id));
     setReturnedCard(id);
     window.setTimeout(() => setReturnedCard(undefined), 100);
+  }
+
+  function handleEndTurn() {
+    setConnectionsOn((prev) => !prev);
+    const payload = buildTurnPayload(enemyInfo, playedCards);
+    void sendTurn(payload).catch((error) => {
+      console.error(error);
+    });
   }
 
   if (!loggedIn) {
@@ -69,7 +78,7 @@ function App() {
       <DeathOverlay intensity={deathMode ? 'full' : 'light'} />
       <EndTurnButton
         active={connectionsOn}
-        onClick={() => setConnectionsOn((prev) => !prev)}
+        onClick={handleEndTurn}
       />
       <Modal
         open={enemyModalOpen}
