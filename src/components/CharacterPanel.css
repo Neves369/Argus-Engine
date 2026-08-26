@@ -2,17 +2,18 @@
   position: absolute;
   display: flex;
   align-items: center;
-  gap: 16px;
 }
 
 .character-panel--ally {
-  bottom: 48px;
+  bottom: 24px;
   left: 48px;
+  gap: 16px;
 }
 
 .character-panel--enemy {
   top: 48px;
-  right: 48px;
+  right: 80px;
+  gap: 10px;
   flex-direction: row-reverse;
 }
 
@@ -21,12 +22,25 @@
 }
 
 .character-photo {
-  width: 96px;
-  height: 96px;
   border-radius: 8px;
   border: 2px solid #6b7280;
   background: linear-gradient(135deg, #2e2a26, #17140f);
+  background-size: 100% auto;
+  background-position: center top;
+  background-repeat: no-repeat;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.character-panel--ally .character-photo {
+  width: 140px;
+  height: 260px;
+}
+
+.character-panel--enemy .character-photo {
+  width: 120px;
+  height: 200px;
+  background-size: contain;
 }
 
 .character-photo.is-clickable {
@@ -42,35 +56,71 @@
 .character-info {
   display: flex;
   flex-direction: column;
+}
+
+.character-panel--ally .character-info {
   gap: 8px;
+}
+
+.character-panel--enemy .character-info {
+  gap: 5px;
 }
 
 .character-name {
   font-family: var(--heading);
   font-weight: 600;
-  font-size: 18px;
   color: #e6d7b0;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.character-panel--ally .character-name {
+  font-size: 18px;
+}
+
+.character-panel--enemy .character-name {
+  font-size: 14px;
 }
 
 .character-bars {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+}
+
+.character-panel--ally .character-bars {
   width: 150px;
+  gap: 5px;
+}
+
+.character-panel--enemy .character-bars {
+  width: 100px;
+  gap: 3px;
 }
 
 .bar {
-  height: 10px;
   border-radius: 5px;
   background: #24252a;
   border: 1px solid rgba(255, 255, 255, 0.12);
   overflow: hidden;
 }
 
+.character-panel--ally .bar {
+  height: 10px;
+}
+
+.character-panel--enemy .bar {
+  height: 7px;
+}
+
 .bar-fill {
   height: 100%;
+}
+
+.character-panel--ally .bar-fill {
   border-radius: 5px;
+}
+
+.character-panel--enemy .bar-fill {
+  border-radius: 3px;
 }
 
 .bar-health .bar-fill {

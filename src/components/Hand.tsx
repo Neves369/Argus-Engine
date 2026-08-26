@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { CARD_IMAGES } from './cardImages';
 import Card from './Card';
 import './Hand.css';
 
@@ -19,6 +20,7 @@ interface Particle {
 
 interface HandProps {
   onCardPlayed?: (id: number) => void;
+  returnedCard?: number;
 }
 
 let particleId = 0;
@@ -49,12 +51,28 @@ function makeParticles(): Particle[] {
   return [...flames, ...soot];
 }
 
-function Hand({ onCardPlayed }: HandProps) {
+function Hand({ onCardPlayed, returnedCard }: HandProps) {
   const [focused, setFocused] = useState<number | null>(null);
   const [cards, setCards] = useState<number[]>(
     Array.from({ length: CARD_COUNT }, (_, i) => i),
   );
   const [burning, setBurning] = useState<Map<number, Particle[]>>(new Map());
+  const [appearing, setAppearing] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (returnedCard !== undefined && !cards.includes(returnedCard)) {
+      setCards((prev) => [...prev, returnedCard].sort((a, b) => a - b));
+      setAppearing((prev) => new Set(prev).add(returnedCard));
+
+      window.setTimeout(() => {
+        setAppearing((prev) => {
+          const next = new Set(prev);
+          next.delete(returnedCard);
+          return next;
+        });
+      }, BURN_DURATION);
+    }
+  }, [returnedCard]);
 
   function handleSelect(id: number) {
     setBurning((prev) => {
@@ -88,6 +106,7 @@ function Hand({ onCardPlayed }: HandProps) {
         const tilt = offset * TILT_ANGLE;
         const lift = Math.abs(offset) * ARC_LIFT;
         const isBurning = burning.has(id);
+        const isAppearing = appearing.has(id);
         const particles = burning.get(id);
         const burnSide = offset < 0 ? 'left' : offset > 0 ? 'right' : 'center';
 
@@ -105,7 +124,7 @@ function Hand({ onCardPlayed }: HandProps) {
             onMouseEnter={() => setFocused(id)}
             onClick={() => handleSelect(id)}
           >
-            <Card burning={isBurning} burnSide={burnSide} />
+            <Card burning={isBurning} burnSide={burnSide} appearing={isAppearing} image={CARD_IMAGES[id]} />
             {isBurning &&
               particles?.map((particle) => (
                 <span

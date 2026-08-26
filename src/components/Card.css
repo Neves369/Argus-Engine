@@ -1,0 +1,166 @@
+.card {
+  position: relative;
+  width: 140px;
+  height: 255px;
+  border-radius: 12px;
+  border: none;
+  background-color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  background-size: 100% auto;
+  background-position: center top;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card.is-burning {
+  animation: card-burn 2000ms ease-in forwards;
+}
+
+.card.is-burning::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  animation-duration: 2000ms;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+
+.card-burn-left::after {
+  animation-name: char-wipe-left;
+}
+
+.card-burn-right::after {
+  animation-name: char-wipe-right;
+}
+
+.card-burn-center::after {
+  animation-name: char-wipe-center;
+}
+
+.card.is-appearing {
+  animation: card-burn 2000ms ease-out reverse both;
+}
+
+.card.is-appearing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  animation: char-wipe-center 2000ms ease-out reverse both;
+}
+
+@keyframes card-burn {
+  0% {
+    filter: brightness(1);
+    opacity: 1;
+    border-color: #d8d8dc;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  }
+  60% {
+    filter: brightness(0.9) sepia(0.3);
+    opacity: 1;
+    border-color: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+  }
+  100% {
+    filter: brightness(0.25) sepia(0.6);
+    opacity: 0;
+    transform: scale(0.85);
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+@keyframes char-wipe-left {
+  0% {
+    clip-path: polygon(0 0, 100% 0, 100% -30%, 0 0);
+  }
+  100% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 130%);
+  }
+}
+
+@keyframes char-wipe-right {
+  0% {
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 -30%);
+  }
+  100% {
+    clip-path: polygon(0 0, 100% 0, 100% 130%, 0 100%);
+  }
+}
+
+@keyframes char-wipe-center {
+  0% {
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+  }
+  100% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.particle {
+  position: absolute;
+  bottom: 15%;
+  left: calc(50% + var(--x));
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  pointer-events: none;
+  animation-duration: var(--duration);
+  animation-delay: var(--delay);
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.particle--flame {
+  background: radial-gradient(
+    circle,
+    #ffd166 0%,
+    #f5a623 55%,
+    rgba(245, 166, 35, 0) 75%
+  );
+  box-shadow: 0 0 4px rgba(255, 150, 60, 0.7);
+  animation-name: flame-rise;
+}
+
+.particle--soot {
+  background: radial-gradient(
+    circle,
+    #6b6b6b 0%,
+    #2e2e2e 60%,
+    rgba(46, 46, 46, 0) 80%
+  );
+  animation-name: soot-drift;
+}
+
+@keyframes flame-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-150px) scale(0.25);
+    opacity: 0;
+  }
+}
+
+@keyframes soot-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate(calc(var(--x) * -1.2), -190px) scale(1.5);
+    opacity: 0;
+  }
+}

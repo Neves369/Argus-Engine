@@ -1,3 +1,6 @@
+import emperrorImg from '../assets/cards/emperror.jpg';
+import towerImg from '../assets/cards/tower.jpg';
+import deathImg from '../assets/cards/death.jpg';
 import './CharacterPanel.css';
 
 interface CharacterPanelProps {
@@ -6,6 +9,7 @@ interface CharacterPanelProps {
   mana?: number;
   side?: 'ally' | 'enemy';
   onPhotoClick?: () => void;
+  image?: string;
 }
 
 function CharacterPanel({
@@ -14,24 +18,17 @@ function CharacterPanel({
   mana = 100,
   side = 'ally',
   onPhotoClick,
+  image,
 }: CharacterPanelProps) {
+  const defaultImg = side === 'ally' ? emperrorImg : towerImg;
+
   return (
     <div className={`character-panel character-panel--${side}`}>
       <div
         className={`character-photo${onPhotoClick ? ' is-clickable' : ''}`}
+        style={{ backgroundImage: `url(${image ?? defaultImg})` }}
         onClick={onPhotoClick}
       />
-      <div className="character-info">
-        <div className="character-name">{name}</div>
-        <div className="character-bars">
-          <div className="bar bar-health">
-            <div className="bar-fill" style={{ width: `${health}%` }} />
-          </div>
-          <div className="bar bar-mana">
-            <div className="bar-fill" style={{ width: `${mana}%` }} />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
