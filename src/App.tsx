@@ -2,6 +2,7 @@ import { useState } from "react";
 import backgroundImage from "./assets/backgrounds/Background1.png";
 import deathImg from "./assets/cards/death.jpg";
 import CharacterPanel from "./components/CharacterPanel";
+import DeathOverlay from "./components/DeathOverlay";
 import EnemyForm from "./components/EnemyForm";
 import Hand from "./components/Hand";
 import Login from "./components/Login";
@@ -54,6 +55,7 @@ function App() {
         returnedCard={returnedCard}
       />
       <PlayedArea cards={playedCards} onCardReturn={handleCardReturn} />
+      <DeathOverlay intensity={deathMode ? 'full' : 'light'} />
       <Modal
         open={enemyModalOpen}
         title="Informações do Alvo"

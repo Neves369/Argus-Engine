@@ -2,6 +2,7 @@
   position: absolute;
   display: flex;
   align-items: center;
+  z-index: 60;
 }
 
 .character-panel--ally {

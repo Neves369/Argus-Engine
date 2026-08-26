@@ -1,0 +1,113 @@
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  animation: death-fade-in 1s ease forwards;
+}
+
+.death-overlay--full {
+  animation: death-fade-in 1.2s ease forwards;
+}
+
+@keyframes death-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.death-tint {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.death-smoke {
+  position: absolute;
+  inset: 0;
+}
+
+.death-smoke-base {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(to top, rgba(8, 8, 8, 0.7) 0%, rgba(8, 8, 8, 0.3) 50%, transparent 100%);
+}
+
+.death-smoke-blob {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(12, 12, 12, 0.5);
+  filter: blur(45px);
+  opacity: 0;
+}
+
+/* ── LIGHT (sempre presente) ── */
+
+.la { animation: smoke-la var(--duration) var(--delay) ease-in-out infinite; }
+.lb { animation: smoke-lb var(--duration) var(--delay) ease-in-out infinite; }
+.lc { animation: smoke-lc var(--duration) var(--delay) ease-in-out infinite; }
+
+@keyframes smoke-la {
+  0%   { transform: translateY(0) translateX(0) scale(1);           opacity: 0; }
+  10%  { opacity: 0.25; }
+  50%  { transform: translateY(-300px) translateX(30px) scale(1.1);  opacity: 0.25; }
+  90%  { opacity: 0.25; }
+  100% { transform: translateY(-500px) translateX(-20px) scale(0.9); opacity: 0; }
+}
+
+@keyframes smoke-lb {
+  0%   { transform: translateY(0) translateX(0) scale(1);           opacity: 0; }
+  10%  { opacity: 0.2; }
+  50%  { transform: translateY(-250px) translateX(-40px) scale(1.05); opacity: 0.2; }
+  90%  { opacity: 0.2; }
+  100% { transform: translateY(-450px) translateX(25px) scale(0.85);  opacity: 0; }
+}
+
+@keyframes smoke-lc {
+  0%   { transform: translateY(0) translateX(0) scale(1);           opacity: 0; }
+  10%  { opacity: 0.3; }
+  50%  { transform: translateY(-280px) translateX(20px) scale(1.1);  opacity: 0.3; }
+  90%  { opacity: 0.3; }
+  100% { transform: translateY(-480px) translateX(-15px) scale(0.88); opacity: 0; }
+}
+
+/* ── FULL (modo death) ── */
+
+.fa { animation: smoke-fa var(--duration) var(--delay) ease-in-out infinite; }
+.fb { animation: smoke-fb var(--duration) var(--delay) ease-in-out infinite; }
+.fc { animation: smoke-fc var(--duration) var(--delay) ease-in-out infinite; }
+.fd { animation: smoke-fd var(--duration) var(--delay) ease-in-out infinite; }
+
+@keyframes smoke-fa {
+  0%   { transform: translateY(0) translateX(0) scale(1);            opacity: 0; }
+  8%   { opacity: 0.45; }
+  50%  { transform: translateY(-400px) translateX(50px) scale(1.15);  opacity: 0.45; }
+  92%  { opacity: 0.45; }
+  100% { transform: translateY(-700px) translateX(-30px) scale(0.85); opacity: 0; }
+}
+
+@keyframes smoke-fb {
+  0%   { transform: translateY(0) translateX(0) scale(1);            opacity: 0; }
+  8%   { opacity: 0.35; }
+  50%  { transform: translateY(-350px) translateX(-60px) scale(1.1);  opacity: 0.35; }
+  92%  { opacity: 0.35; }
+  100% { transform: translateY(-650px) translateX(40px) scale(0.9);   opacity: 0; }
+}
+
+@keyframes smoke-fc {
+  0%   { transform: translateX(0) translateY(0) scale(1);             opacity: 0; }
+  8%   { opacity: 0.4; }
+  50%  { transform: translateX(350px) translateY(-250px) scale(1.2);  opacity: 0.4; }
+  92%  { opacity: 0.4; }
+  100% { transform: translateX(600px) translateY(-500px) scale(0.85); opacity: 0; }
+}
+
+@keyframes smoke-fd {
+  0%   { transform: translateX(0) translateY(0) scale(1);             opacity: 0; }
+  8%   { opacity: 0.38; }
+  50%  { transform: translateX(-300px) translateY(-280px) scale(1.1);  opacity: 0.38; }
+  92%  { opacity: 0.38; }
+  100% { transform: translateX(-550px) translateY(-450px) scale(0.9);  opacity: 0; }
+}
