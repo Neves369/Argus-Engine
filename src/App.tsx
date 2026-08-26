@@ -14,6 +14,7 @@ function App() {
   const [enemyModalOpen, setEnemyModalOpen] = useState(false);
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
+  const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
   const [playedCards, setPlayedCards] = useState<number[]>([]);
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
 
@@ -61,7 +62,7 @@ function App() {
         title="Informações do Alvo"
         onClose={() => setEnemyModalOpen(false)}
       >
-        <EnemyForm />
+        <EnemyForm value={enemyInfo} onSave={setEnemyInfo} onClose={() => setEnemyModalOpen(false)} />
       </Modal>
       <Modal
         open={playerModalOpen}
@@ -77,6 +78,7 @@ function App() {
           >
             {deathMode ? 'Modo Normal' : 'Modo Death'}
           </button>
+          <button className="modal-menu-item" type="button">Configurações</button>
           <button className="modal-menu-item" type="button" onClick={() => setLoggedIn(false)}>Sair</button>
         </div>
       </Modal>

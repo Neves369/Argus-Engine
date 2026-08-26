@@ -84,6 +84,13 @@
   border-color: #6b7280;
 }
 
+.modal-textarea {
+  height: auto;
+  padding: 10px 14px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 .modal-submit {
   margin-top: 6px;
   height: 40px;
