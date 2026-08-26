@@ -1,115 +1,88 @@
-import { useState } from 'react';
-import { CARD_IMAGES } from './cardImages';
-import Card from './Card';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ReactFlow,
+  type Edge,
+  type ReactFlowInstance,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import CardNode, { type CardNodeType } from './CardNode';
 import './PlayedArea.css';
 
-const SLOT_COUNT = 5;
-const PLAYED_TILT = 3;
-const BURN_DURATION = 2000;
+const CARD_WIDTH = 110;
+const CARD_HEIGHT = 200;
+const GAP = 60;
+const STEP = CARD_WIDTH + GAP;
 
-interface Particle {
-  id: number;
-  type: 'flame' | 'soot';
-  x: number;
-  size: number;
-  delay: number;
-  duration: number;
-}
-
-let particleId = 0;
-
-function random(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
-function makeParticles(): Particle[] {
-  const flames = Array.from({ length: 28 }, () => ({
-    id: particleId++,
-    type: 'flame' as const,
-    x: random(-55, 55),
-    size: random(3, 7),
-    delay: random(0, 700),
-    duration: random(900, 1600),
-  }));
-
-  const soot = Array.from({ length: 20 }, () => ({
-    id: particleId++,
-    type: 'soot' as const,
-    x: random(-65, 65),
-    size: random(2, 5),
-    delay: random(0, 900),
-    duration: random(1500, 2300),
-  }));
-
-  return [...flames, ...soot];
-}
+const nodeTypes = { card: CardNode };
 
 interface PlayedAreaProps {
   cards: number[];
+  connected: boolean;
   onCardReturn?: (id: number) => void;
 }
 
-function PlayedArea({ cards, onCardReturn }: PlayedAreaProps) {
-  const [burningSlot, setBurningSlot] = useState<number | null>(null);
-  const [particles, setParticles] = useState<Particle[]>([]);
+function PlayedArea({ cards, connected, onCardReturn }: PlayedAreaProps) {
+  const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
 
-  function handleClick(slot: number) {
-    if (burningSlot !== null) return;
+  const nodes: CardNodeType[] = useMemo(() => {
+    return cards.map((id, index) => ({
+      id: `card-${id}`,
+      type: 'card',
+      position: {
+        x: (index - (cards.length - 1) / 2) * STEP,
+        y: -CARD_HEIGHT / 2,
+      },
+      data: { id, onReturn: onCardReturn ?? (() => {}) },
+    }));
+  }, [cards, onCardReturn]);
 
-    setBurningSlot(slot);
-    setParticles(makeParticles());
+  const edges: Edge[] = useMemo(() => {
+    if (!connected) return [];
 
-    window.setTimeout(() => {
-      setBurningSlot(null);
-      setParticles([]);
-      onCardReturn?.(slot);
-    }, BURN_DURATION);
-  }
+    const sorted = [...cards].sort((a, b) => a - b);
+    const result: Edge[] = [];
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      result.push({
+        id: `edge-${sorted[i]}-${sorted[i + 1]}`,
+        source: `card-${sorted[i]}`,
+        target: `card-${sorted[i + 1]}`,
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: '#c084fc', strokeWidth: 3 },
+      });
+    }
+
+    return result;
+  }, [cards, connected]);
+
+  useEffect(() => {
+    if (instance) {
+      void instance.fitView({ padding: 0.4, maxZoom: 1 });
+    }
+  }, [cards, instance]);
 
   return (
-    <div className="played-area">
-      {Array.from({ length: SLOT_COUNT }, (_, slot) => {
-        const played = cards.includes(slot);
-        const offset = slot - (SLOT_COUNT - 1) / 2;
-        const tilt = offset * PLAYED_TILT;
-        const isBurning = burningSlot === slot;
-        const burnSide = offset < 0 ? 'left' : offset > 0 ? 'right' : 'center';
-
-        return (
-          <div
-            key={slot}
-            className={`played-slot${isBurning ? ' is-burning' : ''}`}
-            style={{ '--tilt': `${tilt}deg` } as React.CSSProperties}
-          >
-            {played && (
-              <>
-                <Card
-                  appearing={!isBurning}
-                  burning={isBurning}
-                  burnSide={burnSide}
-                  image={CARD_IMAGES[slot]}
-                  onClick={() => handleClick(slot)}
-                />
-                {isBurning &&
-                  particles.map((p) => (
-                    <span
-                      key={p.id}
-                      className={`particle particle--${p.type}`}
-                      style={
-                        {
-                          '--x': `${p.x}px`,
-                          '--size': `${p.size}px`,
-                          '--delay': `${p.delay}ms`,
-                          '--duration': `${p.duration}ms`,
-                        } as React.CSSProperties
-                      }
-                    />
-                  ))}
-              </>
-            )}
-          </div>
-        );
-      })}
+    <div className="played-area-flow">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onInit={setInstance}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        nodesFocusable={false}
+        edgesFocusable={false}
+        elementsSelectable={false}
+        panOnDrag={false}
+        zoomOnScroll={false}
+        zoomOnPinch={false}
+        zoomOnDoubleClick={false}
+        preventScrolling
+        fitView
+        fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
+        proOptions={{ hideAttribution: true }}
+      />
     </div>
   );
 }

@@ -6,17 +6,20 @@ interface ModalProps {
   title?: string;
   onClose?: () => void;
   children?: ReactNode;
+  size?: 'default' | 'wide';
 }
 
-function Modal({ open, title, onClose, children }: ModalProps) {
+function Modal({ open, title, onClose, children, size = 'default' }: ModalProps) {
   if (!open) {
     return null;
   }
 
+  const sizeClass = size === 'wide' ? ' modal-dialog--wide' : '';
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal-dialog"
+        className={`modal-dialog${sizeClass}`}
         role="dialog"
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}

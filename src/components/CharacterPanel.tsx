@@ -1,6 +1,5 @@
 import emperrorImg from '../assets/cards/emperror.jpg';
 import towerImg from '../assets/cards/tower.jpg';
-import deathImg from '../assets/cards/death.jpg';
 import './CharacterPanel.css';
 
 interface CharacterPanelProps {
@@ -13,9 +12,6 @@ interface CharacterPanelProps {
 }
 
 function CharacterPanel({
-  name = 'Nome do Personagem',
-  health = 100,
-  mana = 100,
   side = 'ally',
   onPhotoClick,
   image,

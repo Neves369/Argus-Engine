@@ -1,26 +1,9 @@
-.played-area {
+.played-area-flow {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  gap: 20px;
+  inset: 0;
+  z-index: 0;
 }
 
-.played-slot {
-  --tilt: 0deg;
-  width: 110px;
-  height: 200px;
-  transform: perspective(500px) rotateY(var(--tilt)) rotateX(20deg);
-  transform-origin: center bottom;
-}
-
-.played-slot.is-burning {
-  pointer-events: none;
-}
-
-.played-slot .card {
-  width: 110px;
-  height: 200px;
-  cursor: pointer;
+.played-area-flow .react-flow__edge-path {
+  filter: drop-shadow(0 0 6px rgba(170, 59, 255, 0.8));
 }

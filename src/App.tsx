@@ -3,16 +3,22 @@ import backgroundImage from "./assets/backgrounds/Background1.png";
 import deathImg from "./assets/cards/death.jpg";
 import CharacterPanel from "./components/CharacterPanel";
 import DeathOverlay from "./components/DeathOverlay";
+import EndTurnButton from "./components/EndTurnButton";
 import EnemyForm from "./components/EnemyForm";
 import Hand from "./components/Hand";
 import Login from "./components/Login";
 import Modal from "./components/Modal";
 import PlayedArea from "./components/PlayedArea";
+import Sessions from "./components/Sessions";
+import Settings from "./components/Settings";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [enemyModalOpen, setEnemyModalOpen] = useState(false);
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [connectionsOn, setConnectionsOn] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
   const [playedCards, setPlayedCards] = useState<number[]>([]);
@@ -55,8 +61,16 @@ function App() {
         onCardPlayed={(id) => setPlayedCards((prev) => [...prev, id])}
         returnedCard={returnedCard}
       />
-      <PlayedArea cards={playedCards} onCardReturn={handleCardReturn} />
+      <PlayedArea
+        cards={playedCards}
+        connected={connectionsOn}
+        onCardReturn={handleCardReturn}
+      />
       <DeathOverlay intensity={deathMode ? 'full' : 'light'} />
+      <EndTurnButton
+        active={connectionsOn}
+        onClick={() => setConnectionsOn((prev) => !prev)}
+      />
       <Modal
         open={enemyModalOpen}
         title="Informações do Alvo"
@@ -70,7 +84,10 @@ function App() {
         onClose={() => setPlayerModalOpen(false)}
       >
         <div className="modal-menu">
-          <button className="modal-menu-item" type="button">Sessões</button>
+          <button className="modal-menu-item" type="button" onClick={() => {
+            setPlayerModalOpen(false);
+            setSessionsOpen(true);
+          }}>Sessões</button>
           <button
             className="modal-menu-item"
             type="button"
@@ -78,9 +95,34 @@ function App() {
           >
             {deathMode ? 'Modo Normal' : 'Modo Death'}
           </button>
-          <button className="modal-menu-item" type="button">Configurações</button>
+          <button
+            className="modal-menu-item"
+            type="button"
+            onClick={() => {
+              setPlayerModalOpen(false);
+              setSettingsOpen(true);
+            }}
+          >
+            Configurações
+          </button>
           <button className="modal-menu-item" type="button" onClick={() => setLoggedIn(false)}>Sair</button>
         </div>
+      </Modal>
+      <Modal
+        open={settingsOpen}
+        title="Configurações"
+        onClose={() => setSettingsOpen(false)}
+        size="wide"
+      >
+        <Settings onClose={() => setSettingsOpen(false)} />
+      </Modal>
+      <Modal
+        open={sessionsOpen}
+        title="Sessões"
+        onClose={() => setSessionsOpen(false)}
+        size="wide"
+      >
+        <Sessions />
       </Modal>
     </div>
   );
