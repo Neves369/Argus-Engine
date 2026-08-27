@@ -7,9 +7,23 @@ O frontend consome a API real do backend via proxy de desenvolvimento (`/api` �
 
 - `listTargets`, `createTarget`, `createRun`, `listRuns`, `getRun`, `listFindings`
 - `streamRun` — acompanha a execução do grafo via SSE (`EventSource`).
+- `listCompositions`, `getComposition`, `createComposition`, `deleteComposition`,
+  `executeComposition` — composição do grafo (Etapa 8).
 
 `src/components/Sessions.tsx` lista os runs reais (`GET /api/v1/runs`) e o
 `EndTurnButton` dispara um run real (`Modo Death` → `devil_mode`).
+
+## Composição do grafo (Etapa 8)
+
+- A **mão** (`Hand`) vira a paleta: clicar numa carta adiciona o nó ao canvas
+  (`PlayedArea`, React Flow) em modo composição (nós arrastáveis).
+- A **sequência** é a posição X dos nós (esquerda→direita); `justice` deve ficar à
+  direita (regra de `validate_sequence` no backend). `App.tsx` deriva
+  `CARD_ARCHETYPES` (id → chave de arquétipo) para montar a lista.
+- **Salvar** → `createComposition` (persiste em `sessions.config`).
+- **Executar** → `executeComposition` cria target+run e retorna `run_id`; o resumo é
+  exibido no toast e as composições salvas ficam listadas (e executáveis) no modal
+  Sessões.
 
 ---
 

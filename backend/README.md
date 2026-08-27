@@ -22,7 +22,7 @@ app/
 ├── core/                 # config, logging, security (escopo + kill-switch)
 ├── db/                   # base, session, models (Target, Run, Finding, Evidence, ...)
 ├── schemas/              # Pydantic schemas
-├── api/v1/               # router, targets, runs, sources
+├── api/v1/               # router, targets, runs, sources, compositions
 ├── orchestration/        # state, graph, director
 ├── agents/               # BaseArchetype + arquetipos minimos
 ├── llm/                  # gateway multi-provider (Etapa 3): client, providers, router
@@ -106,6 +106,11 @@ ruff check app tests
 | GET    | `/api/v1/runs/{id}/export`    | Exportar findings (JSON/Markdown) |
 | PATCH  | `/api/v1/findings/{id}`       | Atualizar status de finding |
 | POST   | `/api/v1/findings/{id}/validate` | Validar finding (pipeline de qualidade) |
+| POST   | `/api/v1/compositions` | Salvar composição de grafo (`sessions.config` + `validate_sequence`) |
+| GET    | `/api/v1/compositions` | Listar composições                |
+| GET    | `/api/v1/compositions/{id}` | Buscar composição             |
+| DELETE | `/api/v1/compositions/{id}` | Remover composição            |
+| POST   | `/api/v1/compositions/{id}/execute` | Resolver target + criar/executar run da composição |
 | POST   | `/api/v1/findings/{id}/evidence` | Anexar evidência (arquivo + hash) |
 | GET    | `/api/v1/tools`             | Listar ferramentas registradas    |
 | POST   | `/api/v1/tools/{name}/invoke` | Invocar ferramenta (permissão + devil_mode) |

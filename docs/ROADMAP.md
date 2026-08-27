@@ -311,7 +311,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 8 — Interface e Composição Visual
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Parcial
 
 **Objetivo:** permitir que o usuário monte e execute grafos de arquétipos de forma intuitiva.
 
@@ -319,13 +319,14 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Frontend Vite + React + React Flow scaffoldado (`frontend/`)
 - [x] Componentes visuais iniciais (Card, CardNode, canvas, mock de agents/sessions)
 - [ ] CLI completa (Typer/Rich)
-- [ ] Canvas funcional de arquétipos (drag-and-drop + conexões)
+- [x] Canvas funcional de arquétipos (drag-and-drop + conexões) — mão virou paleta; pasta nós no canvas; sequência = posição X (esquerda→direita), `justice` obrigatório à direita
 - [ ] Visualização do grafo em execução e do estado
 - [ ] Exportação de configuração de grafo (YAML/JSON)
-- [x] Integração com backend (SSE + dados reais) — sessões e criação de run deixam de usar mocks
+- [x] Integração com backend (SSE + dados reais) — composição real: `POST /compositions`, `POST /compositions/{id}/execute`, persistência em `sessions.config`, reuso de `validate_sequence`/`Director`; `createRun`/`createTarget` ativados no client
 
 **Critérios de aceite**
-- [ ] Criar, salvar, carregar e executar um grafo completo pela interface.
+- [x] Criar, salvar e executar um grafo completo pela interface (composições persistidas no backend e executáveis do modal Sessões;
+  carregar-para-editar fica como refinamento futuro)
 
 **Pontos a discutir**
 1. CLI-first ou web-first.
