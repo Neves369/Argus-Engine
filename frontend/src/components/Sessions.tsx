@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { listRuns, type Run } from '../api/client';
+import {
+  executeComposition,
+  listCompositions,
+  listRuns,
+  type Composition,
+  type Run,
+} from '../api/client';
 import './Sessions.css';
 
 type SessionStatus = 'in_progress' | 'completed' | 'failed';
@@ -29,13 +35,32 @@ function targetName(run: Run): string {
 
 function Sessions() {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [compositions, setCompositions] = useState<Composition[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [executing, setExecuting] = useState<number | null>(null);
 
   useEffect(() => {
     listRuns()
       .then(setRuns)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+    listCompositions()
+      .then(setCompositions)
+      .catch(() => undefined);
   }, []);
+
+  async function handleExecute(compositionId: number) {
+    setExecuting(compositionId);
+    try {
+      const res = await executeComposition(compositionId);
+      window.alert(`Run #${res.run_id}: ${res.status}`);
+      const updatedRuns = await listRuns();
+      setRuns(updatedRuns);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExecuting(null);
+    }
+  }
 
   if (error) {
     return <div className="sessions">Erro ao carregar sessões: {error}</div>;
@@ -43,6 +68,35 @@ function Sessions() {
 
   return (
     <div className="sessions">
+      <div className="sessions-block">
+        <div className="sessions-title">Composições</div>
+        {compositions.length === 0 ? (
+          <div className="sessions-empty">Nenhuma composição salva.</div>
+        ) : (
+          <div className="sessions-list">
+            {compositions.map((comp) => (
+              <div key={comp.id} className="sessions-row">
+                <span className="sessions-target">{comp.name}</span>
+                <span className="sessions-time">
+                  {comp.config?.archetypes?.join(' → ') ?? '—'}
+                </span>
+                <span className={`sessions-status sessions-status--${comp.status === 'done' ? 'completed' : 'in_progress'}`}>
+                  {comp.status}
+                </span>
+                <button
+                  type="button"
+                  className="sessions-exec"
+                  disabled={executing === comp.id}
+                  onClick={() => handleExecute(comp.id)}
+                >
+                  {executing === comp.id ? 'Executando…' : 'Executar'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="sessions-header">
         <span className="sessions-col">Alvo</span>
         <span className="sessions-col">Início</span>

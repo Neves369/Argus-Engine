@@ -1,0 +1,25 @@
+.run-result {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 50;
+  max-width: 520px;
+  padding: 12px 20px;
+  background: rgba(20, 8, 32, 0.92);
+  border: 1px solid rgba(170, 59, 255, 0.6);
+  border-radius: 10px;
+  color: #e9d5ff;
+  font-family: "Cinzel", serif;
+  font-size: 14px;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(170, 59, 255, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.run-result.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-8px);
+}

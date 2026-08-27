@@ -21,6 +21,7 @@ interface Particle {
 interface HandProps {
   onCardPlayed?: (id: number) => void;
   returnedCard?: number;
+  palette?: boolean;
 }
 
 let particleId = 0;
@@ -51,7 +52,7 @@ function makeParticles(): Particle[] {
   return [...flames, ...soot];
 }
 
-function Hand({ onCardPlayed, returnedCard }: HandProps) {
+function Hand({ onCardPlayed, returnedCard, palette = false }: HandProps) {
   const [focused, setFocused] = useState<number | null>(null);
   const [cards, setCards] = useState<number[]>(
     Array.from({ length: CARD_COUNT }, (_, i) => i),
@@ -84,6 +85,11 @@ function Hand({ onCardPlayed, returnedCard }: HandProps) {
   }, [returnedCard, cards]);
 
   function handleSelect(id: number) {
+    if (palette) {
+      onCardPlayed?.(id);
+      return;
+    }
+
     setBurning((prev) => {
       if (prev.has(id)) {
         return prev;

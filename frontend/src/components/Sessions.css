@@ -4,6 +4,47 @@
   gap: 10px;
 }
 
+.sessions-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sessions-title {
+  font-family: var(--heading);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #c8a1ff;
+}
+
+.sessions-empty {
+  padding: 12px 14px;
+  background: #26242a;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #9aa1ad;
+  font-size: 13px;
+}
+
+.sessions-exec {
+  justify-self: end;
+  padding: 5px 12px;
+  background: rgba(170, 59, 255, 0.18);
+  border: 1px solid rgba(170, 59, 255, 0.5);
+  border-radius: 8px;
+  color: #e9d5ff;
+  font-family: var(--heading);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sessions-exec:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .sessions-header,
 .sessions-row {
   display: grid;

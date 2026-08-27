@@ -43,6 +43,24 @@ export interface StreamEvent {
   update: Record<string, unknown>;
 }
 
+export interface Composition {
+  id: number;
+  name: string;
+  target_id?: number | null;
+  status: string;
+  config?: {
+    archetypes?: string[];
+    target?: { name?: string; url?: string; notes?: string } | null;
+    devil_mode?: boolean;
+  } | null;
+  created_at: string;
+}
+
+export interface ExecuteResult {
+  run_id: number;
+  status: string;
+}
+
 const BASE_URL = '/api/v1';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -85,6 +103,39 @@ export function getRun(runId: number): Promise<Run> {
 
 export function listFindings(runId: number): Promise<Finding[]> {
   return request<Finding[]>(`/runs/${runId}/findings`);
+}
+
+export function listCompositions(): Promise<Composition[]> {
+  return request<Composition[]>('/compositions');
+}
+
+export function getComposition(compositionId: number): Promise<Composition> {
+  return request<Composition>(`/compositions/${compositionId}`);
+}
+
+export function createComposition(input: {
+  name: string;
+  archetypes: string[];
+  target?: { name: string; url?: string; notes?: string } | null;
+  devil_mode?: boolean;
+}): Promise<Composition> {
+  return request<Composition>('/compositions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteComposition(compositionId: number): Promise<void> {
+  return fetch(`${BASE_URL}/compositions/${compositionId}`, { method: 'DELETE' }).then(
+    () => undefined,
+  );
+}
+
+export function executeComposition(compositionId: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/compositions/${compositionId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export function streamRun(
