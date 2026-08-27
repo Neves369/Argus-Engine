@@ -54,11 +54,21 @@ New-Item -ItemType Directory -Force data
 ## Rodar
 
 ```bash
+# aplica migrações (cria schema no banco)
+make migrate          # ou: alembic upgrade head
+
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - Swagger: http://localhost:8000/docs
 - Health:  http://localhost:8000/health
+
+O banco é migrado automaticamente no startup (`alembic upgrade head`). Para gerar
+uma nova migração após alterar models:
+
+```bash
+make revision m="descrição da mudança"   # ou: alembic revision --autogenerate
+```
 
 ## Testes e lint
 

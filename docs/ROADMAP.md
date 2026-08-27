@@ -215,8 +215,8 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Models base (`Target`, `Run`) com SQLAlchemy async + SQLite
 - [x] Camada de acesso (`app/db/session.py`)
 - [x] Schema parcial (`findings`, `evidence`, `decisions`, `agent_runs`, `api_usage`)
-- [ ] Schema restante (`sessions`, `cve_cache`, `external_data_cache`)
-- [ ] Migrações (Alembic) — hoje usa `create_all`
+- [x] Schema restante (`sessions`, `cve_cache`, `external_data_cache`)
+- [x] Migrações (Alembic) — `alembic upgrade head` no startup + `make migrate`
 - [x] Armazenamento de evidências (arquivos + metadados + hash SHA-256)
 - [x] Exportação de findings (JSON, Markdown)
 - [ ] Exportação SARIF
