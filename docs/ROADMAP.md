@@ -83,7 +83,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
 | 7 | Economia de Tokens | RTK + Caveman | ⬜ Pendente |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
-| 9 | Integrações Externas | Fontes de dados cacheadas | ⬜ Pendente |
+| 9 | Integrações Externas | Fontes de dados cacheadas | 🟡 Parcial |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ⬜ Pendente |
 
 ---
@@ -338,21 +338,28 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 9 — Integrações Externas (Informação)
 
-**Status:** `[ ]` Pendente
+**Status:** `[ ]` Parcial
 
 **Objetivo:** conectar fontes de dados fornecidas pelo operador (banco de CVEs, exploits, bancos
 OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 
 **Entregáveis**
-- [ ] Camada de plugin/config para fontes de dados fornecidas pelo operador (CVE, exploits, OSINT)
-- [ ] Cache de CVE e dados externos no SQLite
-- [ ] Rate limiting e normalização de respostas
-- [ ] Política de "só o necessário" (minimização de dados)
+- [x] Camada de plugin/config para fontes de dados fornecidas pelo operador (CVE, exploits, OSINT) — `sources.json` → `DataSourceRegistry`
+- [x] Cache de CVE e dados externos no SQLite (`CveCache`, `ExternalDataCache` + TTL)
+- [x] Rate limiting e normalização de respostas (`DataSourceService`)
+- [x] Política de "só o necessário" (minimização de dados — campos declarados por fonte)
 
 **Critérios de aceite**
-- [ ] Agentes obtêm dados normalizados via registry sem conhecer a fonte específica.
-- [ ] Tudo é cacheado e auditado.
-- [ ] Uma nova fonte (ex.: banco OSINT) é adicionada via config sem mudar o código do backend.
+- [ ] Agentes obtêm dados normalizados via registry sem conhecer a fonte específica (integração com agentes fica para fatia futura)
+- [x] Tudo é cacheado e auditado (cache + logging de invocação)
+- [x] Uma nova fonte (ex.: banco OSINT) é adicionada via config sem mudar o código do backend
+
+**Observações / pendências**
+- Fatia atual expõe fontes via `app/sources/` + API (`GET /sources`, `POST /sources/{name}/query`).
+  Agentes/grafo ainda não consultam fontes diretamente — extensão futura.
+- Fallback determinístico: sem fonte configurada ou falha de rede, retorna dados simulados estáveis
+  (mantém testes offline). Manifesto `sources.json` traz fontes placeholder que o operador configura.
+- Fontes são read-only; minimização restringe os campos retornados ao necessário.
 
 **Pontos a discutir**
 1. Quais fontes priorizar no MVP.

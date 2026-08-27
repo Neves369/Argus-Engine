@@ -22,13 +22,22 @@ app/
 ├── core/                 # config, logging, security (escopo + kill-switch)
 ├── db/                   # base, session, models (Target, Run, Finding, Evidence, ...)
 ├── schemas/              # Pydantic schemas
-├── api/v1/               # router, targets, runs
+├── api/v1/               # router, targets, runs, sources
 ├── orchestration/        # state, graph, director
 ├── agents/               # BaseArchetype + arquetipos minimos
 ├── llm/                  # gateway multi-provider (Etapa 3): client, providers, router
+├── sources/              # fontes de dados externas plugadas (Etapa 9): registry + service
 ├── tools/                # tool registry + executor (Etapa 5)
 └── services/
 ```
+
+## Fontes de dados externas
+
+Fontes de dados (CVE, OSINT, ...) fornecidas pelo operador são plugadas via manifesto
+`sources.json` (configurado por `SOURCES_MANIFEST`), sem mudar o backend. Cada fonte
+declara `url`, `fields` (campos retornados — minimização de dados), `ttl` e `rate_limit`.
+Respostas são normalizadas e cacheadas no SQLite (`CveCache` / `ExternalDataCache`).
+Sem fonte configurada ou em falha de rede, retorna dados simulados determinísticos.
 
 ## Setup
 
@@ -87,7 +96,9 @@ ruff check app tests
 | GET    | `/api/v1/targets`     | Listar alvos                       |
 | GET    | `/api/v1/targets/{id}`| Buscar alvo                        |
 | POST   | `/api/v1/runs`        | Criar e executar um run do grafo   |
-| GET    | `/api/v1/runs`        | Listar runs                        |
+| GET    | `/api/v1/runs`        | Listar runs                       |
+| GET    | `/api/v1/sources`     | Listar fontes de dados externas   |
+| POST   | `/api/v1/sources/{name}/query` | Consultar fonte (cache + minimização) |
 | GET    | `/api/v1/runs/stream` | Executar um run com progresso em SSE (EventSource) |
 | GET    | `/api/v1/runs/{id}`   | Status + estado final do run       |
 | GET    | `/api/v1/runs/{id}/findings`  | Listar findings do run    |
