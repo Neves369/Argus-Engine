@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import JSON, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,7 +14,7 @@ def _utcnow() -> datetime:
 
 
 class Session(Base):
-    """Grouping of runs under a labelled session/target engagement."""
+    """A saved graph composition + optional target engagement."""
 
     __tablename__ = "sessions"
 
@@ -23,4 +24,5 @@ class Session(Base):
         ForeignKey("targets.id"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(32), default="open", nullable=False)
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

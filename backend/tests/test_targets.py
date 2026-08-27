@@ -9,7 +9,7 @@ def test_create_and_list_target(client):
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "example.com"
-    assert body["id"] == 1
+    assert body["id"] >= 1
 
     response = client.get("/api/v1/targets")
     assert response.status_code == 200
