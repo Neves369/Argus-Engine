@@ -11,7 +11,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.policy import load_policy
-from app.db.base import Base
+from app.db.migrate import run_migrations
 from app.db.session import engine
 from app.schemas.health import Health
 from app.schemas.policy import PolicyRead
@@ -23,8 +23,7 @@ setup_logging(settings.log_level)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Path("data").mkdir(parents=True, exist_ok=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await run_migrations()
     app.state.policy = load_policy()
     yield
     await engine.dispose()

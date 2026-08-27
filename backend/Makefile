@@ -1,4 +1,4 @@
-.PHONY: setup run test lint
+.PHONY: setup run test lint migrate revision
 
 setup:
 	python -m venv .venv
@@ -8,6 +8,12 @@ setup:
 
 run:
 	.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+migrate:
+	.venv/bin/alembic upgrade head
+
+revision:
+	.venv/bin/alembic revision --autogenerate -m "$(m)"
 
 test:
 	.venv/bin/pytest

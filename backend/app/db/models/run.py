@@ -18,6 +18,9 @@ class Run(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sessions.id"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
