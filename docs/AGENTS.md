@@ -33,7 +33,7 @@ backend/        FastAPI + LangGraph + SQLAlchemy (async) + SQLite
   app/schemas/  Pydantic
   app/api/v1/   router, targets, runs
   app/orchestration/  state, graph, director
-  app/agents/   BaseArchetype + arquetipos minimos
+  app/agents/   BaseArchetype + 6 arquetipos (Imperador, Eremita, Louco, Justiça, Carro, Mago)
 frontend/       Vite + React + @xyflow/react (mock)
 ```
 

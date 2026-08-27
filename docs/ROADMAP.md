@@ -77,10 +77,10 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 0 | Fundação e Governança | Repositório, princípios, políticas | ✅ Concluída |
 | 1 | Núcleo de Orquestração | Grafo de agentes com estado tipado | ✅ Concluída |
 | 2 | Arquétipos e Personas | Agentes reutilizáveis (Tarot) | 🟡 Parcial |
-| 3 | Roteador de LLMs | Gateway multi-provider (OmniRoute-like) | ⬜ Pendente |
+| 3 | Roteador de LLMs | Gateway multi-provider (OmniRoute-like) | 🟡 Parcial |
 | 4 | Persistência e Evidências | SQLite completo + evidências | 🟡 Parcial |
-| 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | ⬜ Pendente |
-| 6 | Filtro de Qualidade | Anti-falso-positivo | ⬜ Pendente |
+| 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | 🟡 Parcial |
+| 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
 | 7 | Economia de Tokens | RTK + Caveman | ⬜ Pendente |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ⬜ Pendente |
@@ -125,7 +125,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Arestas condicionais (confiança, orçamento, kill-switch)
 - [x] Mecanismo de stop conditions e orçamento (`should_continue`)
 - [x] Interface mínima do orquestrador (`run`, `pause`, `resume`, `inject_human_input`)
-- [ ] `devil_mode` no `GraphState` + desvio condicional simular (OFF) vs executar (ON)
+- [x] `devil_mode` no `GraphState` + desvio condicional simular (OFF) vs executar (ON)
 - [ ] Execução paralela básica (atualmente sequencial)
 
 **Critérios de aceite**
@@ -149,9 +149,9 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Definição formal de Arquétipo (`app/agents/base.py` — `BaseArchetype`)
 - [x] Registry de arquétipos (`app/agents/__init__.py` — `get_archetype`)
 - [x] 3 arquétipos mínimos (Imperador/Diretor, Eremita/Coletor, Justiça/Analista)
-- [ ] Biblioteca completa de 6 arquétipos Tarot (faltam Louco, Carro, Mago)
-- [ ] Mecanismo de composição (usuário escolhe e conecta)
-- [ ] Validação de compatibilidade entre arquétipos
+- [x] Biblioteca completa de 6 arquétipos Tarot (Imperador, Eremita, Louco, Justiça, Carro, Mago)
+- [x] Mecanismo de composição (lista ordenada de arquétipos → grafo dinâmico)
+- [x] Validação de compatibilidade entre arquétipos (básica: sem duplicatas, termina em `justice`)
 - [ ] System prompts completos por persona
 - [ ] Schema de saída obrigatório por arquétipo (JSON Schema)
 - [ ] Modo Diabo como perfil de execução (ver seção "Modo Diabo")
@@ -159,7 +159,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 **Critérios de aceite**
 - [x] Um usuário consegue montar um grafo só com arquétipos e executá-lo (via API, com os 3 mínimos).
 - [x] Cada arquétipo declara explicitamente suas tools e limites (`allowed_tools`).
-- [ ] Montar e executar grafo com os 6 arquétipos.
+- [x] Montar e executar grafo com os 6 arquétipos.
 
 **Pontos a discutir**
 1. Lista final de arquétipos e responsabilidades (sem entrar em técnicas).
@@ -173,22 +173,28 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 ## Etapa 3 — Roteador de LLMs (estilo OmniRoute)
 
-**Status:** `[ ]` Pendente
+**Status:** `[ ]` Parcial
 
 **Objetivo:** gateway unificado OpenAI-compatible com múltiplos providers, combos e fallback.
 
 **Entregáveis**
-- [ ] Cliente unificado
-- [ ] Suporte a Google AI, Groq, OpenRouter/Opencode free (extensível)
-- [ ] Estratégias de combo (priority, cost-optimized, fallback, auto)
-- [ ] Tracking de tokens e custo por chamada
-- [ ] Headers de decisão (qual modelo/provider foi usado)
+- [x] Cliente unificado
+- [x] Suporte a Groq, OpenRouter, OpenAI (OpenAI-compat); Google AI pendente
+- [x] Estratégias de combo priority e fallback
+- [ ] Estratégias de combo cost-optimized e auto
+- [x] Tracking de tokens e custo por chamada
+- [x] Headers de decisão (qual modelo/provider foi usado)
 - [ ] Cache de prefixo e compressão
-- [ ] Roteamento por modo: modelos sem restrição p/ execução (Modo Diabo ON) vs modelos fixos p/ julgamento/investigação
+- [x] Roteamento por modo: modelos sem restrição p/ execução (Modo Diabo ON) vs modelos fixos p/ julgamento/investigação
 
 **Critérios de aceite**
-- [ ] Trocar de provider não exige mudança no código dos agentes.
-- [ ] Toda chamada registra tokens, custo e decisão de roteamento.
+- [ ] Trocar de provider não exige mudança no código dos agentes (agentes ainda não chamam LLM).
+- [x] Toda chamada registra tokens, custo e decisão de roteamento.
+
+**Observações / pendências**
+- Google Gemini exige adapter nativo (fora desta fatia).
+- `cost-optimized`/`auto`, cache de prefixo e compressão ficam para o fim da etapa.
+- Wiring do gateway nos arquétipos do grafo é posterior (mantém os testes do grafo determinísticos/offline).
 
 **Pontos a discutir**
 1. Do zero vs adaptar OmniRoute ou similar.
@@ -208,37 +214,48 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 **Entregáveis**
 - [x] Models base (`Target`, `Run`) com SQLAlchemy async + SQLite
 - [x] Camada de acesso (`app/db/session.py`)
-- [ ] Schema completo (`sessions`, `agent_runs`, `findings`, `evidence`, `decisions`, `api_usage`, `cve_cache`, `external_data_cache`)
+- [x] Schema parcial (`findings`, `evidence`, `decisions`, `agent_runs`, `api_usage`)
+- [ ] Schema restante (`sessions`, `cve_cache`, `external_data_cache`)
 - [ ] Migrações (Alembic) — hoje usa `create_all`
-- [ ] Armazenamento de evidências (arquivos + metadados + hash)
-- [ ] Exportação de findings (JSON, Markdown, futuramente SARIF)
-- [ ] Isolamento por sessão/run (evitar vazamento entre alvos)
+- [x] Armazenamento de evidências (arquivos + metadados + hash SHA-256)
+- [x] Exportação de findings (JSON, Markdown)
+- [ ] Exportação SARIF
+- [x] Isolamento por run (consultas escopadas por `run_id`/`target_id`)
 
 **Critérios de aceite**
 - [x] Um run completo grava e recupera todo o estado (via `Run.result` JSON).
 - [x] É possível consultar histórico de um target (listar runs por target_id).
-- [ ] Findings com estados `candidate → validated → false_positive → discarded`.
+- [x] Findings com estados `candidate → validated → false_positive → discarded`.
+
+**Observações / pendências**
+- `sessions` (agrupamento) e os caches externos (`cve_cache`, `external_data_cache`) ficam para a Etapa 9 / fatia seguinte.
+- Alembic será introduzido quando o schema estabilizar (atualmente `create_all`).
 
 ---
 
 ## Etapa 5 — Tool Registry e Sandbox
 
-**Status:** `[ ]` Pendente
+**Status:** `[ ]` Parcial
 
 **Objetivo:** expor ferramentas fornecidas pelo operador (CLI, exploits, OSINT, CVE) atrás de um
 registry com permissões e isolamento. A plataforma orquestra; as ferramentas e fontes são plugadas via configuração.
 
 **Entregáveis**
-- [ ] Camada de plugin/config para registrar ferramentas fornecidas pelo operador (CLI, exploits, OSINT, banco de CVEs)
-- [ ] Tool Registry (nome, descrição, schema I/O, permissões por arquétipo)
+- [x] Camada de plugin/config para registrar ferramentas fornecidas pelo operador (manifesto `tools.json` via `TOOLS_MANIFEST`)
+- [x] Tool Registry (nome, descrição, kind http/cli, permissões por arquétipo)
+- [x] Executor leve (subprocess com timeout / HTTP via httpx)
 - [ ] Executor com sandbox (Docker preferencialmente)
-- [ ] Rate limiting e timeouts por tool
-- [ ] Logging de toda invocação
+- [x] Rate limiting e timeouts por tool
+- [x] Logging de toda invocação
 
 **Critérios de aceite**
-- [ ] Um agente só consegue chamar tools explicitamente permitidas no seu arquétipo.
-- [ ] Toda execução de tool é logada e limitada por tempo/custo.
-- [ ] Uma ferramenta CLI/API fornecida pelo operador é registrada via config sem mudar o código do backend.
+- [x] Um agente só consegue chamar tools explicitamente permitidas no seu arquétipo.
+- [x] Toda execução de tool é logada e limitada por tempo/taxa.
+- [x] Uma ferramenta CLI/API fornecida pelo operador é registrada via config sem mudar o código do backend.
+
+**Observações / pendências**
+- Sandbox Docker real fica para uma fatia seguinte (isolamento atual: timeout + rate limit + gating por `devil_mode`).
+- Tools `destructive: true` só executam com `devil_mode` ON.
 
 **Pontos a discutir**
 1. Formato de declaração das ferramentas fornecidas pelo operador (YAML/JSON/manifesto).
@@ -250,21 +267,26 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 6 — Filtro de Qualidade (Anti-Falso-Positivo)
 
-**Status:** `[ ]` Pendente
+**Status:** `[ ]` Parcial
 
 **Objetivo:** só findings com evidência e scoring sobem de "candidate" para "validated".
 
 **Entregáveis**
-- [ ] Pipeline de validação
-- [ ] Scoring de confiança
-- [ ] Agente Validador (ou regras + LLM juiz)
-- [ ] Blacklist / local knowledge de falsos positivos conhecidos
-- [ ] Estados claros no schema
-- [ ] HITL obrigatório para severidade alta
+- [x] Pipeline de validação (`app/services/quality.py`)
+- [x] Scoring de confiança (regras: confidence + evidências + severidade)
+- [x] Validação por regras (scoring + exigência de evidência + blacklist)
+- [ ] Agente Validador com LLM juiz (usa o gateway da Etapa 3)
+- [x] Blacklist / local knowledge de falsos positivos conhecidos
+- [x] Estados claros no schema (`score`, `requires_human_review`, `validated_at`)
+- [x] HITL obrigatório para severidade alta (flag `requires_human_review`)
 
 **Critérios de aceite**
-- [ ] Nenhum finding chega a "validated" sem passar pelo pipeline.
-- [ ] É possível marcar e aprender com falsos positivos.
+- [x] Nenhum finding chega a "validated" sem passar pelo pipeline (`candidate → validated` só via `/validate`).
+- [x] É possível marcar falsos positivos e manter local knowledge (blacklist configurável via `FP_BLACKLIST`).
+
+**Observações / pendências**
+- Validação determinística/offline por regras; o LLM juiz fica para uma fatia seguinte (depende do wiring do gateway).
+- Aprendizado de falsos positivos hoje é manual (operador edita a blacklist).
 
 ---
 
@@ -300,7 +322,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [ ] Canvas funcional de arquétipos (drag-and-drop + conexões)
 - [ ] Visualização do grafo em execução e do estado
 - [ ] Exportação de configuração de grafo (YAML/JSON)
-- [ ] Integração com backend (SSE/WebSocket) — hoje o front usa mocks
+- [x] Integração com backend (SSE + dados reais) — sessões e criação de run deixam de usar mocks
 
 **Critérios de aceite**
 - [ ] Criar, salvar, carregar e executar um grafo completo pela interface.
