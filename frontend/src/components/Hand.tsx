@@ -60,19 +60,28 @@ function Hand({ onCardPlayed, returnedCard }: HandProps) {
   const [appearing, setAppearing] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    if (returnedCard !== undefined && !cards.includes(returnedCard)) {
+    if (returnedCard === undefined || cards.includes(returnedCard)) {
+      return;
+    }
+
+    const appearTimer = window.setTimeout(() => {
       setCards((prev) => [...prev, returnedCard].sort((a, b) => a - b));
       setAppearing((prev) => new Set(prev).add(returnedCard));
+    }, 0);
 
-      window.setTimeout(() => {
-        setAppearing((prev) => {
-          const next = new Set(prev);
-          next.delete(returnedCard);
-          return next;
-        });
-      }, BURN_DURATION);
-    }
-  }, [returnedCard]);
+    const clearTimer = window.setTimeout(() => {
+      setAppearing((prev) => {
+        const next = new Set(prev);
+        next.delete(returnedCard);
+        return next;
+      });
+    }, BURN_DURATION);
+
+    return () => {
+      window.clearTimeout(appearTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [returnedCard, cards]);
 
   function handleSelect(id: number) {
     setBurning((prev) => {

@@ -11,7 +11,7 @@ import Modal from "./components/Modal";
 import PlayedArea from "./components/PlayedArea";
 import Sessions from "./components/Sessions";
 import Settings from "./components/Settings";
-import { buildTurnPayload, sendTurn } from "./api/turn";
+import { sendTurn } from "./api/turn";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -33,8 +33,7 @@ function App() {
 
   function handleEndTurn() {
     setConnectionsOn((prev) => !prev);
-    const payload = buildTurnPayload(enemyInfo, playedCards);
-    void sendTurn(payload).catch((error) => {
+    void sendTurn(enemyInfo, deathMode).catch((error) => {
       console.error(error);
     });
   }

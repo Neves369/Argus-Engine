@@ -1,5 +1,18 @@
 # React + TypeScript + Vite
 
+## Integração com o backend (Argus Engine)
+
+O frontend consome a API real do backend via proxy de desenvolvimento (`/api` →
+`http://localhost:8000`). O cliente tipado fica em `src/api/client.ts`:
+
+- `listTargets`, `createTarget`, `createRun`, `listRuns`, `getRun`, `listFindings`
+- `streamRun` — acompanha a execução do grafo via SSE (`EventSource`).
+
+`src/components/Sessions.tsx` lista os runs reais (`GET /api/v1/runs`) e o
+`EndTurnButton` dispara um run real (`Modo Death` → `devil_mode`).
+
+---
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
