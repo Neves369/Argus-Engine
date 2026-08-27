@@ -1,7 +1,33 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.agents.base import BaseArchetype
 from app.orchestration.state import GraphState
+
+
+def _apply_llm(
+    entry: dict[str, Any],
+    update: dict[str, Any],
+    state: GraphState,
+    result,
+    fallback_tokens: int,
+) -> None:
+    """Merge a gateway result into the node update, or degrade deterministically.
+
+    When ``result`` is ``None`` (no API key / provider failure) the entry keeps
+    the fixed simulation token count so offline runs behave as before.
+    """
+    if result is not None:
+        entry["reasoning"] = result.content
+        entry["decision"] = result.decision
+        entry["tokens"] = result.usage.total_tokens
+        entry["cost"] = result.usage.cost
+        update["tokens_used"] = state.tokens_used + result.usage.total_tokens
+        update["cost"] = round(state.cost + result.usage.cost, 6)
+    else:
+        entry["tokens"] = fallback_tokens
+        update["tokens_used"] = state.tokens_used + fallback_tokens
 
 
 class EmperorAgent(BaseArchetype):
@@ -13,14 +39,18 @@ class EmperorAgent(BaseArchetype):
     model_tier = "strong"
 
     async def run(self, state: GraphState) -> dict:
-        entry = {
+        result = await self._attempt(state)
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "plan",
             "target": state.target.get("name", "unknown"),
             "scope": "authorized",
             "mode": "execute" if state.devil_mode else "simulate",
         }
-        return {"history": [*state.history, entry]}
+        update: dict[str, Any] = {}
+        _apply_llm(entry, update, state, result, fallback_tokens=0)
+        update["history"] = [*state.history, entry]
+        return update
 
 
 class HermitAgent(BaseArchetype):
@@ -33,7 +63,7 @@ class HermitAgent(BaseArchetype):
     allowed_tools = ("echo",)
 
     async def run(self, state: GraphState) -> dict:
-        new_tokens = state.tokens_used + 250
+        result = await self._attempt(state)
         new_confidence = min(1.0, state.confidence + 0.4)
 
         finding = {
@@ -42,18 +72,18 @@ class HermitAgent(BaseArchetype):
             "confidence": round(new_confidence, 2),
             "status": "candidate",
         }
-        entry = {
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "simulate",
-            "tokens": 250,
             "findings": 1,
         }
-        return {
+        update: dict[str, Any] = {
             "findings": [*state.findings, finding],
-            "history": [*state.history, entry],
-            "tokens_used": new_tokens,
             "confidence": new_confidence,
         }
+        _apply_llm(entry, update, state, result, fallback_tokens=250)
+        update["history"] = [*state.history, entry]
+        return update
 
 
 class FoolAgent(BaseArchetype):
@@ -65,12 +95,16 @@ class FoolAgent(BaseArchetype):
     model_tier = "balanced"
 
     async def run(self, state: GraphState) -> dict:
-        entry = {
+        result = await self._attempt(state)
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "explore",
             "target": state.target.get("name", "unknown"),
         }
-        return {"history": [*state.history, entry]}
+        update: dict[str, Any] = {}
+        _apply_llm(entry, update, state, result, fallback_tokens=0)
+        update["history"] = [*state.history, entry]
+        return update
 
 
 class ChariotAgent(BaseArchetype):
@@ -82,7 +116,7 @@ class ChariotAgent(BaseArchetype):
     model_tier = "cheap"
 
     async def run(self, state: GraphState) -> dict:
-        new_tokens = state.tokens_used + 500
+        result = await self._attempt(state, devil_mode=True)
         new_confidence = min(1.0, state.confidence + 0.4)
 
         finding = {
@@ -91,19 +125,19 @@ class ChariotAgent(BaseArchetype):
             "confidence": round(new_confidence, 2),
             "status": "candidate",
         }
-        entry = {
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "execute",
             "mode": "devil",
-            "tokens": 500,
             "findings": 1,
         }
-        return {
+        update: dict[str, Any] = {
             "findings": [*state.findings, finding],
-            "history": [*state.history, entry],
-            "tokens_used": new_tokens,
             "confidence": new_confidence,
         }
+        _apply_llm(entry, update, state, result, fallback_tokens=500)
+        update["history"] = [*state.history, entry]
+        return update
 
 
 class MagicianAgent(BaseArchetype):
@@ -115,13 +149,17 @@ class MagicianAgent(BaseArchetype):
     model_tier = "strong"
 
     async def run(self, state: GraphState) -> dict:
-        entry = {
+        result = await self._attempt(state)
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "synthesize",
             "findings": len(state.findings),
             "evidence": len(state.evidence),
         }
-        return {"history": [*state.history, entry]}
+        update: dict[str, Any] = {}
+        _apply_llm(entry, update, state, result, fallback_tokens=0)
+        update["history"] = [*state.history, entry]
+        return update
 
 
 class JusticeAgent(BaseArchetype):
@@ -133,13 +171,16 @@ class JusticeAgent(BaseArchetype):
     model_tier = "balanced"
 
     async def run(self, state: GraphState) -> dict:
-        entry = {
+        result = await self._attempt(state)
+        entry: dict[str, Any] = {
             "agent": self.key,
             "action": "validate",
             "candidates": len(state.findings),
         }
-        return {
-            "history": [*state.history, entry],
+        update: dict[str, Any] = {
             "next_agent": None,
             "stop_reason": "completed",
         }
+        _apply_llm(entry, update, state, result, fallback_tokens=0)
+        update["history"] = [*state.history, entry]
+        return update

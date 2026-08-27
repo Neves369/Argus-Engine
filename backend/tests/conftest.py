@@ -7,9 +7,6 @@ from pathlib import Path
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./data/test.db"
 os.environ["ALLOWED_SCOPES"] = '["example.com"]'
 os.environ["EVIDENCE_DIR"] = "./data/test_evidence"
-os.environ["GROQ_API_KEY"] = "test-groq"
-os.environ["OPENAI_API_KEY"] = "test-openai"
-os.environ["OPENROUTER_API_KEY"] = "test-openrouter"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

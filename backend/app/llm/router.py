@@ -66,3 +66,33 @@ class LLMRouter:
 
     async def close(self) -> None:
         await self.client.close()
+
+
+async def attempt_completion(
+    system: str,
+    user: str,
+    *,
+    devil_mode: bool = False,
+    strategy: str = "priority",
+) -> CompletionResult | None:
+    """Call the gateway with a safe offline fallback.
+
+    Returns ``None`` instead of raising when no API key is configured or every
+    provider fails, so agents can degrade to deterministic behavior without
+    failing the run. A fresh router is created and closed per call to avoid
+    leaking the shared async client across graph nodes.
+    """
+    router = LLMRouter()
+    try:
+        return await router.complete(
+            [
+                ChatMessage(role="system", content=system),
+                ChatMessage(role="user", content=user),
+            ],
+            devil_mode=devil_mode,
+            strategy=strategy,
+        )
+    except (LLMError, ValueError):
+        return None
+    finally:
+        await router.close()

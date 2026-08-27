@@ -188,13 +188,13 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Roteamento por modo: modelos sem restrição p/ execução (Modo Diabo ON) vs modelos fixos p/ julgamento/investigação
 
 **Critérios de aceite**
-- [ ] Trocar de provider não exige mudança no código dos agentes (agentes ainda não chamam LLM).
+- [x] Trocar de provider não exige mudança no código dos agentes (agentes chamam o gateway via `LLMRouter`/`attempt_completion`).
 - [x] Toda chamada registra tokens, custo e decisão de roteamento.
 
 **Observações / pendências**
 - Google Gemini exige adapter nativo (fora desta fatia).
 - `cost-optimized`/`auto`, cache de prefixo e compressão ficam para o fim da etapa.
-- Wiring do gateway nos arquétipos do grafo é posterior (mantém os testes do grafo determinísticos/offline).
+- Wiring dos 6 arquétipos feito com fallback offline determinístico: sem API key (ou falha de provider) os nós degradam à lógica simulada, mantendo o grafo determinístico/offline nos testes (62 testes verdes). Chariot usa o pool de execução quando Modo Diabo ON; os demais usam o pool de julgamento.
 
 **Pontos a discutir**
 1. Do zero vs adaptar OmniRoute ou similar.

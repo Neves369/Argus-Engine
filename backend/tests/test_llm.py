@@ -11,6 +11,13 @@ from app.llm import ChatMessage, LLMError, LLMRouter
 from app.llm.providers import ProviderSpec, get_provider
 
 
+@pytest.fixture(autouse=True)
+def _fake_api_keys(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter")
+
+
 def _messages() -> list[ChatMessage]:
     return [ChatMessage(role="user", content="ping")]
 
