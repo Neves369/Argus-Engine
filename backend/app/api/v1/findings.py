@@ -13,6 +13,7 @@ from app.schemas.evidence import EvidenceRead
 from app.schemas.finding import FindingRead, FindingUpdate
 from app.services.evidence import EvidenceStore
 from app.services.false_positives import FalsePositiveBlacklist
+from app.services.judge import LLMJudge
 from app.services.quality import QualityScorer, ValidationOutcome, ValidationPipeline
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -74,10 +75,23 @@ async def validate_finding(finding_id: int, db: DBSession) -> Finding:
         scorer,
         FalsePositiveBlacklist(settings.fp_blacklist),
         threshold=settings.quality_score_threshold,
+        judge=LLMJudge(),
     )
 
-    outcome = pipeline.validate(finding, evidence_count)
+    outcome, verdict = await pipeline.validate_with_judge(finding, evidence_count)
     finding.score = scorer.score(finding, evidence_count)
+
+    if verdict is not None:
+        meta = dict(finding.meta or {})
+        meta["judge"] = {
+            "outcome": verdict.outcome.value,
+            "reason": verdict.reason,
+            "tokens": verdict.tokens,
+            "cost": verdict.cost,
+            "model": verdict.model,
+            "provider": verdict.provider,
+        }
+        finding.meta = meta
 
     if outcome is ValidationOutcome.VALIDATE:
         finding.status = FindingStatus.VALIDATED.value

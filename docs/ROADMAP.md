@@ -275,7 +275,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Pipeline de validação (`app/services/quality.py`)
 - [x] Scoring de confiança (regras: confidence + evidências + severidade)
 - [x] Validação por regras (scoring + exigência de evidência + blacklist)
-- [ ] Agente Validador com LLM juiz (usa o gateway da Etapa 3)
+- [x] Agente Validador com LLM juiz (usa o gateway da Etapa 3) — `app/services/judge.py`
 - [x] Blacklist / local knowledge de falsos positivos conhecidos
 - [x] Estados claros no schema (`score`, `requires_human_review`, `validated_at`)
 - [x] HITL obrigatório para severidade alta (flag `requires_human_review`)
@@ -285,7 +285,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] É possível marcar falsos positivos e manter local knowledge (blacklist configurável via `FP_BLACKLIST`).
 
 **Observações / pendências**
-- Validação determinística/offline por regras; o LLM juiz fica para uma fatia seguinte (depende do wiring do gateway).
+- LLM juiz (`LLMJudge`) consulta o gateway (pool de julgamento) em `POST /findings/{id}/validate`, refinando as regras: blacklist, severidade alta e ausência de evidência permanecem proteções inegociáveis que o LLM não sobrescreve (HITL preservado). Sem chave ou falha de provider, degrada ao scoring por regras (offline). Veredito/razão/custo ficam em `Finding.meta["judge"]`.
 - Aprendizado de falsos positivos hoje é manual (operador edita a blacklist).
 
 ---

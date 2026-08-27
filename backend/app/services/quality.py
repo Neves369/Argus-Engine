@@ -44,18 +44,47 @@ class ValidationPipeline:
         blacklist: FalsePositiveBlacklist,
         *,
         threshold: float = 0.6,
+        judge=None,
     ) -> None:
         self.scorer = scorer
         self.blacklist = blacklist
         self.threshold = threshold
+        self.judge = judge
+
+    def _rules(self, finding: Finding, evidence_count: int) -> tuple[ValidationOutcome, bool]:
+        """Apply hard rules; return (outcome, is_hard_stop).
+
+        Hard stops (blacklist, high severity, missing evidence) must never be
+        overridden by the LLM judge, preserving security/HITL guarantees.
+        """
+        if self.blacklist.matches(finding):
+            return ValidationOutcome.FALSE_POSITIVE, True
+        if finding.severity in HIGH_SEVERITY:
+            return ValidationOutcome.NEEDS_REVIEW, True
+        if evidence_count < 1:
+            return ValidationOutcome.NEEDS_REVIEW, True
+        if self.scorer.score(finding, evidence_count) >= self.threshold:
+            return ValidationOutcome.VALIDATE, False
+        return ValidationOutcome.NEEDS_REVIEW, False
 
     def validate(self, finding: Finding, evidence_count: int) -> ValidationOutcome:
-        if self.blacklist.matches(finding):
-            return ValidationOutcome.FALSE_POSITIVE
-        if finding.severity in HIGH_SEVERITY:
-            return ValidationOutcome.NEEDS_REVIEW
-        if evidence_count < 1:
-            return ValidationOutcome.NEEDS_REVIEW
-        if self.scorer.score(finding, evidence_count) >= self.threshold:
-            return ValidationOutcome.VALIDATE
-        return ValidationOutcome.NEEDS_REVIEW
+        return self._rules(finding, evidence_count)[0]
+
+    async def validate_with_judge(
+        self, finding: Finding, evidence_count: int
+    ) -> tuple[ValidationOutcome, object | None]:
+        """Validate with rules, refined by the optional LLM judge.
+
+        Hard stops are returned immediately without consulting the judge. For
+        softer cases the judge's verdict (when available) decides; otherwise the
+        rule-based outcome stands (offline fallback). The verdict is returned so
+        callers can persist the judge's reasoning and token/cost usage.
+        """
+        rule_outcome, is_hard_stop = self._rules(finding, evidence_count)
+        if is_hard_stop or self.judge is None:
+            return rule_outcome, None
+
+        verdict = await self.judge.judge(finding, evidence_count)
+        if verdict is None:
+            return rule_outcome, None
+        return verdict.outcome, verdict

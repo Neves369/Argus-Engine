@@ -21,6 +21,7 @@ class FindingRead(BaseModel):
     score: float | None
     requires_human_review: bool
     validated_at: datetime | None
+    meta: dict | None
     created_at: datetime
     updated_at: datetime
 
