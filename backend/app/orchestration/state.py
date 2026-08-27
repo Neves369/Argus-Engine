@@ -25,3 +25,5 @@ class GraphState(BaseModel):
     confidence: float = 0.0
     stop_reason: str | None = None
     next_agent: str | None = None
+
+    devil_mode: bool = False

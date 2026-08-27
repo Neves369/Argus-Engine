@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict
 class RunCreate(BaseModel):
     target_id: int | None = None
     target: dict[str, Any] | None = None
+    devil_mode: bool = False
+    archetypes: list[str] | None = None
 
 
 class RunRead(BaseModel):

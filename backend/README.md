@@ -20,13 +20,13 @@ fornece a fundação (Etapa 0) e o núcleo de orquestração em grafo (Etapa 1) 
 app/
 ├── main.py               # Entrypoint FastAPI
 ├── core/                 # config, logging, security (escopo + kill-switch)
-├── db/                   # base, session, models (Target, Run)
+├── db/                   # base, session, models (Target, Run, Finding, Evidence, ...)
 ├── schemas/              # Pydantic schemas
 ├── api/v1/               # router, targets, runs
 ├── orchestration/        # state, graph, director
 ├── agents/               # BaseArchetype + arquetipos minimos
-├── llm/                  # placeholder (gateway multi-provider — Etapa 3)
-├── tools/                # placeholder (registry — Etapa 5)
+├── llm/                  # gateway multi-provider (Etapa 3): client, providers, router
+├── tools/                # tool registry + executor (Etapa 5)
 └── services/
 ```
 
@@ -78,12 +78,42 @@ ruff check app tests
 | GET    | `/api/v1/targets/{id}`| Buscar alvo                        |
 | POST   | `/api/v1/runs`        | Criar e executar um run do grafo   |
 | GET    | `/api/v1/runs`        | Listar runs                        |
+| GET    | `/api/v1/runs/stream` | Executar um run com progresso em SSE (EventSource) |
 | GET    | `/api/v1/runs/{id}`   | Status + estado final do run       |
+| GET    | `/api/v1/runs/{id}/findings`  | Listar findings do run    |
+| GET    | `/api/v1/runs/{id}/decisions` | Trilha de decisões do run |
+| GET    | `/api/v1/runs/{id}/export`    | Exportar findings (JSON/Markdown) |
+| PATCH  | `/api/v1/findings/{id}`       | Atualizar status de finding |
+| POST   | `/api/v1/findings/{id}/validate` | Validar finding (pipeline de qualidade) |
+| POST   | `/api/v1/findings/{id}/evidence` | Anexar evidência (arquivo + hash) |
+| GET    | `/api/v1/tools`             | Listar ferramentas registradas    |
+| POST   | `/api/v1/tools/{name}/invoke` | Invocar ferramenta (permissão + devil_mode) |
+
+## LLM Gateway (Etapa 3)
+
+Cliente unificado OpenAI-compatible (`app/llm/`) com os providers Groq, OpenRouter e
+OpenAI. Configuração via env:
+
+- `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY` — chaves de API (nunca commitadas).
+- `EXECUTION_MODELS` — combos `"provider/model"` (sem restrição, usados com `DEVIL_MODE=true`).
+- `JUDGMENT_MODELS` — combos `"provider/model"` (fixos/restritos, julgamento/investigação).
+
+```python
+from app.llm import LLMRouter, ChatMessage
+
+router = LLMRouter()
+result = await router.complete(
+    [ChatMessage(role="user", content="...")],
+    devil_mode=False,
+    strategy="priority",
+)
+# result.provider, result.model, result.usage.tokens/cost, result.decision
+```
 
 ## Próximas fases
 
-- Etapa 2: 7 arquétipos Tarot completos (Imperador, Eremita, Louco, Justiça, Carro, Mago, Diabo)
-- Etapa 3: LLM Gateway multi-provider (estilo OmniRoute)
-- Etapa 4: Alembic + findings/evidence + exportação
-- Etapa 5: Tool Registry + Sandbox
-- SSE/WebSocket para o front acompanhar o grafo em tempo real
+- Etapa 2: System prompts por persona + JSON Schema de saída por arquétipo
+- Etapa 3: LLM Gateway — cost-optimized/auto, cache de prefixo, Google Gemini, wiring nos agentes
+- Etapa 4: Alembic + sessions + cve_cache/external_data_cache + SARIF
+- Etapa 5: Tool Registry — sandbox Docker
+- Etapa 6: Filtro de Qualidade — Agente Validador com LLM juiz

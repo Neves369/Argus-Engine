@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from app.agents.base import BaseArchetype
-from app.agents.builtin import AnalystAgent, CollectorAgent, DirectorAgent
+from app.agents.builtin import (
+    ChariotAgent,
+    EmperorAgent,
+    FoolAgent,
+    HermitAgent,
+    JusticeAgent,
+    MagicianAgent,
+)
 
 _REGISTRY: dict[str, type[BaseArchetype]] = {
-    DirectorAgent.key: DirectorAgent,
-    CollectorAgent.key: CollectorAgent,
-    AnalystAgent.key: AnalystAgent,
+    EmperorAgent.key: EmperorAgent,
+    HermitAgent.key: HermitAgent,
+    FoolAgent.key: FoolAgent,
+    JusticeAgent.key: JusticeAgent,
+    ChariotAgent.key: ChariotAgent,
+    MagicianAgent.key: MagicianAgent,
 }
 
 

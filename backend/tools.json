@@ -1,0 +1,29 @@
+[
+  {
+    "name": "echo",
+    "description": "Echo the provided text (harmless example CLI tool).",
+    "kind": "cli",
+    "command": "echo",
+    "timeout": 5.0,
+    "rate_limit": 10.0,
+    "destructive": false
+  },
+  {
+    "name": "fetch",
+    "description": "Fetch a URL and return the raw body (generic HTTP tool).",
+    "kind": "http",
+    "url": "https://example.com",
+    "method": "GET",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "dangerous",
+    "description": "Example destructive tool gated by devil_mode.",
+    "kind": "cli",
+    "command": "echo",
+    "timeout": 5.0,
+    "destructive": true
+  }
+]

@@ -1,5 +1,11 @@
-"""Tool registry placeholder.
+from app.tools.executor import ToolExecutionError, ToolExecutor
+from app.tools.registry import ToolRegistry
+from app.tools.spec import ToolKind, ToolSpec
 
-Etapa 5: abstração de ferramentas (API e locais) com permissões por
-arquétipo, rate limiting, timeouts e logging.
-"""
+__all__ = [
+    "ToolExecutionError",
+    "ToolExecutor",
+    "ToolKind",
+    "ToolRegistry",
+    "ToolSpec",
+]

@@ -22,10 +22,27 @@ class Settings(BaseSettings):
 
     allowed_scopes: list[str] = []
     kill_switch: bool = False
+    devil_mode: bool = False
+
+    evidence_dir: str = "data/evidence"
+
+    tools_manifest: str = "tools.json"
+
+    fp_blacklist: list[str] = []
+    quality_score_threshold: float = 0.6
 
     default_budget_tokens: int = 100_000
     default_budget_cost: float = 1.0
     confidence_threshold: float = 0.6
+
+    execution_models: list[str] = [
+        "groq/llama-3.3-70b-versatile",
+        "openrouter/openrouter/auto",
+    ]
+    judgment_models: list[str] = [
+        "groq/llama-3.1-8b-instant",
+        "openai/gpt-4o-mini",
+    ]
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

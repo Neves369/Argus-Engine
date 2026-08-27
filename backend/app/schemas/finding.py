@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+from app.db.models.finding import FindingStatus
+
+
+class FindingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int | None
+    target_id: int | None
+    title: str
+    description: str | None
+    severity: str | None
+    confidence: float
+    status: str
+    score: float | None
+    requires_human_review: bool
+    validated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FindingUpdate(BaseModel):
+    status: FindingStatus

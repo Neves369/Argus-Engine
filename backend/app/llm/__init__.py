@@ -1,6 +1,16 @@
-"""LLM gateway placeholder.
+from app.llm.client import LLMError, UnifiedClient
+from app.llm.providers import ProviderSpec, available_providers, get_provider
+from app.llm.router import LLMRouter
+from app.llm.types import ChatMessage, CompletionResult, TokenUsage
 
-Etapa 3: cliente unificado OpenAI-compatible com múltiplos providers
-(Google AI, Groq, OpenRouter/Opencode free), estratégias de combo e
-tracking de tokens/custo.
-"""
+__all__ = [
+    "ChatMessage",
+    "CompletionResult",
+    "LLMError",
+    "LLMRouter",
+    "ProviderSpec",
+    "TokenUsage",
+    "UnifiedClient",
+    "available_providers",
+    "get_provider",
+]

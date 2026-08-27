@@ -23,6 +23,22 @@ def deactivate_kill_switch() -> None:
     _kill_switch.clear()
 
 
+def is_devil_mode_enabled(devil_mode: bool) -> bool:
+    """Resolve whether execution mode is actually active.
+
+    The execution path only activates when the run requests it, the operator
+    enabled it globally, and the kill-switch is not engaged. Sandbox (Docker)
+    and HITL are enforced in later stages.
+    """
+    if not devil_mode:
+        return False
+    if not get_settings().devil_mode:
+        return False
+    if is_kill_switch_active():
+        return False
+    return True
+
+
 def validate_scope(target: str) -> str:
     """Validate that a target falls within the authorized scope.
 
