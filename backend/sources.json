@@ -1,0 +1,24 @@
+[
+  {
+    "name": "cve",
+    "description": "CVE lookup source (operator-provided). Configure the real URL.",
+    "kind": "cve",
+    "url": "https://cve.example.local/api/cve",
+    "method": "GET",
+    "timeout": 10.0,
+    "rate_limit": 100.0,
+    "ttl": 3600,
+    "fields": ["cve_id", "cvss", "description"]
+  },
+  {
+    "name": "osint",
+    "description": "Generic OSINT data source (operator-provided). Configure the real URL.",
+    "kind": "http",
+    "url": "https://osint.example.local/v1/query",
+    "method": "POST",
+    "timeout": 15.0,
+    "rate_limit": 100.0,
+    "ttl": 600,
+    "fields": ["indicator", "source", "reported_at"]
+  }
+]

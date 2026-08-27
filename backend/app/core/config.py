@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     tools_manifest: str = "tools.json"
 
+    sources_manifest: str = "sources.json"
+
     fp_blacklist: list[str] = []
     quality_score_threshold: float = 0.6
 
