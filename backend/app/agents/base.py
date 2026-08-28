@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 from app.llm.router import attempt_completion
@@ -63,6 +64,46 @@ class BaseArchetype(ABC):
         return await attempt_completion(
             self.system_prompt(), self._context(state), devil_mode=devil_mode
         )
+
+    def _trace_entry(
+        self,
+        state: GraphState,
+        entry: dict[str, Any],
+        started_at: datetime,
+        *,
+        confidence_after: float | None = None,
+    ) -> dict[str, Any]:
+        """Structured, machine-readable record of this node's execution."""
+        finished_at = datetime.now(UTC)
+        return {
+            "node": self.key,
+            "action": entry.get("action"),
+            "started_at": started_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "duration_ms": round((finished_at - started_at).total_seconds() * 1000, 2),
+            "tokens": entry.get("tokens", 0),
+            "cost": entry.get("cost", 0.0),
+            "provider": entry.get("provider"),
+            "model": entry.get("model"),
+            "strategy": entry.get("strategy"),
+            "confidence_after": (
+                confidence_after if confidence_after is not None else state.confidence
+            ),
+        }
+
+    def _trace_update(
+        self,
+        state: GraphState,
+        entry: dict[str, Any],
+        started_at: datetime,
+        *,
+        confidence_after: float | None = None,
+    ) -> dict[str, Any]:
+        trace_entry = self._trace_entry(
+            state, entry, started_at, confidence_after=confidence_after
+        )
+        return {"trace": [*state.trace, trace_entry]}
+
 
     def _request_approval(
         self,

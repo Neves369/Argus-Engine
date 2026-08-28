@@ -2,9 +2,21 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Decision, Finding
+from app.db.models import AgentRun, Decision, Finding
 from app.db.models.finding import FindingStatus
 from app.orchestration.state import GraphState
+
+
+def _iso_to_dt(value) -> object | None:
+    """Coerce an ISO-8601 string from the trace back to a datetime for storage."""
+    if not value:
+        return None
+    try:
+        from datetime import datetime
+
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 async def persist_run_result(
@@ -21,6 +33,20 @@ async def persist_run_result(
                 agent=str(entry.get("agent", "unknown")),
                 action=str(entry.get("action", "unknown")),
                 detail={k: v for k, v in entry.items() if k not in ("agent", "action")},
+            )
+        )
+
+    for step in state.trace:
+        db.add(
+            AgentRun(
+                run_id=run_id,
+                archetype=str(step.get("node", "unknown")),
+                action=step.get("action"),
+                tokens=int(step.get("tokens", 0)),
+                cost=float(step.get("cost", 0.0)),
+                started_at=_iso_to_dt(step.get("started_at")),
+                finished_at=_iso_to_dt(step.get("finished_at")),
+                detail=step,
             )
         )
 

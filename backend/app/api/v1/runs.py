@@ -183,6 +183,15 @@ async def list_run_decisions(run_id: int, db: DBSession) -> list[Decision]:
     return list(result.scalars().all())
 
 
+@router.get("/{run_id}/trace")
+async def get_run_trace(run_id: int, db: DBSession):
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    trace = (run.result or {}).get("trace") or []
+    return {"run_id": run_id, "trace": trace}
+
+
 @router.post("/{run_id}/review", response_model=RunRead)
 async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
     """Answer a pending human-in-the-loop review and resume the run."""
@@ -210,6 +219,14 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
 
 @router.get("/{run_id}/export")
 async def export_run(run_id: int, db: DBSession, format: str = "json"):
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    if format == "sarif":
+        from app.services.export import run_findings_sarif
+
+        return PlainTextResponse(run_findings_sarif(run))
+
     result = await db.execute(
         select(Finding).where(Finding.run_id == run_id).order_by(Finding.id)
     )
@@ -232,4 +249,4 @@ async def export_run(run_id: int, db: DBSession, format: str = "json"):
             lines.append("")
         return PlainTextResponse("\n".join(lines))
 
-    raise HTTPException(status_code=400, detail="format must be 'json' or 'markdown'")
+    raise HTTPException(status_code=400, detail="format must be 'sarif', 'json' or 'markdown'")

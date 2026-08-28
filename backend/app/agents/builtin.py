@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from app.agents.base import BaseArchetype
 from app.orchestration.hitl import consume, is_answered, is_approved
 from app.orchestration.state import GraphState
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def _apply_llm(
@@ -23,7 +28,12 @@ def _apply_llm(
         entry["reasoning"] = result.content
         entry["decision"] = result.decision
         entry["tokens"] = result.usage.total_tokens
+        entry["prompt_tokens"] = result.usage.prompt_tokens
+        entry["completion_tokens"] = result.usage.completion_tokens
         entry["cost"] = result.usage.cost
+        entry["provider"] = result.provider
+        entry["model"] = result.model
+        entry["strategy"] = result.strategy
         update["tokens_used"] = state.tokens_used + result.usage.total_tokens
         update["cost"] = round(state.cost + result.usage.cost, 6)
     else:
@@ -40,6 +50,7 @@ class EmperorAgent(BaseArchetype):
     model_tier = "strong"
 
     async def run(self, state: GraphState) -> dict:
+        started_at = _utcnow()
         result = await self._attempt(state)
         entry: dict[str, Any] = {
             "agent": self.key,
@@ -51,6 +62,7 @@ class EmperorAgent(BaseArchetype):
         update: dict[str, Any] = {}
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at))
         return update
 
 
@@ -64,6 +76,7 @@ class HermitAgent(BaseArchetype):
     allowed_tools = ("echo",)
 
     async def run(self, state: GraphState) -> dict:
+        started_at = _utcnow()
         result = await self._attempt(state)
         new_confidence = min(1.0, state.confidence + 0.4)
         sources = await self._collect_sources(state)
@@ -103,6 +116,7 @@ class HermitAgent(BaseArchetype):
         }
         _apply_llm(entry, update, state, result, fallback_tokens=250)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
 
         # Human-in-the-Loop: a source-derived finding is flagged for review
         # before the run closes (resumes at justice).
@@ -130,6 +144,7 @@ class FoolAgent(BaseArchetype):
     model_tier = "balanced"
 
     async def run(self, state: GraphState) -> dict:
+        started_at = _utcnow()
         result = await self._attempt(state)
         sources = await self._collect_sources(state)
         entry: dict[str, Any] = {
@@ -143,6 +158,7 @@ class FoolAgent(BaseArchetype):
         }
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at))
         return update
 
 
@@ -157,6 +173,7 @@ class ChariotAgent(BaseArchetype):
     async def run(self, state: GraphState) -> dict:
         from app.core.security import is_devil_mode_enabled
 
+        started_at = _utcnow()
         target = state.target.get("name", "unknown")
 
         # No destructive work when devil mode is not active (e.g. a pipeline
@@ -167,7 +184,9 @@ class ChariotAgent(BaseArchetype):
                 "action": "noop",
                 "mode": "simulate",
             }
-            return {"history": [*state.history, entry]}
+            update = {"history": [*state.history, entry]}
+            update.update(self._trace_update(state, entry, started_at))
+            return update
 
         # Human-in-the-Loop: destructive execution requires operator approval.
         # State machine over ``pending_review`` and the ``review_log``:
@@ -245,6 +264,7 @@ class ChariotAgent(BaseArchetype):
         }
         _apply_llm(entry, update, state, result, fallback_tokens=500)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
         return update
 
 
@@ -257,6 +277,7 @@ class MagicianAgent(BaseArchetype):
     model_tier = "strong"
 
     async def run(self, state: GraphState) -> dict:
+        started_at = _utcnow()
         result = await self._attempt(state)
         entry: dict[str, Any] = {
             "agent": self.key,
@@ -268,6 +289,7 @@ class MagicianAgent(BaseArchetype):
         update: dict[str, Any] = {}
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at))
         return update
 
 
@@ -280,6 +302,7 @@ class JusticeAgent(BaseArchetype):
     model_tier = "balanced"
 
     async def run(self, state: GraphState) -> dict:
+        started_at = _utcnow()
         result = await self._attempt(state)
         entry: dict[str, Any] = {
             "agent": self.key,
@@ -293,4 +316,5 @@ class JusticeAgent(BaseArchetype):
         }
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         update["history"] = [*state.history, entry]
+        update.update(self._trace_update(state, entry, started_at))
         return update

@@ -15,6 +15,7 @@ class GraphState(BaseModel):
     findings: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
+    trace: list[dict[str, Any]] = Field(default_factory=list)
     sources: list[dict[str, Any]] = Field(default_factory=list)
 
     tokens_used: int = 0
