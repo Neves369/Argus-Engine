@@ -12,7 +12,12 @@ import Modal from "./components/Modal";
 import PlayedArea from "./components/PlayedArea";
 import Sessions from "./components/Sessions";
 import Settings from "./components/Settings";
-import { createComposition, executeComposition, getRun } from "./api/client";
+import {
+  createComposition,
+  getRun,
+  streamRun,
+  type Composition,
+} from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
 import { CARD_ARCHETYPES } from "./data/agents";
 import "./App.css";
@@ -29,6 +34,8 @@ function App() {
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
   const [runResult, setRunResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeArchetype, setActiveArchetype] = useState<string | null>(null);
+  const [runEnded, setRunEnded] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CardNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -49,7 +56,25 @@ function App() {
     setEdges(next);
   }, [nodes, setEdges]);
 
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((node) => {
+        const isActive = CARD_ARCHETYPES[node.data.id] === activeArchetype;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            active: isActive,
+            ended: runEnded && isActive,
+          },
+        };
+      }),
+    );
+  }, [activeArchetype, runEnded, setNodes]);
+
   function handleCardPlayed(id: number) {
+    setActiveArchetype(null);
+    setRunEnded(false);
     setNodes((prev) => {
       if (prev.some((node) => node.id === `card-${id}`)) {
         return prev;
@@ -67,8 +92,12 @@ function App() {
   }
 
   function handleCardReturn(id: number) {
+    setActiveArchetype(null);
+    setRunEnded(false);
     setNodes((prev) => prev.filter((node) => node.id !== `card-${id}`));
     setEdges((prev) => prev.filter((e) => e.source !== `card-${id}` && e.target !== `card-${id}`));
+    setReturnedCard(id);
+    window.setTimeout(() => setReturnedCard(undefined), 100);
   }
 
   function currentArchetypes(): string[] {
@@ -85,22 +114,54 @@ function App() {
     setBusy(true);
     setRunResult('Salvando composição e iniciando execução…');
     setConnectionsOn(true);
+    setActiveArchetype(null);
+    setRunEnded(false);
     try {
-      const composition = await createComposition({
+      await createComposition({
         name: `Composição ${new Date().toLocaleTimeString('pt-BR')}`,
         archetypes,
         target: enemyInfo.name ? { name: enemyInfo.name, url: enemyInfo.url, notes: enemyInfo.notes } : null,
         devil_mode: deathMode,
       });
-      const exec = await executeComposition(composition.id);
-      const run = await getRun(exec.run_id);
+
+      const runId = await new Promise<number>((resolve, reject) => {
+        let settled = false;
+        let id = 0;
+        const stop = streamRun(
+          enemyInfo.name,
+          deathMode,
+          archetypes,
+          (event) => {
+            setActiveArchetype(event.node);
+          },
+          (rid, status) => {
+            id = rid;
+            settled = true;
+            stop();
+            if (status === 'failed') {
+              reject(new Error('Run falhou'));
+            } else {
+              resolve(id);
+            }
+          },
+        );
+        window.setTimeout(() => {
+          if (!settled) {
+            stop();
+            reject(new Error('Tempo esgotado ao executar o run'));
+          }
+        }, 60000);
+      });
+
+      setRunEnded(true);
+      const run = await getRun(runId);
       const result = run.result as
         | { findings?: unknown[]; stop_reason?: string; next_agent?: string }
         | undefined;
       const findings = result?.findings?.length ?? 0;
       const stopReason = result?.stop_reason ?? run.status;
       const nextAgent = result?.next_agent ? ` · próximo: ${result.next_agent}` : '';
-      setRunResult(`Run #${exec.run_id}: ${run.status} · achados ${findings} · parada: ${stopReason}${nextAgent}`);
+      setRunResult(`Run #${runId}: ${run.status} · achados ${findings} · parada: ${stopReason}${nextAgent}`);
     } catch (error) {
       setRunResult(
         error instanceof Error ? `Erro: ${error.message}` : 'Erro inesperado ao executar.',
@@ -108,6 +169,40 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function loadComposition(composition: Composition) {
+    setActiveArchetype(null);
+    setRunEnded(false);
+    const archetypes = composition.config?.archetypes ?? [];
+    const idByArchetype: Record<string, number> = {};
+    for (const [strId, key] of Object.entries(CARD_ARCHETYPES)) {
+      idByArchetype[key] = Number(strId);
+    }
+
+    const loaded: CardNodeType[] = archetypes.map((key, index) => {
+      const id = idByArchetype[key] ?? index;
+      return {
+        id: `card-${id}`,
+        type: 'card',
+        position: { x: 80 + index * 60, y: -80 + (id % 3) * 20 },
+        data: { id, onReturn: handleCardReturn },
+      };
+    });
+
+    setNodes(loaded);
+    setEdges([]);
+    const target = composition.config?.target;
+    setEnemyInfo({
+      name: target?.name ?? '',
+      url: target?.url ?? '',
+      notes: target?.notes ?? '',
+    });
+    if (composition.config?.devil_mode) {
+      setDeathMode(true);
+    }
+    setRunResult(`Composição "${composition.name}" carregada no grafo.`);
+    setSessionsOpen(false);
   }
 
   if (!loggedIn) {
@@ -209,7 +304,7 @@ function App() {
         onClose={() => setSessionsOpen(false)}
         size="wide"
       >
-        <Sessions />
+        <Sessions onLoad={loadComposition} />
       </Modal>
     </div>
   );

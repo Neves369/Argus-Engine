@@ -141,10 +141,14 @@ export function executeComposition(compositionId: number): Promise<ExecuteResult
 export function streamRun(
   target: string,
   devilMode: boolean,
+  archetypes: string[],
   onEvent: (event: StreamEvent) => void,
   onDone: (runId: number, status: string) => void,
 ): () => void {
   const params = new URLSearchParams({ target, devil_mode: String(devilMode) });
+  if (archetypes.length > 0) {
+    params.set('archetypes', archetypes.join(','));
+  }
   const source = new EventSource(`${BASE_URL}/runs/stream?${params.toString()}`);
 
   source.addEventListener('node', (rawEvent) => {

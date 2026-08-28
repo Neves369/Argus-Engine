@@ -33,7 +33,7 @@ function targetName(run: Run): string {
   return run.result?.target?.name ?? run.target_id?.toString() ?? `#${run.id}`;
 }
 
-function Sessions() {
+function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [compositions, setCompositions] = useState<Composition[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -83,14 +83,23 @@ function Sessions() {
                 <span className={`sessions-status sessions-status--${comp.status === 'done' ? 'completed' : 'in_progress'}`}>
                   {comp.status}
                 </span>
-                <button
-                  type="button"
-                  className="sessions-exec"
-                  disabled={executing === comp.id}
-                  onClick={() => handleExecute(comp.id)}
-                >
-                  {executing === comp.id ? 'Executando…' : 'Executar'}
-                </button>
+                <div className="sessions-actions">
+                  <button
+                    type="button"
+                    className="sessions-exec"
+                    onClick={() => onLoad(comp)}
+                  >
+                    Carregar
+                  </button>
+                  <button
+                    type="button"
+                    className="sessions-exec"
+                    disabled={executing === comp.id}
+                    onClick={() => handleExecute(comp.id)}
+                  >
+                    {executing === comp.id ? 'Executando…' : 'Executar'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

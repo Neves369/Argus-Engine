@@ -87,7 +87,6 @@ function Hand({ onCardPlayed, returnedCard, palette = false }: HandProps) {
   function handleSelect(id: number) {
     if (palette) {
       onCardPlayed?.(id);
-      return;
     }
 
     setBurning((prev) => {
@@ -106,7 +105,9 @@ function Hand({ onCardPlayed, returnedCard, palette = false }: HandProps) {
         next.delete(id);
         return next;
       });
-      onCardPlayed?.(id);
+      if (!palette) {
+        onCardPlayed?.(id);
+      }
     }, BURN_DURATION);
   }
 

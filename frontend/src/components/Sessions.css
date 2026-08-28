@@ -29,7 +29,6 @@
 }
 
 .sessions-exec {
-  justify-self: end;
   padding: 5px 12px;
   background: rgba(170, 59, 255, 0.18);
   border: 1px solid rgba(170, 59, 255, 0.5);
@@ -38,6 +37,13 @@
   font-family: var(--heading);
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.sessions-actions {
+  display: flex;
+  gap: 8px;
+  justify-self: end;
 }
 
 .sessions-exec:disabled {

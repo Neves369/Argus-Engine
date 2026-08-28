@@ -6,7 +6,11 @@ export interface TargetInfo {
   notes: string;
 }
 
-export function sendTurn(target: TargetInfo, devilMode: boolean): Promise<void> {
+export function sendTurn(
+  target: TargetInfo,
+  devilMode: boolean,
+  archetypes: string[] = [],
+): Promise<void> {
   const name = target.name.trim();
   if (!name) {
     return Promise.reject(new Error('Nome do alvo é obrigatório'));
@@ -18,6 +22,7 @@ export function sendTurn(target: TargetInfo, devilMode: boolean): Promise<void> 
     const stop = streamRun(
       name,
       devilMode,
+      archetypes,
       (event) => {
         console.info(`[${event.node}]`, event.update);
       },

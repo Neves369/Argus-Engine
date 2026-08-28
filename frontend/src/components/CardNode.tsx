@@ -48,6 +48,8 @@ function makeParticles(): Particle[] {
 export type CardNodeData = {
   id: number;
   onReturn: (id: number) => void;
+  active?: boolean;
+  ended?: boolean;
 };
 
 export type CardNodeType = Node<CardNodeData, 'card'>;
@@ -81,7 +83,7 @@ function CardNode({ data }: NodeProps<CardNodeType>) {
         className="card-node-handle"
       />
       <div
-        className={`card-node${burning ? ' is-burning' : ''}`}
+        className={`card-node${burning ? ' is-burning' : ''}${data.active ? ' is-active' : ''}${data.ended ? ' ended' : ''}`}
         style={{ '--tilt': `${tilt}deg` } as React.CSSProperties}
       >
         <Card
