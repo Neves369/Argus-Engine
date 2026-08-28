@@ -55,3 +55,88 @@ def test_export_serializers():
     assert "id: 1" in serialize(data, "yaml")
     assert '"name": "x"' in serialize(data, "json")
     assert "id" in serialize(data, "json")
+
+
+def _seed_pending_run(kind: str = "finding_review", next_agent: str = "human_gate") -> int:
+    import asyncio
+
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+    from app.orchestration.state import GraphState
+
+    state = GraphState(
+        target={"name": "example.com"},
+        findings=[
+            {
+                "id": "F-1",
+                "title": "Signal from source for example.com",
+                "confidence": 0.4,
+                "status": "candidate",
+                "requires_human_review": True,
+            }
+        ],
+        pending_review={
+            "id": "review-1",
+            "kind": kind,
+            "context": "Review candidate finding.",
+            "proposal": {"id": "F-1"},
+            "created_at": "2026-01-01T00:00:00+00:00",
+        },
+        next_agent=next_agent,
+        human_gate_next="justice" if kind == "finding_review" else None,
+    )
+
+    async def _create() -> int:
+        async with async_session_factory() as session:
+            run = Run(status="pending_review", result=state.model_dump())
+            session.add(run)
+            await session.commit()
+            await session.refresh(run)
+            return run.id
+
+    return asyncio.run(_create())
+
+
+def test_compose_pending_empty():
+    result = _invoke("compose", "pending")
+    assert result.exit_code == 0
+    assert "Nenhum run" in result.output
+
+
+def test_compose_pending_lists_review():
+    run_id = _seed_pending_run()
+    result = _invoke("compose", "pending")
+    assert result.exit_code == 0
+    assert str(run_id) in result.output
+    assert "finding_review" in result.output
+
+
+def test_compose_review_approves_and_completes():
+    import asyncio
+
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+
+    run_id = _seed_pending_run()
+    result = _invoke("compose", "review", str(run_id), "--approve", "--yes")
+    assert result.exit_code == 0
+    assert "completed" in result.output
+
+    async def _check() -> str:
+        async with async_session_factory() as session:
+            run = await session.get(Run, run_id)
+            return run.status
+
+    assert asyncio.run(_check()) == "completed"
+
+
+def test_compose_review_requires_one_flag():
+    run_id = _seed_pending_run()
+    result = _invoke("compose", "review", str(run_id))
+    assert result.exit_code == 1
+    assert "--approve" in result.output
+
+
+def test_compose_review_rejects_unknown_run():
+    result = _invoke("compose", "review", "99999", "--approve", "--yes")
+    assert result.exit_code == 1

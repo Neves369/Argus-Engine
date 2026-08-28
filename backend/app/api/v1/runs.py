@@ -20,7 +20,7 @@ from app.schemas.finding import FindingRead
 from app.schemas.review import ReviewCreate
 from app.schemas.run import RunCreate, RunRead
 from app.services.persistence import persist_run_result
-from app.services.run_executor import execute_run
+from app.services.run_executor import execute_run, resume_run
 from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -189,45 +189,21 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-    if run.status != "pending_review" or not run.result:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Run is not awaiting review"
-        )
 
-    saved = run.result
-    if not saved.get("pending_review"):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Run has no pending review"
-        )
-    if str(saved["pending_review"].get("id")) != payload.approval_id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="approval_id mismatch"
-        )
-
-    state = GraphState.model_validate(saved)
-    state.set_sources_service(build_sources_service())
-    state.human_decision = {
+    decision = {
         "id": payload.approval_id,
         "approved": payload.approved,
         "note": payload.note,
     }
-
-    director = Director(archetypes=None, sources_service=build_sources_service())
     try:
-        final = await director.run_from(state, state.next_agent or "emperor")
-        if is_awaiting_review(final):
-            run.status = "pending_review"
-        else:
-            run.status = "completed"
-            await persist_run_result(db, run.id, run.target_id, final)
-        run.result = final.model_dump()
-    except Exception as exc:  # noqa: BLE001
-        run.status = "failed"
-        run.error = str(exc)
-    finally:
-        run.finished_at = _utcnow()
+        await resume_run(db, run, decision)
+    except ValueError as exc:
+        if "mismatch" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    await db.commit()
     await db.refresh(run)
     return run
 

@@ -278,5 +278,133 @@ def compose_export(
         console.print(payload)
 
 
+def _session_pending() -> list[dict]:
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+
+    async def _run() -> list[dict]:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Run).where(Run.status == "pending_review").order_by(Run.id)
+            )
+            rows = []
+            for run in result.scalars().all():
+                pending = (run.result or {}).get("pending_review") or {}
+                pending_id = pending.get("id")
+                kind = pending.get("kind")
+                context = pending.get("context")
+                rows.append(
+                    {
+                        "id": run.id,
+                        "status": run.status,
+                        "approval_id": pending_id,
+                        "kind": kind,
+                        "context": context,
+                    }
+                )
+            return rows
+
+    return asyncio.run(_run())
+
+
+@compose.command("pending")
+def compose_pending() -> None:
+    """Listar runs aguardando decisão human-in-the-loop."""
+    rows = _session_pending()
+    if not rows:
+        console.print("Nenhum run aguardando revisão (status pending_review).")
+        return
+    table = Table(title="Runs aguardando revisão")
+    table.add_column("Run ID")
+    table.add_column("Status")
+    table.add_column("Approval ID")
+    table.add_column("Kind")
+    table.add_column("Contexto")
+    for row in rows:
+        table.add_row(
+            str(row["id"]),
+            row["status"],
+            str(row["approval_id"]),
+            row["kind"] or "-",
+            row["context"] or "-",
+        )
+    console.print(table)
+
+
+@compose.command("review")
+def compose_review(
+    run_id: int,
+    approve: Annotated[bool, typer.Option("--approve", help="Aprovar a ação")] = False,
+    reject: Annotated[bool, typer.Option("--reject", help="Rejeitar a ação")] = False,
+    note: Annotated[str | None, typer.Option("--note", help="Nota do operador")] = None,
+    yes: Annotated[bool, typer.Option("--yes", help="Confirma sem perguntar")] = False,
+) -> None:
+    """Responder a uma decisão human-in-the-loop de um run (approve/reject)."""
+    if approve == reject:
+        console.print("[red]Informe exatamente uma das flags --approve ou --reject.[/red]")
+        raise typer.Exit(code=1)
+
+    row = _session_get_pending(run_id)
+    if row is None:
+        console.print(f"[red]Run #{run_id} não encontrado ou não está em pending_review.[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold]Run #{run_id}[/bold] — {row['kind']}")
+    console.print(f"  approval_id: {row['approval_id']}")
+    console.print(f"  contexto: {row['context']}")
+    if not yes and not typer.confirm(
+        f"{( 'Aprovar' if approve else 'Rejeitar')} esta ação?", default=False
+    ):
+        console.print("Cancelado.")
+        raise typer.Exit(code=1)
+
+    try:
+        status = _session_review(run_id, approve, note)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]Run #{run_id}[/green] decidido — status: {status}")
+
+
+def _session_get_pending(run_id: int) -> dict | None:
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+
+    async def _run() -> dict | None:
+        async with async_session_factory() as session:
+            run = await session.get(Run, run_id)
+            if run is None or run.status != "pending_review":
+                return None
+            pending = (run.result or {}).get("pending_review") or {}
+            return {
+                "approval_id": pending.get("id"),
+                "kind": pending.get("kind"),
+                "context": pending.get("context"),
+            }
+
+    return asyncio.run(_run())
+
+
+def _session_review(run_id: int, approved: bool, note: str | None) -> str:
+    from app.core.security import is_kill_switch_active
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+    from app.services.run_executor import resume_run
+
+    async def _run() -> str:
+        async with async_session_factory() as session:
+            if is_kill_switch_active():
+                raise RuntimeError("Kill switch is active")
+            run = await session.get(Run, run_id)
+            if run is None:
+                raise ValueError(f"Run #{run_id} not found")
+            pending = (run.result or {}).get("pending_review") or {}
+            decision = {"id": pending.get("id"), "approved": approved, "note": note}
+            await resume_run(session, run, decision)
+            return run.status
+
+    return asyncio.run(_run())
+
+
 if __name__ == "__main__":
     app()
