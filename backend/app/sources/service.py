@@ -66,6 +66,10 @@ class DataSourceService:
         self._registry = registry
         self._last_invocation: dict[str, float] = {}
 
+    def available_sources(self) -> list[str]:
+        """Names of every configured source (agents query by role, not by name)."""
+        return self._registry.available_sources()
+
     def _check_rate_limit(self, source: DataSourceSpec) -> None:
         if source.rate_limit <= 0:
             return
@@ -202,3 +206,11 @@ class DataSourceService:
             },
             "fetched_at": _utcnow().isoformat(),
         }
+
+
+def build_sources_service() -> DataSourceService:
+    """Instantiate the service from the operator-declared manifest (settings)."""
+    from app.core.config import get_settings
+
+    registry = DataSourceRegistry(get_settings().sources_manifest)
+    return DataSourceService(registry)

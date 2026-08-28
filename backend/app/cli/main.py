@@ -164,6 +164,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
     from app.orchestration.director import Director
     from app.orchestration.state import GraphState
     from app.services.persistence import persist_run_result
+    from app.sources.service import build_sources_service
 
     async def _run() -> tuple[int, str]:
         async with async_session_factory() as session:
@@ -195,6 +196,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                 record.target_id = target_id
 
             state = GraphState(target=target, devil_mode=bool(config.get("devil_mode", False)))
+            state.set_sources_service(build_sources_service())
             run = Run(
                 target_id=target_id,
                 session_id=record.id,

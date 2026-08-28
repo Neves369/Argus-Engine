@@ -32,10 +32,30 @@ class BaseArchetype(ABC):
             f"Target: {name}\n"
             f"Findings: {len(state.findings)}\n"
             f"Evidence: {len(state.evidence)}\n"
+            f"Sources consulted: {len(state.sources)}\n"
             f"Confidence: {state.confidence:.2f}\n"
             f"Tokens used so far: {state.tokens_used}\n"
             f"Mode: {'execute' if state.devil_mode else 'simulate'}"
         )
+
+    async def _collect_sources(self, state: GraphState) -> list[dict]:
+        """Query every configured data source by role, without knowing specific
+        sources. Returns normalized/fallback results (deterministic offline).
+        """
+        service = state.sources_service
+        if service is None:
+            return []
+
+        from app.sources.service import DataSourceError
+
+        query = {"q": state.target.get("name", "")}
+        results: list[dict] = []
+        for name in service.available_sources():
+            try:
+                results.append(await service.query(name, query))
+            except DataSourceError:
+                continue
+        return results
 
     async def _attempt(self, state: GraphState, *, devil_mode: bool = False):
         """Try the LLM gateway; return ``None`` when the call is unavailable."""

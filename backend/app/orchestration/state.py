@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class GraphState(BaseModel):
@@ -15,6 +15,7 @@ class GraphState(BaseModel):
     findings: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
 
     tokens_used: int = 0
     cost: float = 0.0
@@ -27,3 +28,13 @@ class GraphState(BaseModel):
     next_agent: str | None = None
 
     devil_mode: bool = False
+
+    # Runtime-only injectable (not serialized): lets agents query data sources.
+    _sources_service: Any = PrivateAttr(default=None)
+
+    @property
+    def sources_service(self) -> Any:
+        return self._sources_service
+
+    def set_sources_service(self, service: Any) -> None:
+        self._sources_service = service

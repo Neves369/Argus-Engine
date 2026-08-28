@@ -1,5 +1,5 @@
 from app.sources.registry import DataSourceRegistry
-from app.sources.service import DataSourceError, DataSourceService
+from app.sources.service import DataSourceError, DataSourceService, build_sources_service
 from app.sources.spec import DataSourceSpec, SourceKind
 
 __all__ = [
@@ -8,4 +8,5 @@ __all__ = [
     "DataSourceService",
     "DataSourceSpec",
     "SourceKind",
+    "build_sources_service",
 ]

@@ -65,9 +65,26 @@ class HermitAgent(BaseArchetype):
     async def run(self, state: GraphState) -> dict:
         result = await self._attempt(state)
         new_confidence = min(1.0, state.confidence + 0.4)
+        sources = await self._collect_sources(state)
+
+        findings = []
+        for idx, source in enumerate(sources):
+            if source.get("status") != "ok":
+                continue
+            findings.append(
+                {
+                    "id": f"F-{len(state.findings) + idx + 1}",
+                    "title": (
+                        f"Signal from {source.get('source', 'source')} "
+                        f"for {state.target.get('name', 'unknown')}"
+                    ),
+                    "confidence": round(new_confidence, 2),
+                    "status": "candidate",
+                }
+            )
 
         finding = {
-            "id": f"F-{len(state.findings) + 1}",
+            "id": f"F-{len(state.findings) + len(findings) + 1}",
             "title": f"Candidate signal for {state.target.get('name', 'unknown')}",
             "confidence": round(new_confidence, 2),
             "status": "candidate",
@@ -75,11 +92,13 @@ class HermitAgent(BaseArchetype):
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "simulate",
-            "findings": 1,
+            "findings": len(findings) + 1,
+            "sources_consulted": len(sources),
         }
         update: dict[str, Any] = {
-            "findings": [*state.findings, finding],
+            "findings": [*state.findings, *findings, finding],
             "confidence": new_confidence,
+            "sources": [*state.sources, *sources],
         }
         _apply_llm(entry, update, state, result, fallback_tokens=250)
         update["history"] = [*state.history, entry]
@@ -96,12 +115,16 @@ class FoolAgent(BaseArchetype):
 
     async def run(self, state: GraphState) -> dict:
         result = await self._attempt(state)
+        sources = await self._collect_sources(state)
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "explore",
             "target": state.target.get("name", "unknown"),
+            "sources_consulted": len(sources),
         }
-        update: dict[str, Any] = {}
+        update: dict[str, Any] = {
+            "sources": [*state.sources, *sources],
+        }
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         update["history"] = [*state.history, entry]
         return update
@@ -155,6 +178,7 @@ class MagicianAgent(BaseArchetype):
             "action": "synthesize",
             "findings": len(state.findings),
             "evidence": len(state.evidence),
+            "sources": len(state.sources),
         }
         update: dict[str, Any] = {}
         _apply_llm(entry, update, state, result, fallback_tokens=0)
@@ -176,6 +200,7 @@ class JusticeAgent(BaseArchetype):
             "agent": self.key,
             "action": "validate",
             "candidates": len(state.findings),
+            "sources": len(state.sources),
         }
         update: dict[str, Any] = {
             "next_agent": None,

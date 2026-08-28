@@ -14,6 +14,7 @@ from app.orchestration.director import Director
 from app.orchestration.state import GraphState
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
 from app.services.persistence import persist_run_result
+from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/compositions", tags=["compositions"])
 
@@ -119,6 +120,7 @@ async def execute_composition(
         target=target,
         devil_mode=bool(config.get("devil_mode", False)),
     )
+    state.set_sources_service(build_sources_service())
     run = Run(target_id=target_id, session_id=session.id, status="running", started_at=_utcnow())
     db.add(run)
     await db.flush()

@@ -18,6 +18,7 @@ from app.schemas.decision import DecisionRead
 from app.schemas.finding import FindingRead
 from app.schemas.run import RunCreate, RunRead
 from app.services.persistence import persist_run_result
+from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -65,6 +66,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         budget_cost=settings.default_budget_cost,
         devil_mode=payload.devil_mode,
     )
+    state.set_sources_service(build_sources_service())
 
     try:
         final_state = await Director(archetypes).run(state)
@@ -125,6 +127,7 @@ async def stream_run(
             budget_cost=settings.default_budget_cost,
             devil_mode=devil_mode,
         )
+        state.set_sources_service(build_sources_service())
         final = state.model_dump()
         try:
             async for chunk in Director(archetypes).stream(state):
