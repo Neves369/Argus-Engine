@@ -9,6 +9,18 @@ def test_stream_run(client):
     assert "event: done" in body
 
 
+def test_stream_run_parses_comma_separated_archetypes(client):
+    response = client.get(
+        "/api/v1/runs/stream",
+        params={"target": "example.com", "archetypes": "hermit,justice"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert '"node": "hermit"' in body
+    assert '"node": "justice"' in body
+    assert "event: done" in body
+
+
 def test_stream_run_rejects_out_of_scope(client):
     response = client.get("/api/v1/runs/stream", params={"target": "evil.org"})
     assert response.status_code == 403
