@@ -84,7 +84,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 7 | Economia de Tokens | RTK + Caveman | ⬜ Pendente |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
-| 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ⬜ Pendente |
+| 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | 🟡 Parcial |
 
 ---
 
@@ -375,7 +375,7 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 
 ## Etapa 10 — Observabilidade, HITL e Hardening para Produção
 
-**Status:** `[ ]` Pendente
+**Status:** `[ ]` Parcial
 
 **Objetivo:** tornar o sistema confiável, auditável e seguro para uso real (apenas ambientes autorizados).
 
@@ -384,14 +384,14 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 - [x] Kill-switch operacional (parcial — Etapa 0)
 - [ ] Tracing de decisões do grafo
 - [ ] Dashboard de runs, custos e findings
-- [ ] Mecanismo robusto de Human-in-the-Loop
+- [x] Mecanismo robusto de Human-in-the-Loop — `app/orchestration/hitl.py` + API `POST /runs/{id}/review`; chariot exige aprovação p/ ação destrutiva e hermit sinaliza finding p/ revisão; runs em `pending_review` param no nó `human_gate` e são retomados após decisão; verdicts gravados como `decisions`
 - [ ] Relatórios (Markdown, JSON, futuramente SARIF/PDF)
 - [ ] Hardening (timeouts, resource limits, secret scanning)
 - [ ] Documentação de operação e runbooks
 
 **Critérios de aceite**
 - [ ] Qualquer run pode ser completamente auditado e reproduzido a partir de logs + estado.
-- [ ] Existe kill-switch e HITL funcional.
+- [x] Existe kill-switch e HITL funcional.
 
 ---
 
