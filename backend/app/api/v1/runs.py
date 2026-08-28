@@ -13,11 +13,14 @@ from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Decision, Finding, Run, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
+from app.orchestration.hitl import is_awaiting_review
 from app.orchestration.state import GraphState
 from app.schemas.decision import DecisionRead
 from app.schemas.finding import FindingRead
+from app.schemas.review import ReviewCreate
 from app.schemas.run import RunCreate, RunRead
 from app.services.persistence import persist_run_result
+from app.services.run_executor import execute_run
 from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -69,10 +72,9 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     state.set_sources_service(build_sources_service())
 
     try:
-        final_state = await Director(archetypes).run(state)
-        run.status = "completed"
-        run.result = final_state.model_dump()
-        await persist_run_result(db, run.id, run.target_id, final_state)
+        await execute_run(
+            db, run, payload.target_id, state, archetypes, build_sources_service()
+        )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error = str(exc)
@@ -128,18 +130,23 @@ async def stream_run(
             devil_mode=devil_mode,
         )
         state.set_sources_service(build_sources_service())
+        director = Director(archetypes, sources_service=build_sources_service())
         final = state.model_dump()
         try:
-            async for chunk in Director(archetypes).stream(state):
+            async for chunk in director.stream(state):
                 for node, update in chunk.items():
                     final.update(update)
                     yield (
                         "event: node\n"
                         f"data: {json.dumps({'node': node, 'update': update}, default=str)}\n\n"
                     )
-            run.status = "completed"
+            final_state = GraphState.model_validate(final)
+            if is_awaiting_review(final_state):
+                run.status = "pending_review"
+            else:
+                run.status = "completed"
+                await persist_run_result(db, run_id, run.target_id, final_state)
             run.result = final
-            await persist_run_result(db, run_id, run.target_id, GraphState.model_validate(final))
         except Exception as exc:  # noqa: BLE001
             run.status = "failed"
             run.error = str(exc)
@@ -174,6 +181,55 @@ async def list_run_decisions(run_id: int, db: DBSession) -> list[Decision]:
         select(Decision).where(Decision.run_id == run_id).order_by(Decision.id)
     )
     return list(result.scalars().all())
+
+
+@router.post("/{run_id}/review", response_model=RunRead)
+async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
+    """Answer a pending human-in-the-loop review and resume the run."""
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    if run.status != "pending_review" or not run.result:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Run is not awaiting review"
+        )
+
+    saved = run.result
+    if not saved.get("pending_review"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Run has no pending review"
+        )
+    if str(saved["pending_review"].get("id")) != payload.approval_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="approval_id mismatch"
+        )
+
+    state = GraphState.model_validate(saved)
+    state.set_sources_service(build_sources_service())
+    state.human_decision = {
+        "id": payload.approval_id,
+        "approved": payload.approved,
+        "note": payload.note,
+    }
+
+    director = Director(archetypes=None, sources_service=build_sources_service())
+    try:
+        final = await director.run_from(state, state.next_agent or "emperor")
+        if is_awaiting_review(final):
+            run.status = "pending_review"
+        else:
+            run.status = "completed"
+            await persist_run_result(db, run.id, run.target_id, final)
+        run.result = final.model_dump()
+    except Exception as exc:  # noqa: BLE001
+        run.status = "failed"
+        run.error = str(exc)
+    finally:
+        run.finished_at = _utcnow()
+
+    await db.commit()
+    await db.refresh(run)
+    return run
 
 
 @router.get("/{run_id}/export")

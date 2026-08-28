@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from app.llm.router import attempt_completion
 from app.orchestration.state import GraphState
@@ -61,6 +62,31 @@ class BaseArchetype(ABC):
         """Try the LLM gateway; return ``None`` when the call is unavailable."""
         return await attempt_completion(
             self.system_prompt(), self._context(state), devil_mode=devil_mode
+        )
+
+    def _request_approval(
+        self,
+        state: GraphState,
+        *,
+        kind: str,
+        context: str,
+        proposal: dict[str, Any] | None = None,
+        next_node: str | None = None,
+    ) -> dict[str, Any]:
+        """Declare a human-in-the-loop decision point for this agent.
+
+        Returns the partial state update that pauses the run until ``/review``
+        answers it. The graph routes to ``human_gate`` (or back into this node on
+        resume) so the gated action only runs after operator approval.
+        """
+        from app.orchestration.hitl import request_approval
+
+        return request_approval(
+            state,
+            kind=kind,
+            context=context,
+            proposal=proposal,
+            next_node=next_node,
         )
 
     @abstractmethod

@@ -10,10 +10,9 @@ from app.api.deps import DBSession
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
-from app.orchestration.director import Director
 from app.orchestration.state import GraphState
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
-from app.services.persistence import persist_run_result
+from app.services.run_executor import execute_run
 from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/compositions", tags=["compositions"])
@@ -127,10 +126,7 @@ async def execute_composition(
     run_id = run.id
 
     try:
-        final_state = await Director(archetypes).run(state)
-        run.status = "completed"
-        run.result = final_state.model_dump()
-        await persist_run_result(db, run_id, target_id, final_state)
+        await execute_run(db, run, target_id, state, archetypes, build_sources_service())
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error = str(exc)

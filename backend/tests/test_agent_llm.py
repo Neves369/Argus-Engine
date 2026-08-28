@@ -7,6 +7,7 @@ import respx
 from httpx import Response
 
 from app.agents import get_archetype
+from app.core.config import get_settings
 from app.orchestration.state import GraphState
 
 
@@ -88,16 +89,27 @@ def test_hermit_falls_back_on_provider_error():
 
 
 @respx.mock
-def test_chariot_routes_to_execution_pool():
+def test_chariot_requires_approval_then_executes():
     respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
         return_value=_ok_response("llama-3.3-70b-versatile")
     )
 
+    get_settings().devil_mode = True
+
     state = GraphState(target={"name": "example.com"}, devil_mode=True)
+
+    # First pass: halted awaiting operator approval (no execution yet).
     result = _run("chariot", state)
+    assert result["pending_review"]["kind"] == "destructive_action"
+
+    # Approve, then re-run with the decision applied.
+    state2 = state.model_copy(deep=True)
+    state2.pending_review = result["pending_review"]
+    state2.human_decision = {"id": result["pending_review"]["id"], "approved": True}
+    result = _run("chariot", state2)
 
     entry = result["history"][-1]
-    assert entry["decision"]["mode"] == "execute"
+    assert entry["action"] == "execute"
     assert result["findings"][-1]["title"].startswith("Executed action")
 
 

@@ -29,6 +29,12 @@ class GraphState(BaseModel):
 
     devil_mode: bool = False
 
+    # Human-in-the-loop: a run awaiting operator approval halts here.
+    pending_review: dict[str, Any] | None = None
+    human_decision: dict[str, Any] | None = None
+    review_log: list[dict[str, Any]] = Field(default_factory=list)
+    human_gate_next: str | None = None
+
     # Runtime-only injectable (not serialized): lets agents query data sources.
     _sources_service: Any = PrivateAttr(default=None)
 
