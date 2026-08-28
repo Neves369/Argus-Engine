@@ -3,6 +3,7 @@ import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
 import backgroundImage from "./assets/backgrounds/Background1.png";
 import deathImg from "./assets/cards/death.jpg";
 import CharacterPanel from "./components/CharacterPanel";
+import Dashboard from "./components/Dashboard";
 import DeathOverlay from "./components/DeathOverlay";
 import EndTurnButton from "./components/EndTurnButton";
 import EnemyForm from "./components/EnemyForm";
@@ -28,6 +29,7 @@ function App() {
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [connectionsOn, setConnectionsOn] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
@@ -270,6 +272,10 @@ function App() {
             setPlayerModalOpen(false);
             setSessionsOpen(true);
           }}>Sessões</button>
+          <button className="modal-menu-item" type="button" onClick={() => {
+            setPlayerModalOpen(false);
+            setDashboardOpen(true);
+          }}>Dashboard</button>
           <button
             className="modal-menu-item"
             type="button"
@@ -305,6 +311,14 @@ function App() {
         size="wide"
       >
         <Sessions onLoad={loadComposition} />
+      </Modal>
+      <Modal
+        open={dashboardOpen}
+        title="Dashboard"
+        onClose={() => setDashboardOpen(false)}
+        size="wide"
+      >
+        <Dashboard />
       </Modal>
     </div>
   );

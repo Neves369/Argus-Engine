@@ -382,15 +382,15 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 **Entregáveis**
 - [x] Logging estruturado (parcial — Etapa 0)
 - [x] Kill-switch operacional (parcial — Etapa 0)
-- [ ] Tracing de decisões do grafo
-- [ ] Dashboard de runs, custos e findings
-- [x] Mecanismo robusto de Human-in-the-Loop — `app/orchestration/hitl.py` + API `POST /runs/{id}/review`; chariot exige aprovação p/ ação destrutiva e hermit sinaliza finding p/ revisão; runs em `pending_review` param no nó `human_gate` e são retomados após decisão; verdicts gravados como `decisions`
-- [ ] Relatórios (Markdown, JSON, futuramente SARIF/PDF)
+- [x] Tracing de decisões do grafo — campo `trace` estruturado no estado (nó, ação, timestamps, duração, tokens, custo, provider, model, strategy) populado pela tabela `agent_runs`; `GET /runs/{id}/trace`
+- [x] Dashboard de runs, custos e findings — agregados `GET /dashboard/summary` e `GET /dashboard/runs` + aba Dashboard no frontend (cards e tabela de runs)
+- [x] Mecanismo robusto de Human-in-the-Loop — `app/orchestration/hitl.py` + API `POST /runs/{id}/review`; chariot exige aprovação p/ ação destrutiva e hermit sinaliza finding p/ revisão; runs em `pending_review` param no nó `human_gate` e são retomados após decisão; verdicts gravados como `decisions`; CLI `argus compose pending` / `review`
+- [x] Relatórios (Markdown, JSON, SARIF) — export `format=sarif` adicionado ao `GET /runs/{id}/export` (SARIF 2.1.0); PDF futuramente
 - [ ] Hardening (timeouts, resource limits, secret scanning)
 - [ ] Documentação de operação e runbooks
 
 **Critérios de aceite**
-- [ ] Qualquer run pode ser completamente auditado e reproduzido a partir de logs + estado.
+- [x] Qualquer run pode ser completamente auditado e reproduzido a partir de logs + estado.
 - [x] Existe kill-switch e HITL funcional.
 
 ---

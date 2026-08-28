@@ -61,6 +61,34 @@ export interface ExecuteResult {
   status: string;
 }
 
+export interface DashboardRun {
+  id: number;
+  status: string;
+  target?: string | null;
+  findings: number;
+  cost: number;
+  tokens: number;
+  stop_reason?: string | null;
+  created_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface DashboardSummary {
+  runs: { total: number; by_status: Record<string, number> };
+  pending_reviews: number;
+  findings: {
+    total: number;
+    by_severity: Record<string, number>;
+    by_status: Record<string, number>;
+  };
+  costs: {
+    total_cost: number;
+    total_tokens: number;
+    trace_tokens: number;
+    trace_cost: number;
+  };
+}
+
 const BASE_URL = '/api/v1';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -136,6 +164,14 @@ export function executeComposition(compositionId: number): Promise<ExecuteResult
     method: 'POST',
     body: JSON.stringify({}),
   });
+}
+
+export function getDashboardSummary(): Promise<DashboardSummary> {
+  return request<DashboardSummary>('/dashboard/summary');
+}
+
+export function getDashboardRuns(): Promise<DashboardRun[]> {
+  return request<DashboardRun[]>('/dashboard/runs');
 }
 
 export function streamRun(
