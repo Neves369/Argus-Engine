@@ -30,6 +30,9 @@ necessário"), caching, e comportamento determinístico offline para os testes.
 
 - Nova fonte é adicionada apenas editando `sources.json` — sem mudar código.
 - Caches externos reutilizam os models migrados na Etapa 4; sem alteração de schema.
-- Integração com agentes/grafo (arquétipo consultar CVE/OSINT) fica para fatia futura;
-  nesta fatia as fontes são consumidas via serviço/API.
+- Integração com agentes: `DataSourceService` é injetado no orquestrador como `PrivateAttr` do
+  `GraphState` (`set_sources_service`), nos fluxos de run, stream, composição e CLI. Arquétipos
+  consultam fontes via `_collect_sources` (rolam `available_sources()` e chamam `query`), sem
+  conhecer fontes específicas; os resultados normalizados vão para o campo serializável
+  `state.sources`. O serviço não é serializado/persistido.
 - Minimização limita os campos retornados ao operacionalmente necessário.
