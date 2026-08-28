@@ -136,6 +136,21 @@ result = await router.complete(
 # result.provider, result.model, result.usage.tokens/cost, result.decision
 ```
 
+## CLI (Typer/Rich)
+
+```bash
+argus compose validate PATH        # valida YAML/JSON de sequência
+argus compose create NAME -a hermit,justice [--target NAME] [--devil-mode]
+argus compose list
+argus compose get ID
+argus compose execute ID
+argus compose export ID --out file.json|file.yaml   # JSON/YAML
+argus run export ID --out file.csv                  # findings CSV
+```
+
+O entrypoint `argus` está declarado em `[project.scripts]`; a exportação reutiliza
+`app.services.export` (composition_to_dict, run_to_dict, run_findings_csv).
+
 ## Próximas fases
 
 - Etapa 2: System prompts por persona + JSON Schema de saída por arquétipo

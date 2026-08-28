@@ -35,9 +35,12 @@ adição de nós no canvas.
   - A `Hand` recebe `palette`: clicar numa carta adiciona o nó correspondente ao canvas
     e a devolve à mão (paleta reutilizável).
   - `App.tsx` mantém `CARD_ARCHETYPES` (id→chave de arquétipo), deriva a sequência pela
-    posição X, salva via `createComposition` e executa via `executeComposition` +
-    `getRun`, exibindo resumo.
-  - `Sessions` passa a listar composições salvas com ação **Executar**.
+    posição X e salva via `createComposition`.
+  - A execução usa `streamRun` (SSE `/runs/stream`): persiste a composição e, em
+    paralelo, destaca o nó ativo no canvas a cada evento `node` (arquétipos passados
+    como `?archetypes=...`), marcando o nó final como concluído ao receber `done`.
+  - `Sessions` lista composições salvas com ação **Executar** e **Carregar**
+    (carregar-para-editar no canvas pela conversão de `config.archetypes` em nós).
 
 ## Consequências
 
@@ -47,6 +50,7 @@ adição de nós no canvas.
 - A sequência visual é determinística (posição X), então o estado do grafo é
   serializável e recarregável a partir de `config.archetypes`.
 - `createRun` dedicado continua disponível, mas o fluxo principal passa por
-  `executeComposition` (que garante persistência de target+run juntamente da composição).
-- Carregar-para-editar no canvas e a CLI (Typer/Rich) permanecem pendentes (Etapa 8
-  parcial); a execução de composições salvas já é possível pelo modal Sessões.
+  `createComposition` + `streamRun` (que garante persistência da composição e, ao
+  mesmo tempo, a visualização em execução por nó via SSE).
+- Carregar-para-editar no canvas, a CLI (Typer/Rich) e a exportação
+  (JSON/YAML/CSV/Markdown) foram concluídos na Etapa 8.

@@ -20,10 +20,13 @@ O frontend consome a API real do backend via proxy de desenvolvimento (`/api` �
 - A **sequência** é a posição X dos nós (esquerda→direita); `justice` deve ficar à
   direita (regra de `validate_sequence` no backend). `App.tsx` deriva
   `CARD_ARCHETYPES` (id → chave de arquétipo) para montar a lista.
-- **Salvar** → `createComposition` (persiste em `sessions.config`).
-- **Executar** → `executeComposition` cria target+run e retorna `run_id`; o resumo é
-  exibido no toast e as composições salvas ficam listadas (e executáveis) no modal
-  Sessões.
+- **Salvar** → `createComposition` (persiste em `sessions.config`), garantindo que a
+  cena fique salva e recarregável.
+- **Executar** → `createComposition` + `streamRun` (SSE `/runs/stream`): o canvas
+  destaca o **nó ativo** a cada evento `node` (arquétipos passados como
+  `?archetypes=...`) e marca o nó final como concluído ao receber `done`; o resumo é
+  exibido no toast e as composições salvas ficam listadas (executáveis e carregáveis
+  para edição) no modal Sessões.
 
 ---
 

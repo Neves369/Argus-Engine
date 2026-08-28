@@ -311,22 +311,22 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 8 — Interface e Composição Visual
 
-**Status:** `[x]` Parcial
+**Status:** `[x]` Concluído
 
 **Objetivo:** permitir que o usuário monte e execute grafos de arquétipos de forma intuitiva.
 
 **Entregáveis**
 - [x] Frontend Vite + React + React Flow scaffoldado (`frontend/`)
 - [x] Componentes visuais iniciais (Card, CardNode, canvas, mock de agents/sessions)
-- [ ] CLI completa (Typer/Rich)
+- [x] CLI completa (Typer/Rich)
 - [x] Canvas funcional de arquétipos (drag-and-drop + conexões) — mão virou paleta; pasta nós no canvas; sequência = posição X (esquerda→direita), `justice` obrigatório à direita
-- [ ] Visualização do grafo em execução e do estado
-- [ ] Exportação de configuração de grafo (YAML/JSON)
+- [x] Visualização do grafo em execução e do estado — `streamRun` (SSE `/runs/stream`) destaca o nó ativo (`is-active`) e marca o nó final como concluído (`is-ended`); arquétipos do grafo passados como `?archetypes=...`
+- [x] Exportação de configuração de grafo (YAML/JSON) — `argus compose export` + REST (`/runs/{id}/export` JSON/Markdown, findings CSV)
 - [x] Integração com backend (SSE + dados reais) — composição real: `POST /compositions`, `POST /compositions/{id}/execute`, persistência em `sessions.config`, reuso de `validate_sequence`/`Director`; `createRun`/`createTarget` ativados no client
 
 **Critérios de aceite**
-- [x] Criar, salvar e executar um grafo completo pela interface (composições persistidas no backend e executáveis do modal Sessões;
-  carregar-para-editar fica como refinamento futuro)
+- [x] Criar, salvar e executar um grafo completo pela interface (composições persistidas no backend, executáveis e carregáveis do modal Sessões; carregar-para-editar reconstrói o grafo no canvas)
+- [x] Visualizar o grafo em execução com destaque do nó ativo via SSE
 
 **Pontos a discutir**
 1. CLI-first ou web-first.
