@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     # Env var correspondente: ARGUS_ENCRYPTION_KEY (Fernet de 32 bytes).
     encryption_key: str = Field(default="", validation_alias="ARGUS_ENCRYPTION_KEY")
 
+    # Login leve da UI: senha única do operador. Se vazia, a API fica em modo
+    # aberto (dev). Env: UI_PASSWORD.
+    ui_password: str = Field(default="", validation_alias="UI_PASSWORD")
+
+    # Segredo para assinar o cookie de sessão. Se vazio, deriva de UI_PASSWORD.
+    # Env: ARGUS_SESSION_SECRET.
+    session_secret: str = Field(default="", validation_alias="ARGUS_SESSION_SECRET")
+
 
 @lru_cache
 def get_settings() -> Settings:

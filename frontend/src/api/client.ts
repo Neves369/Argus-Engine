@@ -272,6 +272,7 @@ const BASE_URL = '/api/v1';
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...init,
   });
   if (!response.ok) {
@@ -316,7 +317,9 @@ export function getReport(runId: number): Promise<Report> {
 }
 
 export function getReportExport(runId: number, format: ReportFormat): Promise<string> {
-  return fetch(`${BASE_URL}/runs/${runId}/export?format=${format}`).then((res) => {
+  return fetch(`${BASE_URL}/runs/${runId}/export?format=${format}`, {
+    credentials: 'include',
+  }).then((res) => {
     if (!res.ok) {
       return res.json().then((j) => {
         throw new Error(j.detail || `Export ${format} falhou: ${res.status}`);
@@ -397,6 +400,21 @@ export function getActiveRun(): Promise<ActiveRunInfo> {
   return request<ActiveRunInfo>('/runs/active');
 }
 
+export function login(password: string): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function logout(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/auth/logout', { method: 'POST' });
+}
+
+export function getMe(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/auth/me');
+}
+
 export function cancelRun(runId: number): Promise<{ status: string; run_id: number; run_status: string }> {
   return request(`/runs/${runId}/cancel`, { method: 'POST' });
 }
@@ -407,7 +425,7 @@ export async function runStream(
   options: RunStreamOptions = {},
 ): Promise<RunEndSignal> {
   const { signal, onStart } = options;
-  const response = await fetch(`${BASE_URL}${path}`, { signal });
+  const response = await fetch(`${BASE_URL}${path}`, { signal, credentials: 'include' });
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {

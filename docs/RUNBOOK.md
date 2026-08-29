@@ -86,6 +86,8 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `TOOL_SUBPROCESS_MEMORY_LIMIT_MB` / `TOOL_SUBPROCESS_MAX_OUTPUT_BYTES` | Limites de recurso por invocação de tool CLI (§6.3). Suba o de memória se uma tool legítima estiver sendo matada por OOM do próprio limite. |
 | `DATABASE_URL` | Aponta para o SQLite. Trocar exige rodar `alembic upgrade head` contra o novo arquivo antes do primeiro boot. |
 | `EVIDENCE_DIR` | Onde os arquivos de evidência (hash SHA-256) são gravados. Precisa ser volume persistente e com backup — ver §7.2. |
+| `UI_PASSWORD` | Se definida, a UI exige login com essa senha (cookie de sessão HMAC). Se vazia, a API roda em **modo aberto** (sem auth) — útil para dev/teste local, nunca para expor em rede. |
+| `ARGUS_SESSION_SECRET` | Chave de assinatura do cookie de sessão. Se vazia, deriva de `UI_PASSWORD`; defina explicitamente em produção. |
 
 ## 4. Kill-switch
 
@@ -232,3 +234,30 @@ cacheada indevidamente virar suspeita durante um incidente.
 | Tool trava ou consome recursos indevidamente | §6.2, §6.3 |
 | Comportamento fora de escopo ou suspeita de segurança | §4 (kill-switch) |
 | Precisa restaurar de um backup | §7 |
+| UI pede login / sessão expira | §10 |
+
+## 10. Autenticação leve da UI (Etapa 11 — hardening)
+
+A API protege os endpoints operacionais com uma senha única de operador (não por
+usuário). O fluxo é:
+
+1. `POST /api/v1/auth/login` com `{"password": "..."}` → cookie `argus_session`
+   assinado (HMAC), `HttpOnly`, `SameSite=Lax`, `Max-Age=28800` (8h).
+2. Os demais endpoints exigem esse cookie via dependência `require_auth`
+   (`app/api/deps.py`), aplicada a todos os routers em `app/api/v1/router.py`.
+3. `GET /api/v1/auth/me` devolve `{authenticated, ui_enabled}` para a UI decidir
+   se mostra o login; `POST /api/v1/auth/logout` limpa o cookie.
+
+**Modo aberto:** se `UI_PASSWORD` estiver vazia, `require_auth` é desativado — a UI
+entra direto, sem tela de login. Use só em dev/teste local. Em qualquer implantação
+acessível por rede, defina `UI_PASSWORD` (e `ARGUS_SESSION_SECRET` explícito).
+
+**Runbook — esqueceu a senha / quer deslogar todos:** como não há banco de usuários,
+basta trocar `ARGUS_SESSION_SECRET` (ou `UI_PASSWORD`) e reiniciar — todos os cookies
+existentes deixam de validar. Não há senha "esqueci" por design (operador único).
+
+**Runbook — `409` no login:** significa que `UI_PASSWORD` não está definida (modo
+aberto); não há o que autenticar — acesse a UI direto.
+
+**Runbook — `401` no login:** senha incorreta. Não há bloqueio por tentativas (por
+design, operador único); se suspeitar exposição, troque `UI_PASSWORD` e o segredo.

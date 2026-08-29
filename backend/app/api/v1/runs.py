@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -179,45 +180,83 @@ async def stream_run(
     run_id = run.id
 
     async def event_stream():
-        yield f"event: start\ndata: {json.dumps({'run_id': run_id})}\n\n"
-        state = GraphState(
-            target=target_meta,
-            budget_tokens=settings.default_budget_tokens,
-            budget_cost=settings.default_budget_cost,
-            devil_mode=devil_mode,
-        )
-        state.set_sources_service(build_sources_service())
-        director = Director(archetypes, sources_service=build_sources_service())
-        final = state.model_dump()
-        try:
-            async for chunk in director.stream(state):
-                if is_cancel_requested(run_id):
-                    run.status = "cancelled"
-                    run.result = final
-                    break
-                for node, update in chunk.items():
-                    final.update(update)
-                    yield (
-                        "event: node\n"
-                        f"data: {json.dumps({'node': node, 'update': update}, default=str)}\n\n"
-                    )
-            else:
-                final_state = GraphState.model_validate(final)
-                if is_awaiting_review(final_state):
-                    run.status = "pending_review"
-                else:
-                    run.status = "completed"
-                    await persist_run_result(db, run_id, run.target_id, final_state)
-                run.result = final
-        except Exception as exc:  # noqa: BLE001
-            run.status = "failed"
-            run.error = str(exc)
-        finally:
-            clear_cancel(run_id)
-            run.finished_at = _utcnow()
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        event_id = 0
 
-        await db.commit()
-        yield f"event: done\ndata: {json.dumps({'run_id': run_id, 'status': run.status})}\n\n"
+        def make(event: str, data: dict[str, Any]) -> str:
+            nonlocal event_id
+            event_id += 1
+            return (
+                f"id: {event_id}\nevent: {event}\n"
+                f"data: {json.dumps(data, default=str)}\n\n"
+            )
+
+        async def producer() -> None:
+            await queue.put("retry: 3000\n\n")
+            await queue.put(make("start", {"run_id": run_id}))
+            state = GraphState(
+                target=target_meta,
+                budget_tokens=settings.default_budget_tokens,
+                budget_cost=settings.default_budget_cost,
+                devil_mode=devil_mode,
+            )
+            state.set_sources_service(build_sources_service())
+            director = Director(archetypes, sources_service=build_sources_service())
+            final = state.model_dump()
+            try:
+                async for chunk in director.stream(state):
+                    if is_cancel_requested(run_id):
+                        run.status = "cancelled"
+                        run.result = final
+                        break
+                    for node, update in chunk.items():
+                        final.update(update)
+                        await queue.put(
+                            make("node", {"node": node, "update": update})
+                        )
+                else:
+                    final_state = GraphState.model_validate(final)
+                    if is_awaiting_review(final_state):
+                        run.status = "pending_review"
+                    else:
+                        run.status = "completed"
+                        await persist_run_result(db, run_id, run.target_id, final_state)
+                    run.result = final
+            except Exception as exc:  # noqa: BLE001
+                run.status = "failed"
+                run.error = str(exc)
+                await queue.put(make("error", {"message": str(exc)}))
+            finally:
+                clear_cancel(run_id)
+                run.finished_at = _utcnow()
+
+            await db.commit()
+            await queue.put(make("done", {"run_id": run_id, "status": run.status}))
+            await queue.put(None)
+
+        async def heartbeat() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(15)
+                    await queue.put(": ping\n\n")
+            except asyncio.CancelledError:
+                return
+
+        async def consumer():
+            producer_task = asyncio.create_task(producer())
+            heartbeat_task = asyncio.create_task(heartbeat())
+            try:
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    yield item
+            finally:
+                producer_task.cancel()
+                heartbeat_task.cancel()
+
+        async for chunk in consumer():
+            yield chunk
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

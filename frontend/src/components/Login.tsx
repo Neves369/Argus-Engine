@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import loginBg from '../assets/backgrounds/login.jpeg';
+import { login } from '../api/client';
 import './Login.css';
 
 interface LoginProps {
@@ -9,10 +10,25 @@ interface LoginProps {
 function Login({ onLogin }: LoginProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    onLogin?.();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await login(password);
+      if (result.authenticated) {
+        onLogin?.();
+      } else {
+        setError('Falha na autenticação.');
+      }
+    } catch {
+      setError('Senha inválida ou serviço indisponível.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -44,8 +60,9 @@ function Login({ onLogin }: LoginProps) {
             autoComplete="current-password"
           />
         </div>
-        <button className="login-submit" type="submit">
-          Entrar
+        {error && <div className="login-error">{error}</div>}
+        <button className="login-submit" type="submit" disabled={submitting}>
+          {submitting ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
     </div>

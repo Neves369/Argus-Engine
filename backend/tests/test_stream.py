@@ -46,3 +46,19 @@ def test_stream_persists_run_and_findings(client):
 
     findings = client.get(f"/api/v1/runs/{run_id}/findings").json()
     assert len(findings) >= 1
+
+
+def test_stream_sse_robustness_fields(client):
+    response = client.get("/api/v1/runs/stream", params={"target": "example.com"})
+    assert response.status_code == 200
+    body = response.text
+
+    # Reconexão do navegador e ids de evento para retomada ordenada.
+    assert "retry: 3000" in body
+    assert "\nid: " in body
+
+    # Cada evento nomeado traz seu campo id antes de data:.
+    start_block = body.split("event: node")[0]
+    assert "id: " in start_block
+    assert "event: start" in start_block
+

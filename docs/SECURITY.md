@@ -22,11 +22,22 @@ A plataforma implementa controles que não devem ser desativados:
 | Sandbox | Execução de ferramentas isolada (Docker — Etapa 5). |
 | Auditoria | Logging estruturado e histórico de decisões persistido. |
 | HITL | Aprovação humana obrigatória em ações destrutivas (Modo Diabo). |
+| Auth da UI | Senha única de operador + cookie de sessão assinado (HMAC, HttpOnly, SameSite=Lax). |
 
 ## Modo Diabo
 
 O `DEVIL_MODE` habilita a execução real de scripts invasivos/destrutivos. Mesmo ativo,
 permanecem obrigatórios: escopo validado, sandbox, kill-switch, auditoria completa e HITL.
+
+## Autenticação da interface
+
+A UI não tem contas de usuário: há uma **senha única de operador** (`UI_PASSWORD`).
+Quando definida, `POST /api/v1/auth/login` emite um cookie `argus_session` assinado
+com HMAC (`app/core/session.py`), `HttpOnly`, `SameSite=Lax`, `Max-Age=28800`. Os
+endpoints operacionais exigem esse cookie via `require_auth`; se `UI_PASSWORD` estiver
+vazia, a API roda em **modo aberto** (sem auth). A assinatura usa `ARGUS_SESSION_SECRET`,
+que deve ser definido explicitamente em produção. Não há armazenamento de senha em banco
+nem recuperação — trocar o segredo invalida todas as sessões.
 
 ## Relatar vs ensinar
 

@@ -4,8 +4,11 @@ import type { Socket } from 'node:net'
 import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+const config = defineConfig({
   plugins: [react()],
+  esbuild: {
+    jsx: 'automatic',
+  },
   server: {
     proxy: {
       '/api': {
@@ -34,3 +37,12 @@ export default defineConfig({
     },
   },
 })
+
+export default {
+  ...config,
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+  },
+}

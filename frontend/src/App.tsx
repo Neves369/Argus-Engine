@@ -19,6 +19,7 @@ import {
   createComposition,
   getActiveRun,
   getReport,
+  logout,
   reviewRun,
   runStream,
   type ActiveRunInfo,
@@ -151,6 +152,20 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem('argus.lastRunId');
+    } catch {
+      // localStorage indisponível; ignora
+    }
+    if (saved && /^\d+$/.test(saved)) {
+      void openReport(Number(saved));
+    }
+    // Restaura o último run exibido ao recarregar a página (F5).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleCardPlayed(id: number) {
     setActiveArchetype(null);
     setRunEnded(false);
@@ -250,6 +265,11 @@ function App() {
     setRunStatus(status);
     setRunEnded(true);
     try {
+      localStorage.setItem('argus.lastRunId', String(run_id));
+    } catch {
+      // localStorage pode ser indisponível; ignora
+    }
+    try {
       const report = await getReport(run_id);
       applyReport(report);
     } catch {
@@ -278,6 +298,11 @@ function App() {
     setSessionsOpen(false);
     setDashboardOpen(false);
     setHistoryRunId(runNumber);
+    try {
+      localStorage.setItem('argus.lastRunId', String(runNumber));
+    } catch {
+      // localStorage pode ser indisponível; ignora
+    }
     setRunStatus(null);
     setRunLog([]);
     setChat([]);
@@ -407,6 +432,15 @@ function App() {
         error instanceof Error ? `Falha ao cancelar: ${error.message}` : 'Falha ao cancelar.',
       );
     }
+  }
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // ignora falha de logout; encerra a sessão local mesmo assim
+    }
+    setLoggedIn(false);
   }
 
   function loadComposition(composition: Composition) {
@@ -559,7 +593,9 @@ function App() {
           >
             Configurações
           </button>
-          <button className="modal-menu-item" type="button" onClick={() => setLoggedIn(false)}>Sair</button>
+          <button className="modal-menu-item" type="button" onClick={() => void handleLogout()}>
+            Sair
+          </button>
         </div>
       </Modal>
       <Modal

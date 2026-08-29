@@ -52,6 +52,15 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   `POST /runs`, `GET /runs/stream`, `POST /compositions/{id}/execute`. Cliente que
   tentar iniciar com run ativo recebe `409`.
 - `GET /runs/active` expõe o run ativo à UI (polling + restauração após refresh).
+- **Auth leve da UI (Etapa 11 — hardening):** proteção por senha única de operador
+  (`UI_PASSWORD`) + cookie de sessão assinado (`argus_session`, HMAC/HttpOnly/SameSite=Lax).
+  Toda rota operacional é registrada em `app/api/v1/router.py` com
+  `dependencies=[Depends(require_auth)]` (`app/api/deps.py`); se `UI_PASSWORD` estiver
+  vazia, `require_auth` vira no-op (**modo aberto**). **Ao adicionar um novo router
+  protegido, inclua-o em `router.py` — ele herda o guard automaticamente; não crie
+  dependência manual por endpoint.** As rotas `/auth/*` e `/health` ficam de fora do guard.
+  Frontend: `Login.tsx` + `client.ts` (`login`/`logout`/`getMe`, `credentials: 'include'`)
+  e `App.tsx` (`handleLogin`/`handleLogout`/`handleMe`).
 - `POST /runs/{id}/cancel` só válido para status `running`; o sinal é checado
   **entre nós** no generator do `/runs/stream` (o nó em execução termina antes do
   cancelamento efetivar).
