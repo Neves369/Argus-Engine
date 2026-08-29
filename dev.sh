@@ -37,6 +37,27 @@ echo "Iniciando backend em http://localhost:8000 ..."
 ) &
 BACKEND_PID=$!
 
+# Só sobe o frontend depois que o backend terminar o startup (migrações Alembic
+# rodam no lifespan; /health só responde após tudo pronto). Evita os erros de
+# proxy ("ECONNREFUSED") do Vite enquanto o backend ainda não escuta na 8000.
+echo "Aguardando backend responder em http://localhost:8000 ..."
+backend_ready=false
+for _ in $(seq 1 60); do
+  if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+    backend_ready=true
+    break
+  fi
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    break
+  fi
+  sleep 0.5
+done
+
+if [ "$backend_ready" = false ]; then
+  echo "Backend não respondeu em http://localhost:8000/health. Veja os logs acima e ajuste .env/banco se necessário."
+  exit 1
+fi
+
 echo "Iniciando frontend (Vite) em http://localhost:5173 ..."
 (
   cd "$ROOT/frontend"

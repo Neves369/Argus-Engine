@@ -79,7 +79,7 @@
 
 .dashboard-tr {
   display: grid;
-  grid-template-columns: 0.8fr 2fr 1fr 1fr 1fr 1.4fr;
+  grid-template-columns: 0.8fr 2fr 1fr 1fr 1fr 1.4fr auto;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -88,6 +88,21 @@
   border-radius: 8px;
   font-size: 13px;
   color: #e6d7b0;
+}
+
+.dashboard-action {
+  padding: 4px 12px;
+  border: 1px solid rgba(170, 59, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(170, 59, 255, 0.15);
+  color: #e9d5ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-action:hover {
+  background: rgba(170, 59, 255, 0.3);
 }
 
 .dashboard-tr--head {

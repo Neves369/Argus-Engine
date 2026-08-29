@@ -85,3 +85,11 @@
   line-height: 1;
   text-shadow: 0 0 8px rgba(170, 59, 255, 0.7);
 }
+
+.end-turn-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: grayscale(0.6);
+  transform: none !important;
+  box-shadow: none;
+}

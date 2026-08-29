@@ -3,6 +3,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .settings-summary {
@@ -73,6 +75,7 @@
   font-weight: 600;
   font-size: 15px;
   color: #e6d7b0;
+  white-space: nowrap;
 }
 
 .settings-section-description {
@@ -85,6 +88,8 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .settings-section-totals {
@@ -105,10 +110,10 @@
 }
 
 .settings-section-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  padding: 4px 16px 16px;
+  padding: 8px 16px 16px;
 }
 
 .settings-model {
@@ -146,6 +151,43 @@
   color: #e6d7b0;
 }
 
+.settings-model-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-model-row .settings-model-name {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #9aa1ad;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.settings-price-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-price-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #9aa1ad;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.settings-price-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #e6d7b0;
+  white-space: nowrap;
+}
+
 .settings-model-model {
   font-size: 12px;
   color: #9aa1ad;
@@ -153,6 +195,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 280px;
 }
 
 .settings-toggle {
@@ -227,6 +270,13 @@
   background: #3a352e;
 }
 
+.settings-key-status {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6f7787;
+}
+
 .settings-usage {
   display: flex;
   flex-direction: column;
@@ -296,4 +346,25 @@
   border-radius: 6px;
   color: #e6d7b0;
   font-size: 13px;
+}
+
+.settings-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(200, 160, 40, 0.12);
+  border: 1px solid rgba(200, 160, 40, 0.45);
+  border-radius: 6px;
+  color: #e6d7b0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-warning code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 1px 5px;
 }

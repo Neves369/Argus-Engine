@@ -76,15 +76,15 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 |---|---|---|---|
 | 0 | Fundação e Governança | Repositório, princípios, políticas | ✅ Concluída |
 | 1 | Núcleo de Orquestração | Grafo de agentes com estado tipado | ✅ Concluída |
-| 2 | Arquétipos e Personas | Agentes reutilizáveis (Tarot) | 🟡 Parcial |
-| 3 | Roteador de LLMs | Gateway multi-provider (OmniRoute-like) | 🟡 Parcial |
-| 4 | Persistência e Evidências | SQLite completo + evidências | 🟡 Parcial |
+| 2 | Arquétipos e Personas | Agentes reutilizáveis (Tarot) | ✅ Concluída |
+| 3 | Roteador de LLMs | Gateway multi-provider (OmniRoute-like) | ✅ Concluída |
+| 4 | Persistência e Evidências | SQLite completo + evidências | ✅ Concluída |
 | 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | 🟡 Parcial |
 | 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
 | 7 | Economia de Tokens | RTK + Caveman | ⬜ Pendente |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
-| 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | 🟡 Parcial |
+| 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
 
 ---
 
@@ -134,14 +134,13 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 **Observações / pendências**
 - Paralelismo de nós não implementado (fase futura).
-- `inject_human_input` é stub (será feito na Etapa 10).
 - Persistência/retomada de runs usa JSON no estado (retomada real ainda pendente).
 
 ---
 
 ## Etapa 2 — Arquétipos e Personas
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída (dentro do escopo mantido — ver nota sobre Modo Diabo)
 
 **Objetivo:** transformar agentes em arquétipos reutilizáveis e composáveis.
 
@@ -152,28 +151,45 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Biblioteca completa de 6 arquétipos Tarot (Imperador, Eremita, Louco, Justiça, Carro, Mago)
 - [x] Mecanismo de composição (lista ordenada de arquétipos → grafo dinâmico)
 - [x] Validação de compatibilidade entre arquétipos (básica: sem duplicatas, termina em `justice`)
-- [ ] System prompts completos por persona
-- [ ] Schema de saída obrigatório por arquétipo (JSON Schema)
-- [ ] Modo Diabo como perfil de execução (ver seção "Modo Diabo")
+- [x] System prompts completos por persona (`system_prompt()` próprio em cada arquétipo, `app/agents/builtin.py`)
+- [x] Schema de saída obrigatório por arquétipo (JSON Schema) — `app/agents/schemas.py` +
+      `BaseArchetype.validate_entry()`/`output_json_schema()`; exposto via
+      `GET /archetypes` e `GET /archetypes/{key}/schema`
+- [~] ~~Modo Diabo como perfil de execução~~ — **fora de escopo por decisão do operador**
+      (ver nota abaixo)
 
 **Critérios de aceite**
 - [x] Um usuário consegue montar um grafo só com arquétipos e executá-lo (via API, com os 3 mínimos).
 - [x] Cada arquétipo declara explicitamente suas tools e limites (`allowed_tools`).
 - [x] Montar e executar grafo com os 6 arquétipos.
+- [x] Cada arquétipo tem um system prompt específico e um `output_schema` que sua
+      entrada de histórico é obrigada a satisfazer (validado em toda execução, não
+      só documentado).
+
+**Nota — Modo Diabo descontinuado**
+- Decisão do operador: a plataforma não vai evoluir o "Modo Diabo" para plugar
+  modelos abliterados/sem restrição nem ferramentas de execução realmente
+  destrutivas. O toggle `devil_mode` e o gating condicional (`ChariotAgent`,
+  `ToolExecutor`) permanecem no código como estão hoje — infraestrutura de
+  roteamento inofensiva, sem modelo abliterado nem ferramenta destrutiva real
+  plugada — mas não serão estendidos além disso.
+- Os pontos "5" (raciocínio vs execução abliterada) e a exposição de HITL para
+  ligar o Modo Diabo, listados abaixo em "Pontos a discutir", ficam
+  descontinuados junto.
 
 **Pontos a discutir**
-1. Lista final de arquétipos e responsabilidades (sem entrar em técnicas).
-2. Versionar prompts de sistema.
-3. Separação clara entre "raciocínio" (modelos fortes) e "execução controlada" (menores/abliterados).
-4. Como o orquestrador escolhe combinações automaticamente.
-5. Nível de customização do usuário vs hardcoded de segurança.
-6. Como o Modo Diabo é exposto ao usuário (confirmação/HITL obrigatória ao ligar).
+1. Lista final de arquétipos e responsabilidades — ✅ fechada (6 arquétipos acima).
+2. ~~Separação entre "raciocínio" (modelos fortes) e "execução controlada"
+   (menores/abliterados)~~ — descontinuado (ver nota acima).
+3. Como o orquestrador escolhe combinações automaticamente — ainda em aberto,
+   sem prioridade definida.
+4. Nível de customização do usuário vs hardcoded de segurança — ainda em aberto.
 
 ---
 
 ## Etapa 3 — Roteador de LLMs (estilo OmniRoute)
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída (Google Gemini fica fora desta fatia — ver observações)
 
 **Objetivo:** gateway unificado OpenAI-compatible com múltiplos providers, combos e fallback.
 
@@ -181,10 +197,10 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Cliente unificado
 - [x] Suporte a Groq, OpenRouter, OpenAI (OpenAI-compat); Google AI pendente
 - [x] Estratégias de combo priority e fallback
-- [ ] Estratégias de combo cost-optimized e auto
+- [x] Estratégias de combo cost-optimized e auto (`LLM_STRATEGY` no `.env`; `auto` usa cost-optimized para julgamento e priority para execução)
 - [x] Tracking de tokens e custo por chamada
 - [x] Headers de decisão (qual modelo/provider foi usado)
-- [ ] Cache de prefixo e compressão
+- [x] Cache de prefixo e compressão (`app/llm/cache.py`, `app/llm/compress.py`)
 - [x] Roteamento por modo: modelos sem restrição p/ execução (Modo Diabo ON) vs modelos fixos p/ julgamento/investigação
 
 **Critérios de aceite**
@@ -192,9 +208,25 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Toda chamada registra tokens, custo e decisão de roteamento.
 
 **Observações / pendências**
-- Google Gemini exige adapter nativo (fora desta fatia).
-- `cost-optimized`/`auto`, cache de prefixo e compressão ficam para o fim da etapa.
-- Wiring dos 6 arquétipos feito com fallback offline determinístico: sem API key (ou falha de provider) os nós degradam à lógica simulada, mantendo o grafo determinístico/offline nos testes (62 testes verdes). Chariot usa o pool de execução quando Modo Diabo ON; os demais usam o pool de julgamento.
+- Google Gemini exige adapter nativo — único item que ficou fora desta fatia (não bloqueia nada hoje; os 3 providers atuais cobrem execução e julgamento).
+- `route_for_mode(devil_mode, strategy)` ordena o pool por estratégia: `priority`/`fallback`
+  mantêm a ordem declarada em `EXECUTION_MODELS`/`JUDGMENT_MODELS`; `cost-optimized` ordena
+  por `price_in + price_out` (mais barato primeiro); `auto` aplica cost-optimized ao pool de
+  julgamento e priority ao pool de execução (capacidade importa mais que preço ali). Estratégia
+  padrão configurável via `LLM_STRATEGY` (lida em `attempt_completion` quando a chamada não
+  especifica uma). Cobertura em `tests/test_llm.py`.
+- Cache de prefixo (`app/llm/cache.py`, `PrefixCache`): cache TTL em memória, por
+  processo, chaveado em `sha256(provider+model+mensagens+temperature+max_tokens)`.
+  `LLMRouter.complete()` consulta antes de cada tentativa de combo e grava depois de
+  um sucesso; toda `CompletionResult` traz `decision["cache_hit"]` para observabilidade.
+  Configurável via `LLM_CACHE_ENABLED`/`LLM_CACHE_TTL_SECONDS`. É cache de prompt completo
+  (não KV-cache de tokens do provider).
+- Compressão de prompt (`app/llm/compress.py`): normalização de espaços em branco
+  (sempre) + corte de mensagens muito longas mantendo início/fim
+  (`LLM_MAX_PROMPT_CHARS`, default 8000 — generoso o bastante pra não afetar os
+  contextos curtos atuais dos arquétipos; é uma rede de segurança para prompts
+  maiores no futuro, ex. saída de tools ou listas longas de findings).
+- Wiring dos 6 arquétipos feito com fallback offline determinístico: sem API key (ou falha de provider) os nós degradam à lógica simulada, mantendo o grafo determinístico/offline nos testes (158 testes verdes). Chariot usa o pool de execução quando Modo Diabo ON; os demais usam o pool de julgamento.
 
 **Pontos a discutir**
 1. Do zero vs adaptar OmniRoute ou similar.
@@ -207,7 +239,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 ## Etapa 4 — Persistência e Evidências (SQLite)
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída
 
 **Objetivo:** tudo que importa fica local, auditável e consultável.
 
@@ -219,7 +251,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Migrações (Alembic) — `alembic upgrade head` no startup + `make migrate`
 - [x] Armazenamento de evidências (arquivos + metadados + hash SHA-256)
 - [x] Exportação de findings (JSON, Markdown)
-- [ ] Exportação SARIF
+- [x] Exportação SARIF (`GET /runs/{id}/export?format=sarif`, SARIF 2.1.0)
 - [x] Isolamento por run (consultas escopadas por `run_id`/`target_id`)
 
 **Critérios de aceite**
@@ -228,8 +260,10 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Findings com estados `candidate → validated → false_positive → discarded`.
 
 **Observações / pendências**
-- `sessions` (agrupamento) e os caches externos (`cve_cache`, `external_data_cache`) ficam para a Etapa 9 / fatia seguinte.
-- Alembic será introduzido quando o schema estabilizar (atualmente `create_all`).
+- Nenhuma pendência de schema/migração. `test_migrations.py` garante que os models
+  SQLAlchemy e a migration `head` do Alembic nunca divergem (`compare_metadata`),
+  então qualquer alteração futura de model exige gerar uma nova revision Alembic
+  antes de mesclar (`alembic revision --autogenerate`), ou o teste quebra a CI.
 
 ---
 
@@ -323,10 +357,19 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Visualização do grafo em execução e do estado — `streamRun` (SSE `/runs/stream`) destaca o nó ativo (`is-active`) e marca o nó final como concluído (`is-ended`); arquétipos do grafo passados como `?archetypes=...`
 - [x] Exportação de configuração de grafo (YAML/JSON) — `argus compose export` + REST (`/runs/{id}/export` JSON/Markdown, findings CSV)
 - [x] Integração com backend (SSE + dados reais) — composição real: `POST /compositions`, `POST /compositions/{id}/execute`, persistência em `sessions.config`, reuso de `validate_sequence`/`Director`; `createRun`/`createTarget` ativados no client
+- [x] Painel de execução na UI (`RunPanel`) — abas **Log** (trace ao vivo por passo), **Chat** (raciocínio de cada arquétipo a partir do histórico SSE) e **Resultados** (findings, tabela de trace, tokens/custo, `stop_reason`); substitui o resumo de uma linha
+- [x] Lock de run único (1 alvo por vez) — guard no backend em `POST /runs`, `GET /runs/stream` e `POST /compositions/{id}/execute` (409 quando há run `running`/`pending_review`); `GET /runs/active` exposto; frontend desabilita Executar e faz polling do lock
+- [x] Cancelamento de run em execução — `POST /runs/{id}/cancel` (sinal checado entre nós no `stream_run`) + botão Cancelar no painel
+- [x] Execução unificada via SSE — `/runs/stream?session_id=...` executa composição salva com o mesmo live log/cancel do build manual; tela Sessões passou a usar esse fluxo
+- [x] Resultado final explícito — ao concluir, o painel salta para a aba **Resultados** com resumo (tokens, custo, duração, `stop_reason`, alvo) e achados com `severity`/`description`; findings persistidos (`GET /runs/{id}/findings`) têm prioridade sobre o estado bruto do `result`
+- [x] Ver resultado de runs antigos — coluna **Ver** no Dashboard e em Sessões abre o RunPanel em modo somente-leitura (`getRun` + `listFindings`, no `App.tsx` via `openReport`)
 
 **Critérios de aceite**
 - [x] Criar, salvar e executar um grafo completo pela interface (composições persistidas no backend, executáveis e carregáveis do modal Sessões; carregar-para-editar reconstrói o grafo no canvas)
 - [x] Visualizar o grafo em execução com destaque do nó ativo via SSE
+- [x] Ver progresso/log ao vivo durante a execução e resultados completos após a conclusão
+- [x] Iniciar um novo run é bloqueado enquanto houver um ativo (incluindo `pending_review`), mesmo após refresh da página
+- [x] Cancelar um run em andamento pela interface
 
 **Pontos a discutir**
 1. CLI-first ou web-first.
@@ -375,7 +418,7 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 
 ## Etapa 10 — Observabilidade, HITL e Hardening para Produção
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída
 
 **Objetivo:** tornar o sistema confiável, auditável e seguro para uso real (apenas ambientes autorizados).
 
@@ -386,24 +429,51 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 - [x] Dashboard de runs, custos e findings — agregados `GET /dashboard/summary` e `GET /dashboard/runs` + aba Dashboard no frontend (cards e tabela de runs)
 - [x] Mecanismo robusto de Human-in-the-Loop — `app/orchestration/hitl.py` + API `POST /runs/{id}/review`; chariot exige aprovação p/ ação destrutiva e hermit sinaliza finding p/ revisão; runs em `pending_review` param no nó `human_gate` e são retomados após decisão; verdicts gravados como `decisions`; CLI `argus compose pending` / `review`
 - [x] Relatórios (Markdown, JSON, SARIF) — export `format=sarif` adicionado ao `GET /runs/{id}/export` (SARIF 2.1.0); PDF futuramente
-- [ ] Hardening (timeouts, resource limits, secret scanning)
-- [ ] Documentação de operação e runbooks
+- [x] Hardening (timeouts, resource limits, secret scanning) — ver detalhe abaixo
+- [x] Documentação de operação e runbooks — `docs/RUNBOOK.md`
 
 **Critérios de aceite**
 - [x] Qualquer run pode ser completamente auditado e reproduzido a partir de logs + estado.
 - [x] Existe kill-switch e HITL funcional.
 
+**Detalhe — Hardening**
+- **Secret scanning/redação** (`app/core/secrets.py`): padrões heurísticos (chave AWS,
+  token GitHub/Slack, JWT, bloco de chave privada PEM, atribuição genérica
+  `key=value`). Aplicado em dois pontos:
+  - Todo log estruturado (`app/core/logging.py`) — mensagem e campos `extra`
+    (recursivamente em dict/list) são redigidos antes de virar JSON.
+  - Toda mensagem enviada a um provider de LLM (`app/llm/client.py`) — nunca
+    encaminha um segredo descoberto durante a investigação a um provider terceiro.
+  - Deliberadamente **não** aplicado à `EvidenceStore` — uma credencial exposta é
+    frequentemente o próprio finding; redigir ali destruiria a evidência.
+- **Timeout + kill de subprocesso** (`app/tools/executor.py`): ao estourar
+  `ToolSpec.timeout`, o processo filho agora é morto (`process.kill()`) — antes
+  desta etapa o timeout cancelava a espera mas deixava o processo rodando em
+  segundo plano.
+- **Resource limits de subprocesso** (POSIX only, no-op no Windows):
+  `RLIMIT_AS` via `TOOL_SUBPROCESS_MEMORY_LIMIT_MB` (default 512MB) e
+  `RLIMIT_NOFILE` fixo em 256, aplicados via `preexec_fn`. Testado de ponta a
+  ponta: um subprocesso tentando alocar 500MB com teto de 64MB efetivamente
+  morre (não é só configuração aceita e ignorada).
+- **Truncamento de saída**: stdout/stderr de tool CLI cortados em
+  `TOOL_SUBPROCESS_MAX_OUTPUT_BYTES` (default 64KB) antes de entrar no histórico
+  ou em qualquer log.
+- Cobertura: `tests/test_hardening.py` (20 testes) — suíte completa em
+  178 testes verdes, `ruff` limpo.
+
+**Runbooks** (`docs/RUNBOOK.md`): subida do serviço, kill-switch, fila HITL,
+cada controle de hardening acima com seu próprio runbook de incidente, backup/
+recuperação de banco e evidências, e leitura de log.
+
 ---
 
 ## Próximos passos sugeridos
 
-1. **Etapa 2** — completar os 6 arquétipos Tarot (`emperor`, `hermit`, `fool`, `justice`, `chariot`, `magician`) com system prompts e stubs; implementar o Modo Diabo como perfil de execução.
-2. **Etapa 1 (complemento)** — adicionar `devil_mode` ao estado + desvio condicional simular/executar.
-3. **Etapa 3** — LLM Gateway multi-provider com roteamento por modo (execução sem restrição vs julgamento fixo).
-4. **Etapa 4** — Alembic + schema completo (findings, evidence, decisions, api_usage).
-5. **Etapa 5** — camada de plugin/config para ferramentas fornecidas pelo operador.
-6. **Etapa 8** — conectar o frontend ao backend via SSE/WebSocket.
-7. **Etapa 6** — filtro de qualidade (anti-falso-positivo).
+> Lista revisada — os itens de Etapas 1, 2, 3, 4, 5, 6, 8 e 10 originalmente listados aqui já
+> foram entregues (ver status de cada etapa acima). Pendências reais restantes:
+
+1. **Etapa 5** — sandbox real (Docker) para o executor de tools.
+2. **Etapa 7** — economia de tokens (RTK/Caveman) — etapa inteira ainda não iniciada.
 
 ## Como manter este documento
 

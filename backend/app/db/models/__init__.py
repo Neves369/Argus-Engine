@@ -7,6 +7,7 @@ from app.db.models.decision import Decision
 from app.db.models.evidence import Evidence
 from app.db.models.external_data_cache import ExternalDataCache
 from app.db.models.finding import Finding
+from app.db.models.provider_config import ProviderConfig
 from app.db.models.run import Run
 from app.db.models.session_model import Session
 from app.db.models.target import Target
@@ -19,6 +20,7 @@ __all__ = [
     "Evidence",
     "ExternalDataCache",
     "Finding",
+    "ProviderConfig",
     "Run",
     "Session",
     "Target",

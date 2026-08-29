@@ -132,6 +132,107 @@ def test_complete_all_fail_raises():
     asyncio.run(_run())
 
 
+def test_route_for_mode_cost_optimized_orders_by_price():
+    settings = get_settings()
+    # groq: 0.59+0.79=1.38 · openai: 0.15+0.60=0.75 · openrouter: 0.0
+    settings.judgment_models = [
+        "groq/llama-3.1-8b-instant",
+        "openai/gpt-4o-mini",
+        "openrouter/openrouter/auto",
+    ]
+
+    router = LLMRouter()
+    ordered = router.route_for_mode(False, strategy="cost-optimized")
+
+    assert ordered == [
+        ("openrouter", "openrouter/auto"),
+        ("openai", "gpt-4o-mini"),
+        ("groq", "llama-3.1-8b-instant"),
+    ]
+
+
+def test_route_for_mode_auto_is_cost_optimized_for_judgment_only():
+    settings = get_settings()
+    settings.judgment_models = ["groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"]
+    settings.execution_models = ["groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"]
+
+    router = LLMRouter()
+
+    # judgment (devil_mode=False): auto reorders by cost, cheapest (openai) first
+    assert router.route_for_mode(False, strategy="auto") == [
+        ("openai", "gpt-4o-mini"),
+        ("groq", "llama-3.1-8b-instant"),
+    ]
+    # execution (devil_mode=True): auto keeps the declared priority order
+    assert router.route_for_mode(True, strategy="auto") == [
+        ("groq", "llama-3.1-8b-instant"),
+        ("openai", "gpt-4o-mini"),
+    ]
+
+
+def test_route_for_mode_unknown_strategy_raises():
+    settings = get_settings()
+    settings.judgment_models = ["groq/llama-3.1-8b-instant"]
+
+    router = LLMRouter()
+    with pytest.raises(ValueError):
+        router.route_for_mode(False, strategy="not-a-strategy")
+
+
+@respx.mock
+def test_complete_cost_optimized_tries_cheapest_first():
+    settings = get_settings()
+    settings.judgment_models = ["groq/expensive-model", "openai/cheap-model"]
+
+    groq_route = respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
+        return_value=_ok_response("expensive-model")
+    )
+    respx.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=_ok_response("cheap-model")
+    )
+
+    async def _run() -> object:
+        router = LLMRouter()
+        try:
+            return await router.complete(
+                _messages(), devil_mode=False, strategy="cost-optimized"
+            )
+        finally:
+            await router.close()
+
+    result = asyncio.run(_run())
+
+    assert result.provider == "openai"
+    assert result.model == "cheap-model"
+    assert result.strategy == "cost-optimized"
+    assert not groq_route.called
+
+
+@respx.mock
+def test_attempt_completion_uses_configured_default_strategy():
+    from app.llm.router import attempt_completion
+
+    settings = get_settings()
+    settings.judgment_models = ["groq/expensive-model", "openai/cheap-model"]
+    settings.llm_strategy = "cost-optimized"
+
+    groq_route = respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
+        return_value=_ok_response("expensive-model")
+    )
+    respx.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=_ok_response("cheap-model")
+    )
+
+    result = asyncio.run(attempt_completion("system", "user"))
+
+    assert result is not None
+    assert result.provider == "openai"
+    assert result.strategy == "cost-optimized"
+    assert not groq_route.called
+
+    settings.llm_strategy = "priority"  # reset shared singleton for other tests
+
+
 @respx.mock
 def test_complete_no_combos_raises():
     settings = get_settings()

@@ -9,6 +9,16 @@ def test_stream_run(client):
     assert "event: done" in body
 
 
+def test_stream_run_start_event_carries_run_id(client):
+    response = client.get(
+        "/api/v1/runs/stream", params={"target": "example.com", "archetypes": "hermit,justice"}
+    )
+    assert response.status_code == 200
+    start_line = response.text.split("event: done")[0]
+    assert "event: start" in start_line
+    assert "run_id" in start_line
+
+
 def test_stream_run_parses_comma_separated_archetypes(client):
     response = client.get(
         "/api/v1/runs/stream",

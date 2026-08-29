@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import httpx
 
+from app.core.config import get_settings
+from app.core.secrets import redact
+from app.llm.compress import compress_messages
 from app.llm.providers import ProviderSpec
 from app.llm.types import ChatMessage, CompletionResult, TokenUsage
 
@@ -36,6 +39,12 @@ class UnifiedClient:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> CompletionResult:
+        max_chars = get_settings().llm_max_prompt_chars
+        messages = compress_messages(messages, max_chars=max_chars)
+        # Hardening (Etapa 10): never forward a secret-shaped string to a
+        # third-party provider, even if it slipped into a node's context.
+        messages = [ChatMessage(role=m.role, content=redact(m.content)) for m in messages]
+
         url = f"{provider.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {provider.api_key}",

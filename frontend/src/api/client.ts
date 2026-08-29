@@ -43,6 +43,75 @@ export interface StreamEvent {
   update: Record<string, unknown>;
 }
 
+export interface ActiveRunInfo {
+  active: boolean;
+  run_id?: number | null;
+  status?: string | null;
+}
+
+export interface TraceStep {
+  node?: string;
+  action?: string;
+  provider?: string | null;
+  model?: string | null;
+  duration_ms?: number;
+  tokens?: number;
+  cost?: number;
+  confidence_after?: number | null;
+  [key: string]: unknown;
+}
+
+export interface HistoryEntry {
+  agent?: string;
+  action?: string;
+  reasoning?: string;
+  decision?: string;
+  provider?: string | null;
+  model?: string | null;
+  tokens?: number;
+  cost?: number;
+  [key: string]: unknown;
+}
+
+export interface ChatMessage {
+  agent: string;
+  action: string;
+  reasoning: string;
+}
+
+export interface RunLogLine {
+  node: string;
+  text: string;
+}
+
+export interface RunFinding {
+  id?: string | number;
+  title?: string;
+  description?: string | null;
+  severity?: string | null;
+  confidence?: number;
+  status?: string;
+  requires_human_review?: boolean;
+}
+
+export interface RunMeta {
+  tokens?: number;
+  cost?: number;
+  target?: string;
+  durationMs?: number;
+  stopReason?: string;
+}
+
+export interface RunEndSignal {
+  run_id: number;
+  status: string;
+}
+
+export interface RunStreamOptions {
+  signal?: AbortSignal;
+  onStart?: (runId: number) => void;
+}
+
 export interface Composition {
   id: number;
   name: string;
@@ -87,6 +156,53 @@ export interface DashboardSummary {
     trace_tokens: number;
     trace_cost: number;
   };
+}
+
+export interface ProviderConfig {
+  provider: string;
+  models: string[];
+  price_in: number;
+  price_out: number;
+  base_url: string;
+  has_api_key: boolean;
+  key_source?: 'db' | 'env' | null;
+  enabled: boolean;
+  usage_tokens: number;
+  usage_cost: number;
+}
+
+export interface ProvidersResponse {
+  providers: ProviderConfig[];
+  has_encryption_configured: boolean;
+}
+
+export function listProviders(): Promise<ProvidersResponse> {
+  return request<ProvidersResponse>('/providers').then((data) => ({
+    providers: data.providers || [],
+    has_encryption_configured: data.has_encryption_configured ?? false,
+  }));
+}
+
+export function setProviderApiKey(provider: string, key: string): Promise<{ status: string }> {
+  return fetch(`${BASE_URL}/providers/${provider}/api-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  }).then((res) => {
+    if (!res.ok) return res.json().then((j) => { throw new Error(j.detail || 'Failed'); });
+    return res.json();
+  });
+}
+
+export function setProviderEnabled(provider: string, enabled: boolean): Promise<{ status: string }> {
+  return fetch(`${BASE_URL}/providers/${provider}/enabled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  }).then((res) => {
+    if (!res.ok) return res.json().then((j) => { throw new Error(j.detail || 'Failed'); });
+    return res.json();
+  });
 }
 
 const BASE_URL = '/api/v1';
@@ -185,23 +301,66 @@ export function streamRun(
   if (archetypes.length > 0) {
     params.set('archetypes', archetypes.join(','));
   }
-  const source = new EventSource(`${BASE_URL}/runs/stream?${params.toString()}`);
+  const controller = new AbortController();
+  void runStream(`/runs/stream?${params.toString()}`, onEvent, { signal: controller.signal }).then(
+    (signal) => onDone(signal.run_id, signal.status),
+    () => onDone(-1, 'error'),
+  );
+  return () => controller.abort();
+}
 
-  source.addEventListener('node', (rawEvent) => {
-    const event = rawEvent as MessageEvent;
-    onEvent(JSON.parse(event.data as string) as StreamEvent);
-  });
+export function getActiveRun(): Promise<ActiveRunInfo> {
+  return request<ActiveRunInfo>('/runs/active');
+}
 
-  source.addEventListener('done', (rawEvent) => {
-    const event = rawEvent as MessageEvent;
-    const data = JSON.parse(event.data as string) as { run_id: number; status: string };
-    onDone(data.run_id, data.status);
-    source.close();
-  });
+export function cancelRun(runId: number): Promise<{ status: string; run_id: number; run_status: string }> {
+  return request(`/runs/${runId}/cancel`, { method: 'POST' });
+}
 
-  source.onerror = () => {
-    source.close();
-  };
+export async function runStream(
+  path: string,
+  onEvent: (event: StreamEvent) => void,
+  options: RunStreamOptions = {},
+): Promise<RunEndSignal> {
+  const { signal, onStart } = options;
+  const response = await fetch(`${BASE_URL}${path}`, { signal });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === 'string') detail = body.detail;
+    } catch {
+      // keep status-based detail
+    }
+    throw new Error(detail);
+  }
 
-  return () => source.close();
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Stream sem corpo de resposta.');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep = buffer.indexOf('\n\n');
+    while (sep !== -1) {
+      const raw = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const lines = raw.split('\n');
+      const eventName = lines.find((l) => l.startsWith('event: '))?.slice(7);
+      const data = lines.find((l) => l.startsWith('data: '))?.slice(6);
+      if (eventName === 'start' && data) {
+        const { run_id } = JSON.parse(data) as { run_id: number };
+        onStart?.(run_id);
+      } else if (eventName === 'node' && data) {
+        onEvent(JSON.parse(data) as StreamEvent);
+      } else if (eventName === 'done' && data) {
+        return JSON.parse(data) as RunEndSignal;
+      }
+      sep = buffer.indexOf('\n\n');
+    }
+  }
+  throw new Error('Stream encerrado sem evento de conclusão.');
 }

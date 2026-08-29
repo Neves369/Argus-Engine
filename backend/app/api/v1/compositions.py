@@ -12,6 +12,7 @@ from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
+from app.services.run_control import RunLockedError, ensure_no_active_run
 from app.services.run_executor import execute_run
 from app.sources.service import build_sources_service
 
@@ -79,6 +80,11 @@ async def execute_composition(
 ) -> dict[str, Any]:
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
+
+    try:
+        await ensure_no_active_run(db)
+    except RunLockedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     session = await db.get(Session, composition_id)
     if session is None:

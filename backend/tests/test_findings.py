@@ -19,6 +19,23 @@ def test_run_persists_findings(client, run_id):
     assert findings[0]["run_id"] == run_id
 
 
+def test_findings_are_rich(client, run_id):
+    findings = client.get(f"/api/v1/runs/{run_id}/findings").json()
+    assert len(findings) >= 1
+    for finding in findings:
+        assert finding["severity"] in {"low", "medium", "high"}
+        assert finding["description"]
+        assert finding["confidence"] >= 0
+
+
+def test_result_findings_are_rich(client, run_id):
+    run = client.get(f"/api/v1/runs/{run_id}").json()
+    assert len(run["result"]["findings"]) >= 1
+    for finding in run["result"]["findings"]:
+        assert finding["severity"] in {"low", "medium", "high"}
+        assert finding["description"]
+
+
 def test_run_persists_decisions(client, run_id):
     response = client.get(f"/api/v1/runs/{run_id}/decisions")
     assert response.status_code == 200

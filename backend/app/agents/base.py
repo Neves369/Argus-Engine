@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
+from app.agents.schemas import ArchetypeOutputBase
 from app.llm.router import attempt_completion
 from app.orchestration.state import GraphState
 
@@ -12,7 +13,9 @@ class BaseArchetype(ABC):
     """Contract shared by all agent archetypes.
 
     Each concrete archetype declares its role, preferred model tier and allowed tools,
-    and implements `run()` which returns a partial GraphState update.
+    implements `run()` which returns a partial GraphState update, and declares
+    `output_schema` (Etapa 2): the mandatory JSON Schema its history entry must
+    satisfy, validated by `validate_entry()` before the entry is persisted.
     """
 
     key: str = "base"
@@ -20,6 +23,10 @@ class BaseArchetype(ABC):
     role: str = "generic"
     model_tier: str = "cheap"
     allowed_tools: tuple[str, ...] = ()
+
+    #: Mandatory output contract for this archetype's history entry (Etapa 2).
+    #: Subclasses must override with their specific schema.
+    output_schema: ClassVar[type[ArchetypeOutputBase]] = ArchetypeOutputBase
 
     def system_prompt(self) -> str:
         return (
@@ -129,6 +136,22 @@ class BaseArchetype(ABC):
             proposal=proposal,
             next_node=next_node,
         )
+
+    def validate_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Validate a history entry against this archetype's output schema.
+
+        Raises ``pydantic.ValidationError`` if the entry doesn't conform — this
+        is the mandatory output contract every archetype must satisfy (Etapa 2).
+        Returns the entry re-serialized from the validated model (drops unset
+        optional fields, keeps any extra diagnostic keys untouched).
+        """
+        validated = self.output_schema.model_validate(entry)
+        return validated.model_dump(exclude_none=True)
+
+    @classmethod
+    def output_json_schema(cls) -> dict[str, Any]:
+        """This archetype's output contract as a JSON Schema document."""
+        return cls.output_schema.model_json_schema()
 
     @abstractmethod
     async def run(self, state: GraphState) -> dict:

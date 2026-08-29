@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  executeComposition,
   listCompositions,
   listRuns,
   type Composition,
@@ -33,7 +32,14 @@ function targetName(run: Run): string {
   return run.result?.target?.name ?? run.target_id?.toString() ?? `#${run.id}`;
 }
 
-function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
+interface SessionsProps {
+  onLoad: (composition: Composition) => void;
+  onExecute: (compositionId: number) => Promise<void>;
+  onOpenReport: (runId: number) => void;
+  locked?: boolean;
+}
+
+function Sessions({ onLoad, onExecute, onOpenReport, locked = false }: SessionsProps) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [compositions, setCompositions] = useState<Composition[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -51,12 +57,13 @@ function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
   async function handleExecute(compositionId: number) {
     setExecuting(compositionId);
     try {
-      const res = await executeComposition(compositionId);
-      window.alert(`Run #${res.run_id}: ${res.status}`);
+      await onExecute(compositionId);
       const updatedRuns = await listRuns();
       setRuns(updatedRuns);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
+      const updatedRuns = await listRuns();
+      setRuns(updatedRuns);
     } finally {
       setExecuting(null);
     }
@@ -69,7 +76,14 @@ function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
   return (
     <div className="sessions">
       <div className="sessions-block">
-        <div className="sessions-title">Composições</div>
+        <div className="sessions-title">
+          Composições
+          {locked && (
+            <span className="sessions-lock-hint">
+              Há um run ativo — execute apenas depois que ele concluir.
+            </span>
+          )}
+        </div>
         {compositions.length === 0 ? (
           <div className="sessions-empty">Nenhuma composição salva.</div>
         ) : (
@@ -94,7 +108,7 @@ function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
                   <button
                     type="button"
                     className="sessions-exec"
-                    disabled={executing === comp.id}
+                    disabled={executing === comp.id || locked}
                     onClick={() => handleExecute(comp.id)}
                   >
                     {executing === comp.id ? 'Executando…' : 'Executar'}
@@ -123,6 +137,15 @@ function Sessions({ onLoad }: { onLoad: (composition: Composition) => void }) {
               <span className={`sessions-status sessions-status--${status}`}>
                 {STATUS_LABELS[status]}
               </span>
+              <div className="sessions-actions">
+                <button
+                  type="button"
+                  className="sessions-exec"
+                  onClick={() => onOpenReport(run.id)}
+                >
+                  Ver
+                </button>
+              </div>
             </div>
           );
         })}

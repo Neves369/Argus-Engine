@@ -23,7 +23,11 @@ function statusLabel(status: string): string {
   return status;
 }
 
-function Dashboard() {
+interface DashboardProps {
+  onOpenReport: (runId: number) => void;
+}
+
+function Dashboard({ onOpenReport }: DashboardProps) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [runs, setRuns] = useState<DashboardRun[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +117,7 @@ function Dashboard() {
               <span>Custo</span>
               <span>Tokens</span>
               <span>Status</span>
+              <span>Ações</span>
             </div>
             {runs.map((run) => (
               <div key={run.id} className="dashboard-tr">
@@ -123,6 +128,15 @@ function Dashboard() {
                 <span className="dashboard-mono">{formatNumber(run.tokens)}</span>
                 <span className={`dashboard-status dashboard-status--${run.status}`}>
                   {statusLabel(run.status)}
+                </span>
+                <span>
+                  <button
+                    type="button"
+                    className="dashboard-action"
+                    onClick={() => onOpenReport(run.id)}
+                  >
+                    Ver
+                  </button>
                 </span>
               </div>
             ))}

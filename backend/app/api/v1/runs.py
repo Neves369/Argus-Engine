@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -11,6 +12,7 @@ from app.api.deps import DBSession
 from app.core.config import get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Decision, Finding, Run, Target
+from app.db.models import Session as SessionModel
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.hitl import is_awaiting_review
@@ -20,6 +22,14 @@ from app.schemas.finding import FindingRead
 from app.schemas.review import ReviewCreate
 from app.schemas.run import RunCreate, RunRead
 from app.services.persistence import persist_run_result
+from app.services.run_control import (
+    RunLockedError,
+    active_run,
+    clear_cancel,
+    ensure_no_active_run,
+    is_cancel_requested,
+    request_cancel,
+)
 from app.services.run_executor import execute_run, resume_run
 from app.sources.service import build_sources_service
 
@@ -30,10 +40,19 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+async def _guard_no_active_run(db: DBSession) -> None:
+    try:
+        await ensure_no_active_run(db)
+    except RunLockedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 @router.post("", response_model=RunRead, status_code=status.HTTP_201_CREATED)
 async def create_run(payload: RunCreate, db: DBSession) -> Run:
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
+
+    await _guard_no_active_run(db)
 
     settings = get_settings()
     target_dict = payload.target or {}
@@ -94,16 +113,40 @@ async def list_runs(db: DBSession) -> list[Run]:
 
 @router.get("/stream")
 async def stream_run(
-    target: str,
     db: DBSession,
+    target: str | None = None,
+    session_id: int | None = None,
     devil_mode: bool = False,
     archetypes: list[str] | None = None,
 ):
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
 
+    await _guard_no_active_run(db)
+
+    settings = get_settings()
+    session: SessionModel | None = None
+    target_meta: dict[str, Any] = {"name": target or ""}
+
+    if session_id is not None:
+        session = await db.get(SessionModel, session_id)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        cfg = session.config or {}
+        if archetypes is None:
+            archetypes = cfg.get("archetypes") or None
+        target_meta = cfg.get("target") or {}
+        devil_mode = bool(cfg.get("devil_mode", devil_mode))
+
+    target_name = str(target_meta.get("name") or "")
+    if not target_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Informe 'target' ou um 'session_id' com alvo definido",
+        )
+
     try:
-        validate_scope(target)
+        validate_scope(target_name)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
@@ -115,16 +158,30 @@ async def stream_run(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
             ) from exc
 
-    settings = get_settings()
     run = Run(status="running", started_at=_utcnow())
+    if session is not None:
+        run.session_id = session.id
+        if session.target_id is not None:
+            run.target_id = session.target_id
+        else:
+            new_target = Target(
+                name=target_name,
+                url=target_meta.get("url"),
+                notes=target_meta.get("notes"),
+            )
+            db.add(new_target)
+            await db.flush()
+            session.target_id = new_target.id
+            run.target_id = new_target.id
     db.add(run)
     await db.commit()
     await db.refresh(run)
     run_id = run.id
 
     async def event_stream():
+        yield f"event: start\ndata: {json.dumps({'run_id': run_id})}\n\n"
         state = GraphState(
-            target={"name": target},
+            target=target_meta,
             budget_tokens=settings.default_budget_tokens,
             budget_cost=settings.default_budget_cost,
             devil_mode=devil_mode,
@@ -134,29 +191,61 @@ async def stream_run(
         final = state.model_dump()
         try:
             async for chunk in director.stream(state):
+                if is_cancel_requested(run_id):
+                    run.status = "cancelled"
+                    run.result = final
+                    break
                 for node, update in chunk.items():
                     final.update(update)
                     yield (
                         "event: node\n"
                         f"data: {json.dumps({'node': node, 'update': update}, default=str)}\n\n"
                     )
-            final_state = GraphState.model_validate(final)
-            if is_awaiting_review(final_state):
-                run.status = "pending_review"
             else:
-                run.status = "completed"
-                await persist_run_result(db, run_id, run.target_id, final_state)
-            run.result = final
+                final_state = GraphState.model_validate(final)
+                if is_awaiting_review(final_state):
+                    run.status = "pending_review"
+                else:
+                    run.status = "completed"
+                    await persist_run_result(db, run_id, run.target_id, final_state)
+                run.result = final
         except Exception as exc:  # noqa: BLE001
             run.status = "failed"
             run.error = str(exc)
         finally:
+            clear_cancel(run_id)
             run.finished_at = _utcnow()
 
         await db.commit()
         yield f"event: done\ndata: {json.dumps({'run_id': run_id, 'status': run.status})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/active")
+async def get_active_run(db: DBSession) -> dict[str, Any]:
+    run = await active_run(db)
+    if run is None:
+        return {"active": False, "run_id": None, "status": None}
+    return {"active": True, "run_id": run.id, "status": run.status}
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(run_id: int, db: DBSession) -> dict[str, Any]:
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    if run.status != "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run #{run_id} não está em execução (status '{run.status}')",
+        )
+    request_cancel(run_id)
+    run.status = "cancelled"
+    run.finished_at = _utcnow()
+    await db.commit()
+    await db.refresh(run)
+    return {"status": "ok", "run_id": run_id, "run_status": run.status}
 
 
 @router.get("/{run_id}", response_model=RunRead)

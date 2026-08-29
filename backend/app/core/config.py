@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_name: str = "Argus Engine"
@@ -45,8 +47,29 @@ class Settings(BaseSettings):
         "groq/llama-3.1-8b-instant",
         "openai/gpt-4o-mini",
     ]
+    # Combo ordering strategy: "priority", "fallback", "cost-optimized" or "auto".
+    # See app/llm/router.py:LLMRouter for the semantics of each.
+    llm_strategy: str = "priority"
+
+    # Prefix cache: serve identical (provider, model, messages) requests from
+    # memory instead of re-calling the provider. See app/llm/cache.py.
+    llm_cache_enabled: bool = True
+    llm_cache_ttl_seconds: float = 300.0
+
+    # Prompt compression: normalize whitespace and cap message length before
+    # sending. 0/None disables length capping (whitespace normalization still
+    # runs). See app/llm/compress.py.
+    llm_max_prompt_chars: int = 8000
+
+    # Hardening (Etapa 10): resource limits applied to every CLI tool
+    # subprocess (POSIX only — no-op elsewhere). See app/tools/executor.py.
+    tool_subprocess_memory_limit_mb: int = 512
+    tool_subprocess_max_output_bytes: int = 65_536
 
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    # Env var correspondente: ARGUS_ENCRYPTION_KEY (Fernet de 32 bytes).
+    encryption_key: str = Field(default="", validation_alias="ARGUS_ENCRYPTION_KEY")
 
 
 @lru_cache

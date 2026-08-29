@@ -54,7 +54,7 @@
 .sessions-header,
 .sessions-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.4fr;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
   align-items: center;
   gap: 12px;
 }
@@ -123,4 +123,12 @@
   color: #e78c8c;
   background: rgba(210, 70, 70, 0.12);
   border-color: rgba(210, 70, 70, 0.4);
+}
+
+.sessions-lock-hint {
+  display: block;
+  margin-top: 4px;
+  color: #fca5a5;
+  font-size: 12px;
+  font-style: italic;
 }

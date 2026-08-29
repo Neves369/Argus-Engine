@@ -1,6 +1,9 @@
-import { useState } from 'react';
-import { DEFAULT_SECTIONS, type ModelConfig, type SettingsSection } from '../data/agents';
+"use client";
+
+import { useState, useEffect } from 'react';
 import './Settings.css';
+import { listProviders, setProviderApiKey, setProviderEnabled } from '../api/client';
+import type { ProviderConfig } from '../api/client';
 
 interface SettingsProps {
   onClose: () => void;
@@ -10,84 +13,97 @@ function formatTokens(value: number) {
   return value.toLocaleString('pt-BR');
 }
 
-function sectionTotals(models: ModelConfig[]) {
-  return models.reduce(
-    (acc, model) => ({
-      tokens: acc.tokens + model.tokensUsed,
-      cost: acc.cost + model.cost,
-    }),
-    { tokens: 0, cost: 0 },
-  );
-}
-
 function Settings({ onClose }: SettingsProps) {
-  const [sections, setSections] = useState<SettingsSection[]>(DEFAULT_SECTIONS);
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    () => new Set(DEFAULT_SECTIONS.map((section) => section.id)),
-  );
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [loading, setLoading] = useState(true);
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [cleared, setCleared] = useState(false);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [flash, setFlash] = useState<{type: 'success' | 'error', msg: string} | null>(null);
+  const [hasEncryption, setHasEncryption] = useState(true);
 
-  const allModels = sections.flatMap((section) => section.models);
-  const totalTokens = allModels.reduce((sum, model) => sum + model.tokensUsed, 0);
-  const totalCost = allModels.reduce((sum, model) => sum + model.cost, 0);
+  useEffect(() => {
+    async function loadProviders() {
+      try {
+        const data = await listProviders();
+        setProviders(data.providers || []);
+        setHasEncryption(data.has_encryption_configured);
+        setLoading(false);
+      } catch (err) {
+        setFlash({ type: 'error', msg: `Falha ao carregar provedores: ${err instanceof Error ? err.message : String(err)}` });
+        setLoading(false);
+      }
+    }
+    loadProviders();
+  }, []);
 
-  function updateModel(sectionId: string, modelId: string, patch: Partial<ModelConfig>) {
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id !== sectionId
-          ? section
-          : {
-              ...section,
-              models: section.models.map((model) =>
-                model.id === modelId ? { ...model, ...patch } : model,
-              ),
-            },
-      ),
+  if (loading) {
+    return (
+      <div className="settings">
+        <span>Carregando configurações...</span>
+      </div>
     );
   }
 
-  function toggleSection(sectionId: string) {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(sectionId)) {
-        next.delete(sectionId);
-      } else {
-        next.add(sectionId);
-      }
-      return next;
-    });
-  }
+  const totalTokens = providers.reduce((sum, p) => sum + p.usage_tokens, 0);
+  const totalCost = providers.reduce((sum, p) => sum + p.usage_cost, 0);
 
-  function toggleKeyVisibility(modelId: string) {
+  function toggleKeyVisibility(provider: string) {
     setVisibleKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(modelId)) {
-        next.delete(modelId);
+      if (next.has(provider)) {
+        next.delete(provider);
       } else {
-        next.add(modelId);
+        next.add(provider);
       }
       return next;
     });
-  }
-
-  function clearModelCache(sectionId: string, modelId: string) {
-    updateModel(sectionId, modelId, { tokensUsed: 0, cost: 0 });
   }
 
   function clearAllCache() {
-    setSections((prev) =>
-      prev.map((section) => ({
-        ...section,
-        models: section.models.map((model) => ({ ...model, tokensUsed: 0, cost: 0 })),
-      })),
+    setProviders((prev) =>
+      prev.map((p) => ({ ...p, usage_tokens: 0, usage_cost: 0 }))
     );
     setCleared(true);
     window.setTimeout(() => setCleared(false), 2000);
   }
 
   function restoreDefaults() {
-    setSections(DEFAULT_SECTIONS);
+    setProviders([]);
+  }
+
+  async function handleSetProviderApiKey(provider: string) {
+    const key = keyInputs[provider];
+    if (!key) {
+      setFlash({ type: 'error', msg: 'Por favor, digite uma chave de API.' });
+      return;
+    }
+    try {
+      const result = await setProviderApiKey(provider, key);
+      setFlash({ type: 'success', msg: result.status || 'Chave salva com sucesso!' });
+      setKeyInputs({});
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.provider === provider
+            ? { ...p, has_api_key: true, key_source: 'db' }
+            : p
+        )
+      );
+    } catch (err) {
+      setFlash({ type: 'error', msg: `Falha ao salvar chave: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
+  async function handleSetProviderEnabled(provider: string, enabled: boolean) {
+    try {
+      const result = await setProviderEnabled(provider, enabled);
+      setFlash({ type: result.status === 'ok' ? 'success' : 'error', msg: result.status || 'Atualizado' });
+      setProviders((prev) =>
+        prev.map((p) => (p.provider === provider ? { ...p, enabled } : p))
+      );
+    } catch (err) {
+      setFlash({ type: 'error', msg: `Falha ao atualizar provedor: ${err instanceof Error ? err.message : String(err)}` });
+    }
   }
 
   return (
@@ -103,113 +119,133 @@ function Settings({ onClose }: SettingsProps) {
         </div>
       </div>
 
-      {sections.map((section) => {
-        const isOpen = openSections.has(section.id);
-        const totals = sectionTotals(section.models);
+      {!hasEncryption && (
+        <div className="settings-warning">
+          As chaves de API serão mantidas apenas em memória e perdidas ao reiniciar o
+          servidor. Configure <code>ARGUS_ENCRYPTION_KEY</code> no <code>.env</code> para
+          persistir com segurança.
+        </div>
+      )}
 
-        return (
-          <div key={section.id} className="settings-section">
-            <button
-              type="button"
-              className="settings-section-header"
-              onClick={() => toggleSection(section.id)}
-              aria-expanded={isOpen}
-            >
-              <div className="settings-section-heading">
-                <span className="settings-section-title">{section.title}</span>
-                {section.description && (
-                  <span className="settings-section-description">{section.description}</span>
-                )}
-              </div>
-              <div className="settings-section-meta">
-                <span className="settings-section-totals">
-                  {formatTokens(totals.tokens)} tokens · ${totals.cost.toFixed(2)}
+      {flash && (
+        <div className={`settings-toast ${flash.type}`}>
+          {flash.msg}
+        </div>
+      )}
+
+      {providers.length === 0 ? (
+        <div className="settings-section">
+          <span className="settings-section-title">Não há provedores configurados</span>
+          <span className="settings-section-description">
+            Adicione chaves de API para cada provedor (groq, openrouter, openai).
+          </span>
+        </div>
+      ) : (
+        providers.map((provider) => {
+          const usagePercent = provider.usage_tokens
+            ? Math.min((provider.usage_tokens / (provider.usage_tokens + 1)) * 100, 100)
+            : 0;
+
+          return (
+            <div key={provider.provider} className="settings-section">
+              <div className="settings-section-header">
+                <span className="settings-section-title">
+                  {provider.provider.toUpperCase()} {provider.enabled ? '' : '(desativado)'}
                 </span>
-                <span className={`settings-section-chevron${isOpen ? ' is-open' : ''}`}>▾</span>
+                <span className="settings-section-meta">
+                  {formatTokens(provider.usage_tokens)} tokens ·
+                  ${provider.usage_cost.toFixed(2)}
+                </span>
               </div>
-            </button>
 
-            {isOpen && (
               <div className="settings-section-body">
-                {section.models.map((model) => {
-                  const usage = Math.min((model.tokensUsed / model.tokensLimit) * 100, 100);
+                <div className="settings-model-row">
+                  <span className="settings-model-name">Modelos compatíveis:</span>
+                  <span className="settings-model-model">
+                    {provider.models.map((m) => `#${m}`).join(' ')}
+                  </span>
+                </div>
 
-                  return (
-                    <div
-                      key={model.id}
-                      className={`settings-model${model.enabled ? '' : ' is-disabled'}`}
+                <div className="settings-price-row">
+                  <span className="settings-price-label">Preço</span>
+                  <span className="settings-price-value">
+                    ${provider.price_in.toFixed(2)} in · ${provider.price_out.toFixed(2)} out / 1K tokens
+                  </span>
+                </div>
+
+                <label className="settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={provider.enabled}
+                    onChange={(e) => handleSetProviderEnabled(provider.provider, e.target.checked)}
+                  />
+                  <span className="settings-toggle-slider" />
+                </label>
+
+                <div className="modal-field">
+                  <label className="modal-label" htmlFor={`api-key-${provider.provider}`}>
+                    Chave de API
+                  </label>
+                  <div className="settings-key-row">
+                    <input
+                      id={`api-key-${provider.provider}`}
+                      className="modal-input"
+                      type={visibleKeys.has(provider.provider) ? 'text' : 'password'}
+                      placeholder={provider.key_source ? 'Nova chave (para substituir)' : 'Cole sua chave de API aqui'}
+                      value={keyInputs[provider.provider] || ''}
+                      onChange={(e) => setKeyInputs({ ...keyInputs, [provider.provider]: e.target.value })}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <button
+                      type="button"
+                      className="settings-key-toggle"
+                      onClick={() => handleSetProviderApiKey(provider.provider)}
+                      disabled={!keyInputs[provider.provider]}
+                      aria-label="Salvar chave"
                     >
-                      <div className="settings-model-header">
-                        <div className="settings-model-title">
-                          <span className="settings-model-name">{model.name}</span>
-                          <span className="settings-model-model">{model.model}</span>
-                        </div>
-                        <label className="settings-toggle">
-                          <input
-                            type="checkbox"
-                            checked={model.enabled}
-                            onChange={(e) =>
-                              updateModel(section.id, model.id, { enabled: e.target.checked })
-                            }
-                          />
-                          <span className="settings-toggle-slider" />
-                        </label>
-                      </div>
+                      Salvar chave
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-key-toggle"
+                      onClick={() => toggleKeyVisibility(provider.provider)}
+                      aria-label="Mostrar/ocultar chave"
+                    >
+                      {visibleKeys.has(provider.provider) ? 'Ocultar' : 'Mostrar'}
+                    </button>
+                  </div>
+                  {provider.key_source === 'db' && (
+                    <span className="settings-key-status">Chave salva no banco (cifrada)</span>
+                  )}
+                  {provider.key_source === 'env' && (
+                    <span className="settings-key-status">Chave configurada no ambiente (não exibida)</span>
+                  )}
+                  {!provider.key_source && (
+                    <span className="settings-key-status">
+                      Nenhuma chave configurada — digite acima e clique em &quot;Salvar chave&quot;
+                    </span>
+                  )}
+                </div>
 
-                      <div className="modal-field">
-                        <label className="modal-label" htmlFor={`api-key-${model.id}`}>
-                          Chave de API
-                        </label>
-                        <div className="settings-key-row">
-                          <input
-                            id={`api-key-${model.id}`}
-                            className="modal-input"
-                            type={visibleKeys.has(model.id) ? 'text' : 'password'}
-                            value={model.apiKey}
-                            onChange={(e) =>
-                              updateModel(section.id, model.id, { apiKey: e.target.value })
-                            }
-                            autoComplete="off"
-                            spellCheck={false}
-                          />
-                          <button
-                            type="button"
-                            className="settings-key-toggle"
-                            onClick={() => toggleKeyVisibility(model.id)}
-                            aria-label="Mostrar/ocultar chave"
-                          >
-                            {visibleKeys.has(model.id) ? 'Ocultar' : 'Mostrar'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="settings-usage">
-                        <div className="settings-usage-line">
-                          <span className="settings-usage-text">
-                            {formatTokens(model.tokensUsed)} / {formatTokens(model.tokensLimit)} tokens
-                          </span>
-                          <span className="settings-usage-cost">${model.cost.toFixed(2)}</span>
-                        </div>
-                        <div className="settings-usage-bar">
-                          <div className="settings-usage-fill" style={{ width: `${usage}%` }} />
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="settings-model-clear"
-                        onClick={() => clearModelCache(section.id, model.id)}
-                      >
-                        Limpar cache
-                      </button>
-                    </div>
-                  );
-                })}
+                <div className="settings-usage">
+                  <div className="settings-usage-line">
+                    <span className="settings-usage-text">
+                      {formatTokens(provider.usage_tokens)} tokens
+                    </span>
+                    <span className="settings-usage-cost">
+                      ${provider.usage_cost.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="settings-usage-bar">
+                    <div className="settings-usage-fill" style={{ width: `${usagePercent}%` }} />
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
+            </div>
+          );
+        })
+      )}
 
       <div className="settings-actions">
         <button type="button" className="modal-submit" onClick={clearAllCache}>

@@ -1,0 +1,86 @@
+.finding-card {
+  background: rgba(170, 59, 255, 0.06);
+  border: 1px solid rgba(170, 59, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.finding-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.finding-card-title {
+  font-size: 12px;
+  color: #e9d5ff;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.finding-card-description {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #d6c8ef;
+  word-break: break-word;
+}
+
+.finding-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.finding-card-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(170, 59, 255, 0.14);
+  color: #c4b5fd;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.finding-card-badge--confidence {
+  background: rgba(134, 239, 172, 0.12);
+  color: #86efac;
+  font-weight: 700;
+}
+
+.finding-card-badge--severity {
+  background: rgba(139, 92, 246, 0.18);
+}
+
+.finding-card-badge--sev-critical {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+}
+
+.finding-card-badge--sev-high {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+.finding-card-badge--sev-medium {
+  background: rgba(252, 211, 77, 0.14);
+  color: #fde68a;
+}
+
+.finding-card-badge--sev-low {
+  background: rgba(134, 239, 172, 0.12);
+  color: #86efac;
+}
+
+.finding-card-badge--sev-info {
+  background: rgba(125, 211, 252, 0.14);
+  color: #7dd3fc;
+}
+
+.finding-card-badge--review {
+  background: rgba(252, 211, 77, 0.14);
+  color: #fcd34d;
+}
