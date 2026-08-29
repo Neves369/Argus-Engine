@@ -84,3 +84,76 @@
   background: rgba(252, 211, 77, 0.14);
   color: #fcd34d;
 }
+
+.finding-card-badge--category {
+  background: rgba(196, 181, 253, 0.12);
+  color: #c4b5fd;
+}
+
+.finding-card-badge--cvss {
+  background: rgba(125, 211, 252, 0.12);
+  color: #7dd3fc;
+}
+
+.finding-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.finding-card-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.3px;
+}
+
+.finding-card-chip--cve {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+
+.finding-card-exploits {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #fde68a;
+}
+
+.finding-card-exploit-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fcd34d;
+}
+
+.finding-card-remediation {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #bbf7d0;
+  word-break: break-word;
+}
+
+.finding-card-remediation-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #86efac;
+}
+
+.finding-card-references {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.finding-card-reference {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  color: #9aa1ad;
+  word-break: break-all;
+}

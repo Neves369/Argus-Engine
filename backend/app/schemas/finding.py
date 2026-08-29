@@ -16,6 +16,14 @@ class FindingRead(BaseModel):
     title: str
     description: str | None
     severity: str | None
+    category: str | None
+    affected: str | None
+    cvss_score: float | None
+    cvss_vector: str | None
+    cves: list | None
+    known_exploits: list | None
+    remediation: str | None
+    references: list | None
     confidence: float
     status: str
     score: float | None

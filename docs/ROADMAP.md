@@ -85,6 +85,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
+| 11 | Relatório de Segurança | Achados com substância (severidade/CVE/exploit/remediação) | ✅ Concluída |
 
 ---
 
@@ -467,13 +468,47 @@ recuperação de banco e evidências, e leitura de log.
 
 ---
 
+## Etapa 11 — Relatório de Segurança
+
+**Status:** `[x]` Concluída
+
+**Objetivo:** dar substância ao entregável final — um relatório de pentest/bug bounty que
+responda **o que foi achado, por que é uma vulnerabilidade, qual a gravidade, quais
+CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/status.
+
+**Entregáveis**
+- [x] Modelo de finding estruturado (`app/db/models/finding.py`) com `category`, `affected`,
+  `cvss_score`, `cvss_vector`, `cves`, `known_exploits`, `remediation`, `references`
+  (+ migração Alembic `0c11d25e9cb6` e `FindingRead`).
+- [x] Scanner simulado determinístico (`app/services/demo_findings.py`) — achados de
+  demonstração com a forma final (severidade real, CVE, exploit público, remediação,
+  evidência, referências). É o **seam** onde as ferramentas/APIs reais plugam depois.
+- [x] Arquétipos (Eremita/Carro) emitem achados ricos; severidade vem do dado do achado
+  (não mais derivada da confiança).
+- [x] Relatório estruturado `GET /runs/{id}/report` (`summary` + `findings[]` +
+  `observability`) e `GET /runs/{id}/export` (markdown/JSON/CSV/SARIF) reescritos em
+  torno dos achados; tokens/custo viram apêndice de observabilidade.
+- [x] UI de resultados (`FindingCard` + aba Resultados) com badge de severidade, CVEs,
+  flag de exploit público e remediação; observabilidade recolhível.
+- [x] Política de conteúdo formalizada (`docs/adr/0005-reporting.md`): **relatar ≠ ensinar**.
+
+**Critérios de aceite**
+- [x] Um run concluído reporta achados com severidade, CVEs, exploits conhecidos e
+  remediação (não mais "Candidate signal …" genérico).
+- [x] Tokens/custo não ocupam mais o centro do relatório (apêndice de observabilidade).
+- [x] Tudo determinístico offline (nenhuma dependência de rede/API para gerar o relatório).
+
+---
+
 ## Próximos passos sugeridos
 
-> Lista revisada — os itens de Etapas 1, 2, 3, 4, 5, 6, 8 e 10 originalmente listados aqui já
-> foram entregues (ver status de cada etapa acima). Pendências reais restantes:
+> Lista revisada — os itens de Etapas 1, 2, 3, 4, 5, 6, 8, 10 e 11 originalmente listados
+> aqui já foram entregues (ver status de cada etapa acima). Pendências reais restantes:
 
 1. **Etapa 5** — sandbox real (Docker) para o executor de tools.
 2. **Etapa 7** — economia de tokens (RTK/Caveman) — etapa inteira ainda não iniciada.
+3. **Integração real de ferramentas/fontes** — substituir `demo_findings.py` por um
+   scanner real (tools/fontes) com enriquecimento de CVE/exploit/remediação (o seam já existe).
 
 ## Como manter este documento
 

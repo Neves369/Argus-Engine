@@ -24,12 +24,27 @@ via §5 para liberar. Runs em execução podem ser cancelados com
 **entre nós** do grafo — o nó em andamento termina antes de parar.
 
 **Conferir o resultado de um run:** pela UI, o painel de execução cai na aba
-**Resultados** ao concluir (resumo com tokens, custo, duração e `stop_reason` +
-achados com severidade/descrição); para runs antigos, use **Ver** no Dashboard ou
-em Sessões (abre o mesmo painel em modo somente-leitura). Pela API:
-`GET /runs/{id}` (estado final bruto, em `result`) e `GET /runs/{id}/findings`
-(achados persistidos, com `severity`, `description`, `status` e `score`).
-Exportação JSON/Markdown/CSV segue disponível em `GET /runs/{id}/export`.
+**Resultados** ao concluir (achados em primeiro plano com severidade, CVEs, exploit
+público e remediação; tokens/custo ficam no apêndice "Observabilidade" recolhível).
+Os achados também aparecem **ao vivo** durante a execução: o evento `node` do SSE
+carrega `update.findings`, que a UI ingere direto no painel (não só no fim). O painel
+de run traz ainda botões de **export** (Markdown/JSON/CSV/SARIF) que baixam o
+relatório. Para runs antigos, use **Ver** no Dashboard ou em Sessões (abre o mesmo
+painel em modo somente-leitura). Pela API:
+- `GET /runs/{id}/report` — **relatório estruturado** (`summary` + `findings[]` +
+  `observability` + `trace` + `history` + `started_at`/`finished_at`/`duration_ms`),
+  a forma canônica do "o que foi achado" (consumido pela UI em `finishRun`/`openReport`).
+- `GET /runs/{id}/export?format=markdown` — relatório Markdown legível (severidade,
+  CVSS, CVEs, exploits conhecidos, evidência, remediação, referências).
+- `GET /runs/{id}/export?format=json|csv|sarif` — mesmo conteúdo em JSON/CSV/SARIF 2.1.0.
+- `GET /runs/{id}` (estado final bruto, em `result`) e `GET /runs/{id}/findings`
+  (achados persistidos com todos os campos de relatório).
+
+Cada achado traz `severity` (critical/high/medium/low/info), `category` (CWE/OWASP),
+`cvss_score`/`cvss_vector`, `cves`, `known_exploits` (referência a exploit público),
+`remediation`, `evidence` e `references`. A política de conteúdo está em
+`docs/adr/0005-reporting.md`: **relatar ≠ ensinar** — o relatório carrega inteligência
+de vulnerabilidade, mas não detalha técnica/payload de exploração.
 
 ## 2. Subir o serviço
 

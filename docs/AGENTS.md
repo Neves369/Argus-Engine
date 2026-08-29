@@ -12,7 +12,10 @@ React Flow) com arquétipos visuais estilo tarô.
 
 1. Uso exclusivo em alvos com autorização explícita e escopo definido.
 2. Nenhum detalhe de técnicas de reconhecimento, exploração, payloads ou chaining —
-   apenas arquitetura, abstração e fluxo de dados.
+   apenas arquitetura, abstração e fluxo de dados. **Relatar ≠ ensinar**: o relatório de
+   segurança pode conter classe (CWE/OWASP), severidade (CVSS), CVE IDs, referência a
+   exploit público e remediação; o que segue proibido é detalhar/ensinar a técnica
+   ofensiva em si (ver `docs/adr/0005-reporting.md`).
 3. Controles de segurança operacional, logging completo e kill-switch desde o dia 1.
 4. Modelos abliterados apenas atrás de policy gateway + sandbox + HITL.
 5. Economia de tokens e observabilidade desde o início.
@@ -55,15 +58,19 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
 - `GET /runs/stream` aceita `session_id` para executar uma composição salva pelo
   mesmo fluxo SSE usado no build manual — **não** usar `POST /compositions/{id}/execute`
   (síncrono) quando a UI precisar de log ao vivo/cancelamento.
-- **Resultado final:** findings gerados pelos nós `simulate`/`execute` levam
-  `severity` (determinístico: `low`/`medium`/`high` por faixa de confiança,
-  `high` só ≥ 0.9 para não travar o auto-validate offline) e `description`.
-  O painel do frontend (aba Resultados) e os endpoints `GET /runs/{id}` +
-  `GET /runs/{id}/findings` expõem esses campos; a UI usa a lista persistida
-  (`/findings`) quando disponível e cai para o estado bruto do `result` se vazia.
+- **Resultado final (Etapa 11 — relatório de segurança):** findings carregam
+  substância de pentest — `severity` (real: critical/high/medium/low/info),
+  `category` (CWE/OWASP), `cvss_score`/`cvss_vector`, `cves`, `known_exploits`,
+  `remediation`, `evidence` e `references`. A origem é determinística
+  (`app/services/demo_findings.py`, o "scanner simulado" — seam para as
+  ferramentas/APIs reais), **não** texto livre do LLM. Severidade **não** é mais
+  derivada da confiança. Relatório canônico em `GET /runs/{id}/report`; export em
+  `GET /runs/{id}/export?format=markdown|json|csv|sarif`. Política de conteúdo:
+  **relatar ≠ ensinar** (`docs/adr/0005-reporting.md`).
 - **Ver runs antigos:** Dashboard (**Ver**) e Sessões (**Ver**) abrem o RunPanel em
-  modo somente-leitura via `getRun(id)` + `listFindings(id)` no `App.tsx`
-  (`openReport`). Nenhum endpoint novo é necessário.
+  modo somente-leitura via `getReport(id)` no `App.tsx` (`openReport`/`finishRun`),
+  que já traz `findings`/`summary`/`observability`/`trace`/`history`. O painel também
+  expõe botões de export (Markdown/JSON/CSV/SARIF) via `GET /runs/{id}/export`.
 
 ## Comandos
 

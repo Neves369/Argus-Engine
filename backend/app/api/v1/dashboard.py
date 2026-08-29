@@ -62,9 +62,15 @@ async def dashboard_runs(db: DBSession):
     run_rows = (await db.execute(select(Run).order_by(Run.id.desc()))).scalars().all()
 
     finding_counts: dict[int, int] = defaultdict(int)
-    for row in (await db.execute(select(Finding.run_id))).scalars().all():
-        if row is not None:
-            finding_counts[row] += 1
+    severity_by_run: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for run_id, severity in (
+        await db.execute(select(Finding.run_id, Finding.severity))
+    ).all():
+        if run_id is None:
+            continue
+        finding_counts[run_id] += 1
+        key = (severity or "unknown").lower()
+        severity_by_run[run_id][key] += 1
 
     rows = []
     for run in run_rows:
@@ -74,6 +80,7 @@ async def dashboard_runs(db: DBSession):
             "status": run.status,
             "target": (result.get("target") or {}).get("name"),
             "findings": finding_counts.get(run.id, 0),
+            "by_severity": dict(severity_by_run.get(run.id, {})),
             "cost": round(float(result.get("cost", 0.0)), 6),
             "tokens": int(result.get("tokens_used", 0)),
             "stop_reason": result.get("stop_reason"),

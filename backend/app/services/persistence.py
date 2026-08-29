@@ -19,6 +19,15 @@ def _iso_to_dt(value) -> object | None:
         return None
 
 
+def _as_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def persist_run_result(
     db: AsyncSession, run_id: int, target_id: int | None, state: GraphState
 ) -> None:
@@ -68,6 +77,14 @@ async def persist_run_result(
                 status=status,
                 description=item.get("description"),
                 severity=item.get("severity"),
+                category=item.get("category"),
+                affected=item.get("affected"),
+                cvss_score=_as_float(item.get("cvss_score")),
+                cvss_vector=item.get("cvss_vector"),
+                cves=item.get("cves"),
+                known_exploits=item.get("known_exploits"),
+                remediation=item.get("remediation"),
+                references=item.get("references"),
                 requires_human_review=bool(item.get("requires_human_review", False)),
                 meta=item,
             )

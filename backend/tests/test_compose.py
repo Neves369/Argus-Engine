@@ -37,7 +37,7 @@ def test_director_runs_custom_pipeline():
 
     assert final.stop_reason == "completed"
     assert len(final.history) == 3
-    assert len(final.findings) == 1
+    assert len(final.findings) == 3
 
 
 def test_director_runs_six_archetypes():

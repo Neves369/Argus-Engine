@@ -18,8 +18,7 @@ import {
   cancelRun,
   createComposition,
   getActiveRun,
-  getRun,
-  listFindings,
+  getReport,
   runStream,
   type ActiveRunInfo,
   type ChatMessage,
@@ -50,18 +49,6 @@ function formatTraceStep(step: TraceStep): string {
   if (typeof step.tokens === "number") parts.push(`${step.tokens} tok`);
   if (typeof step.cost === "number") parts.push(`$${step.cost.toFixed(4)}`);
   return parts.join(" · ");
-}
-
-function runDurationMs(startedAt?: string | null, finishedAt?: string | null): number | undefined {
-  if (!startedAt || !finishedAt) return undefined;
-  const start = Date.parse(startedAt);
-  const end = Date.parse(finishedAt);
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return undefined;
-  return end - start;
-}
-
-function stopReasonOf(result: Record<string, unknown>): string | undefined {
-  return typeof result.stop_reason === "string" ? result.stop_reason : undefined;
 }
 
 function App() {
@@ -224,6 +211,11 @@ function App() {
       tokens: typeof update.tokens_used === 'number' ? update.tokens_used : prev.tokens,
       cost: typeof update.cost === 'number' ? update.cost : prev.cost,
     }));
+
+    const liveFindings = update.findings;
+    if (Array.isArray(liveFindings) && liveFindings.length > 0) {
+      setRunFindings(liveFindings as RunFinding[]);
+    }
   }
 
   function beginRun() {
@@ -250,23 +242,17 @@ function App() {
     setRunStatus(status);
     setRunEnded(true);
     try {
-      const [run, persisted] = await Promise.all([getRun(run_id), listFindings(run_id)]);
-      const result = (run.result ?? {}) as Record<string, unknown>;
-      const stateFindings = Array.isArray(result.findings) ? (result.findings as RunFinding[]) : [];
-      const trace = Array.isArray(result.trace) ? (result.trace as TraceStep[]) : [];
-      setRunFindings(persisted.length > 0 ? persisted : stateFindings);
-      setRunTrace(trace);
-      setRunError(run.error ?? null);
+      const report = await getReport(run_id);
+      setRunFindings(report.findings);
+      setRunTrace(report.trace ?? []);
+      setRunError(null);
       setRunMeta((prev) => ({
         ...prev,
-        tokens: typeof result.tokens_used === 'number' ? result.tokens_used : prev.tokens,
-        cost: typeof result.cost === 'number' ? result.cost : prev.cost,
-        target:
-          typeof result.target === 'object' && result.target !== null
-            ? (String((result.target as { name?: unknown }).name ?? '') || prev.target)
-            : prev.target,
-        durationMs: runDurationMs(run.started_at, run.finished_at),
-        stopReason: stopReasonOf(result) ?? prev.stopReason,
+        tokens: report.observability.tokens_used ?? prev.tokens,
+        cost: report.observability.cost ?? prev.cost,
+        target: report.target || prev.target,
+        durationMs: report.duration_ms ?? prev.durationMs,
+        stopReason: report.observability.stop_reason ?? prev.stopReason,
       }));
     } catch {
       // painel segue mostrando os dados ao vivo
@@ -288,13 +274,11 @@ function App() {
     setRunResult(null);
     setRunEnded(true);
     try {
-      const [run, persisted] = await Promise.all([getRun(runNumber), listFindings(runNumber)]);
-      const result = (run.result ?? {}) as Record<string, unknown>;
-      const trace = Array.isArray(result.trace) ? (result.trace as TraceStep[]) : [];
-      const history = Array.isArray(result.history) ? (result.history as HistoryEntry[]) : [];
-      const stateFindings = Array.isArray(result.findings) ? (result.findings as RunFinding[]) : [];
-      setRunStatus(run.status);
-      setRunError(run.error ?? null);
+      const report = await getReport(runNumber);
+      const trace = report.trace ?? [];
+      const history = report.history ?? [];
+      setRunStatus(report.status);
+      setRunError(null);
       setRunTrace(trace);
       setRunLog(
         trace.map((step) => ({ node: step.node ?? '?', text: formatTraceStep(step) })),
@@ -306,16 +290,13 @@ function App() {
           reasoning: String(entry.reasoning ?? ''),
         })),
       );
-      setRunFindings(persisted.length > 0 ? persisted : stateFindings);
+      setRunFindings(report.findings);
       setRunMeta({
-        tokens: typeof result.tokens_used === 'number' ? result.tokens_used : undefined,
-        cost: typeof result.cost === 'number' ? result.cost : undefined,
-        target:
-          typeof result.target === 'object' && result.target !== null
-            ? String((result.target as { name?: unknown }).name ?? '') || undefined
-            : undefined,
-        durationMs: runDurationMs(run.started_at, run.finished_at),
-        stopReason: stopReasonOf(result),
+        tokens: report.observability.tokens_used,
+        cost: report.observability.cost,
+        target: report.target,
+        durationMs: report.duration_ms ?? undefined,
+        stopReason: report.observability.stop_reason,
       });
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));

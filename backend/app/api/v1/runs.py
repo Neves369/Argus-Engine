@@ -306,36 +306,52 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
     return run
 
 
+@router.get("/{run_id}/report")
+async def report_run(run_id: int, db: DBSession):
+    """Structured security report: what was found, severity, exploits, remediation."""
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    result = await db.execute(
+        select(Finding).where(Finding.run_id == run_id).order_by(Finding.id)
+    )
+    findings = list(result.scalars().all())
+    from app.services.export import run_report
+
+    return run_report(run, findings)
+
+
 @router.get("/{run_id}/export")
 async def export_run(run_id: int, db: DBSession, format: str = "json"):
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-    if format == "sarif":
-        from app.services.export import run_findings_sarif
-
-        return PlainTextResponse(run_findings_sarif(run))
 
     result = await db.execute(
         select(Finding).where(Finding.run_id == run_id).order_by(Finding.id)
     )
     findings = list(result.scalars().all())
 
+    if format == "sarif":
+        from app.services.export import run_findings_sarif
+
+        return PlainTextResponse(run_findings_sarif(run, findings))
+
     if format == "json":
         return JSONResponse(
             content=[FindingRead.model_validate(f).model_dump(mode="json") for f in findings]
         )
-    if format == "markdown":
-        lines = ["# Findings", ""]
-        for finding in findings:
-            lines.append(f"## {finding.title}")
-            lines.append(f"- status: {finding.status}")
-            lines.append(f"- confidence: {finding.confidence}")
-            lines.append(f"- severity: {finding.severity or 'n/a'}")
-            if finding.description:
-                lines.append("")
-                lines.append(finding.description)
-            lines.append("")
-        return PlainTextResponse("\n".join(lines))
 
-    raise HTTPException(status_code=400, detail="format must be 'sarif', 'json' or 'markdown'")
+    if format == "markdown":
+        from app.services.export import run_report_markdown
+
+        return PlainTextResponse(run_report_markdown(run, findings))
+
+    if format == "csv":
+        from app.services.export import run_findings_csv
+
+        return PlainTextResponse(run_findings_csv(findings))
+
+    raise HTTPException(
+        status_code=400, detail="format must be 'sarif', 'json', 'markdown' or 'csv'"
+    )

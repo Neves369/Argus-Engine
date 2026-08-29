@@ -6,6 +6,11 @@ function formatConfidence(conf?: number): string {
   return `${Math.round(conf * 100)}%`;
 }
 
+function formatCvss(score?: number | null, vector?: string | null): string | null {
+  if (score === undefined || score === null) return null;
+  return vector ? `${score} ${vector}` : String(score);
+}
+
 function FindingCard({
   finding,
   index,
@@ -15,6 +20,11 @@ function FindingCard({
 }) {
   const title = finding.title ?? finding.id ?? `Achado ${(index ?? 0) + 1}`;
   const severity = finding.severity ?? undefined;
+  const cvss = formatCvss(finding.cvss_score, finding.cvss_vector);
+  const cves = finding.cves?.filter(Boolean) ?? [];
+  const exploits = finding.known_exploits?.filter(Boolean) ?? [];
+  const references = finding.references?.filter(Boolean) ?? [];
+
   return (
     <div className="finding-card">
       <div className="finding-card-head">
@@ -23,14 +33,18 @@ function FindingCard({
           {formatConfidence(finding.confidence)}
         </span>
       </div>
-      {finding.description && (
-        <div className="finding-card-description">{finding.description}</div>
-      )}
+
       <div className="finding-card-meta">
         {severity && (
           <span className={`finding-card-badge finding-card-badge--severity finding-card-badge--sev-${severity}`}>
             {severity}
           </span>
+        )}
+        {finding.category && (
+          <span className="finding-card-badge finding-card-badge--category">{finding.category}</span>
+        )}
+        {cvss && (
+          <span className="finding-card-badge finding-card-badge--cvss">CVSS {cvss}</span>
         )}
         {finding.status && (
           <span className="finding-card-badge">{finding.status}</span>
@@ -39,6 +53,40 @@ function FindingCard({
           <span className="finding-card-badge finding-card-badge--review">requer revisão</span>
         )}
       </div>
+
+      {cves.length > 0 && (
+        <div className="finding-card-chips">
+          {cves.map((cve) => (
+            <span key={cve} className="finding-card-chip finding-card-chip--cve">{cve}</span>
+          ))}
+        </div>
+      )}
+
+      {exploits.length > 0 && (
+        <div className="finding-card-exploits">
+          <span className="finding-card-exploit-label">Exploit público:</span>{' '}
+          {exploits.join('; ')}
+        </div>
+      )}
+
+      {finding.description && (
+        <div className="finding-card-description">{finding.description}</div>
+      )}
+
+      {finding.remediation && (
+        <div className="finding-card-remediation">
+          <span className="finding-card-remediation-label">Remediação:</span>{' '}
+          {finding.remediation}
+        </div>
+      )}
+
+      {references.length > 0 && (
+        <div className="finding-card-references">
+          {references.map((ref) => (
+            <div key={ref} className="finding-card-reference">{ref}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

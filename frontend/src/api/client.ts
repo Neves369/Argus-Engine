@@ -29,6 +29,14 @@ export interface Finding {
   title: string;
   description?: string | null;
   severity?: string | null;
+  category?: string | null;
+  affected?: string | null;
+  cvss_score?: number | null;
+  cvss_vector?: string | null;
+  cves?: string[] | null;
+  known_exploits?: string[] | null;
+  remediation?: string | null;
+  references?: string[] | null;
   confidence: number;
   status: string;
   score?: number | null;
@@ -89,6 +97,14 @@ export interface RunFinding {
   title?: string;
   description?: string | null;
   severity?: string | null;
+  category?: string | null;
+  affected?: string | null;
+  cvss_score?: number | null;
+  cvss_vector?: string | null;
+  cves?: string[] | null;
+  known_exploits?: string[] | null;
+  remediation?: string | null;
+  references?: string[] | null;
   confidence?: number;
   status?: string;
   requires_human_review?: boolean;
@@ -105,6 +121,36 @@ export interface RunMeta {
 export interface RunEndSignal {
   run_id: number;
   status: string;
+}
+
+export type ReportFormat = 'json' | 'markdown' | 'csv' | 'sarif';
+
+export interface ReportSummary {
+  total_findings: number;
+  by_severity: Record<string, number>;
+  pending_review: number;
+}
+
+export interface ReportObservability {
+  tokens_used?: number;
+  cost?: number;
+  confidence?: number;
+  stop_reason?: string;
+}
+
+export interface Report {
+  run_id: number;
+  target?: string;
+  status: string;
+  generated_at?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+  summary: ReportSummary;
+  findings: RunFinding[];
+  observability: ReportObservability;
+  trace?: TraceStep[];
+  history?: HistoryEntry[];
 }
 
 export interface RunStreamOptions {
@@ -135,6 +181,7 @@ export interface DashboardRun {
   status: string;
   target?: string | null;
   findings: number;
+  by_severity?: Record<string, number>;
   cost: number;
   tokens: number;
   stop_reason?: string | null;
@@ -247,6 +294,21 @@ export function getRun(runId: number): Promise<Run> {
 
 export function listFindings(runId: number): Promise<Finding[]> {
   return request<Finding[]>(`/runs/${runId}/findings`);
+}
+
+export function getReport(runId: number): Promise<Report> {
+  return request<Report>(`/runs/${runId}/report`);
+}
+
+export function getReportExport(runId: number, format: ReportFormat): Promise<string> {
+  return fetch(`${BASE_URL}/runs/${runId}/export?format=${format}`).then((res) => {
+    if (!res.ok) {
+      return res.json().then((j) => {
+        throw new Error(j.detail || `Export ${format} falhou: ${res.status}`);
+      });
+    }
+    return res.text();
+  });
 }
 
 export function listCompositions(): Promise<Composition[]> {

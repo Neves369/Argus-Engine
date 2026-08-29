@@ -27,6 +27,31 @@ interface DashboardProps {
   onOpenReport: (runId: number) => void;
 }
 
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info', 'unknown'];
+const SEVERITY_LABELS: Record<string, string> = {
+  critical: 'crit',
+  high: 'high',
+  medium: 'med',
+  low: 'low',
+  info: 'info',
+  unknown: '?',
+};
+
+function SeverityChips({ bySeverity }: { bySeverity?: Record<string, number> }) {
+  if (!bySeverity) return null;
+  const entries = SEVERITY_ORDER.filter((key) => (bySeverity[key] ?? 0) > 0);
+  if (entries.length === 0) return null;
+  return (
+    <span className="dashboard-sev-chips">
+      {entries.map((key) => (
+        <span key={key} className={`dashboard-sev-chip dashboard-sev-chip--${key}`}>
+          {SEVERITY_LABELS[key] ?? key} {bySeverity[key]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function Dashboard({ onOpenReport }: DashboardProps) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [runs, setRuns] = useState<DashboardRun[]>([]);
@@ -123,7 +148,10 @@ function Dashboard({ onOpenReport }: DashboardProps) {
               <div key={run.id} className="dashboard-tr">
                 <span>#{run.id}</span>
                 <span className="dashboard-target">{run.target ?? '—'}</span>
-                <span>{run.findings}</span>
+                <span className="dashboard-findings">
+                  {run.findings}
+                  <SeverityChips bySeverity={run.by_severity} />
+                </span>
                 <span className="dashboard-mono">{formatCost(run.cost)}</span>
                 <span className="dashboard-mono">{formatNumber(run.tokens)}</span>
                 <span className={`dashboard-status dashboard-status--${run.status}`}>

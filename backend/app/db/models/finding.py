@@ -40,6 +40,14 @@ class Finding(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    affected: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cvss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cvss_vector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    cves: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    known_exploits: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    references: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), default=FindingStatus.CANDIDATE.value, nullable=False, index=True

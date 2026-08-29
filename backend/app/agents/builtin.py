@@ -14,45 +14,11 @@ from app.agents.schemas import (
 )
 from app.orchestration.hitl import consume, is_answered, is_approved
 from app.orchestration.state import GraphState
+from app.services.demo_findings import demo_executed_finding, demo_findings
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
-
-
-def _severity_for(confidence: float) -> str:
-    """Deterministic severity derived from confidence (offline-safe).
-
-    `high` only above 0.9: the validation pipeline hard-stops high-severity
-    findings for human review, so the offline deterministic flows (confidence
-    capped at 0.8) keep their auto-validatable path.
-    """
-    if confidence >= 0.9:
-        return "high"
-    if confidence >= 0.6:
-        return "medium"
-    return "low"
-
-
-def _snippet(source: dict) -> str:
-    """Short text excerpt from a source payload, when present."""
-    data = source.get("data")
-    if isinstance(data, dict):
-        for key in ("note", "content", "text", "subject", "summary"):
-            value = data.get(key)
-            if isinstance(value, str) and value.strip():
-                return " ".join(value.split())[:160]
-    return ""
-
-
-def _describe_source(source: dict, target: str, confidence: float) -> str:
-    origin = str(source.get("source") or "source")
-    base = (
-        f"Observed in source '{origin}' for target '{target}' "
-        f"with {confidence:.0%} confidence."
-    )
-    snippet = _snippet(source)
-    return f"{base} {snippet}" if snippet else base
 
 
 def _apply_llm(
@@ -151,47 +117,21 @@ class HermitAgent(BaseArchetype):
         result = await self._attempt(state)
         new_confidence = min(1.0, state.confidence + 0.4)
         sources = await self._collect_sources(state)
+        target = state.target.get("name", "unknown")
 
-        findings = []
-        for idx, source in enumerate(sources):
-            if source.get("status") != "ok":
-                continue
-            findings.append(
-                {
-                    "id": f"F-{len(state.findings) + idx + 1}",
-                    "title": (
-                        f"Signal from {source.get('source', 'source')} "
-                        f"for {state.target.get('name', 'unknown')}"
-                    ),
-                    "confidence": round(new_confidence, 2),
-                    "status": "candidate",
-                    "severity": _severity_for(new_confidence),
-                    "description": _describe_source(
-                        source, state.target.get("name", "unknown"), new_confidence
-                    ),
-                }
-            )
+        # The hermit node loops until the confidence threshold is met; avoid
+        # re-appending the fixed demo set on subsequent passes.
+        existing_ids = {str(f.get("id")) for f in state.findings}
+        findings = [f for f in demo_findings(target) if str(f.get("id")) not in existing_ids]
 
-        finding = {
-            "id": f"F-{len(state.findings) + len(findings) + 1}",
-            "title": f"Candidate signal for {state.target.get('name', 'unknown')}",
-            "confidence": round(new_confidence, 2),
-            "status": "candidate",
-            "severity": _severity_for(new_confidence),
-            "description": (
-                f"Candidate signal for target "
-                f"'{state.target.get('name', 'unknown')}' "
-                f"with {round(new_confidence, 2):.0%} confidence."
-            ),
-        }
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "simulate",
-            "findings": len(findings) + 1,
+            "findings": len(findings),
             "sources_consulted": len(sources),
         }
         update: dict[str, Any] = {
-            "findings": [*state.findings, *findings, finding],
+            "findings": [*state.findings, *findings],
             "confidence": new_confidence,
             "sources": [*state.sources, *sources],
         }
@@ -199,20 +139,6 @@ class HermitAgent(BaseArchetype):
         entry = self.validate_entry(entry)
         update["history"] = [*state.history, entry]
         update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
-
-        # Human-in-the-Loop: a source-derived finding is flagged for review
-        # before the run closes (resumes at justice).
-        if findings and not is_answered(state):
-            flagged = dict(findings[0], requires_human_review=True)
-            update["findings"] = [*state.findings, flagged, *findings[1:], finding]
-            approval = self._request_approval(
-                state,
-                kind="finding_review",
-                context=f"Review candidate finding for {state.target.get('name', 'unknown')}.",
-                proposal=flagged,
-                next_node="justice",
-            )
-            update.update(approval)
 
         return update
 
@@ -358,17 +284,8 @@ class ChariotAgent(BaseArchetype):
         result = await self._attempt(state, devil_mode=True)
         new_confidence = min(1.0, state.confidence + 0.4)
 
-        finding = {
-            "id": f"F-{len(state.findings) + 1}",
-            "title": f"Executed action for {target}",
-            "confidence": round(new_confidence, 2),
-            "status": "candidate",
-            "severity": _severity_for(new_confidence),
-            "description": (
-                f"Executed action against '{target}' "
-                f"with {round(new_confidence, 2):.0%} confidence."
-            ),
-        }
+        finding = demo_executed_finding(target)
+        finding["id"] = f"F-{len(state.findings) + 1}"
         entry = {
             "agent": self.key,
             "action": "execute",

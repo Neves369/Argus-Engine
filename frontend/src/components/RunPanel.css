@@ -79,6 +79,41 @@
   background: rgba(170, 59, 255, 0.25);
 }
 
+.run-panel-export-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.run-panel-export-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(233, 213, 255, 0.55);
+  margin-right: 2px;
+}
+
+.run-panel-export {
+  border: 1px solid rgba(170, 59, 255, 0.35);
+  background: rgba(170, 59, 255, 0.08);
+  color: #d8b4fe;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.run-panel-export:hover:not(:disabled) {
+  background: rgba(170, 59, 255, 0.22);
+}
+
+.run-panel-export:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .run-panel-tabs {
   display: flex;
   gap: 4px;
@@ -228,6 +263,23 @@
   text-transform: uppercase;
   color: #a78bfa;
   margin-top: 4px;
+}
+
+.run-panel-observability {
+  margin-top: 8px;
+}
+
+.run-panel-observability summary {
+  cursor: pointer;
+  font-family: Cinzel, serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9aa1ad;
+}
+
+.run-panel-observability summary:hover {
+  color: #c4b5fd;
 }
 
 .run-panel-table {

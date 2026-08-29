@@ -66,4 +66,7 @@ def test_dashboard_runs(client):
     rows = client.get("/api/v1/dashboard/runs")
     assert rows.status_code == 200
     data = rows.json()
-    assert any(r["id"] == run_id and r["status"] == "completed" for r in data)
+    match = next((r for r in data if r["id"] == run_id), None)
+    assert match is not None
+    assert match["status"] == "completed"
+    assert isinstance(match.get("by_severity"), dict)

@@ -28,6 +28,19 @@ A plataforma implementa controles que não devem ser desativados:
 O `DEVIL_MODE` habilita a execução real de scripts invasivos/destrutivos. Mesmo ativo,
 permanecem obrigatórios: escopo validado, sandbox, kill-switch, auditoria completa e HITL.
 
+## Relatar vs ensinar
+
+O produto final da plataforma é um **relatório de segurança**. Relatar inteligência de
+vulnerabilidade é permitido e esperado:
+
+- classe/classificação (CWE/OWASP), severidade (qualitativa e CVSS);
+- CVE IDs e referência a exploits públicos conhecidos;
+- orientação de remediação/mitigação e evidência observada.
+
+Permanece proibido (em relatório e em prompts): detalhar ou ensinar técnica ofensiva,
+payload, chaining ou passo-a-passo de exploração — bem como executar ataques reais fora do
+Modo Diabo com os controles obrigatórios. Ver `docs/adr/0005-reporting.md`.
+
 ## Relatando vulnerabilidades
 
 Se você encontrou uma vulnerabilidade **nesta plataforma** (não em um alvo), reporte de

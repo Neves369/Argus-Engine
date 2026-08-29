@@ -56,7 +56,8 @@ def test_hermit_uses_llm_result_and_tracks_real_usage(monkeypatch):
     entry = result["history"][-1]
     assert entry["reasoning"] == "pong"
     assert entry["decision"]["mode"] == "judgment"
-    assert result["findings"][-1]["confidence"] == pytest.approx(0.4)
+    assert result["findings"][-1]["severity"] in {"critical", "high", "medium", "low", "info"}
+    assert result["findings"][-1]["cves"] == []
 
 
 def test_hermit_falls_back_deterministic_without_api_key(monkeypatch):

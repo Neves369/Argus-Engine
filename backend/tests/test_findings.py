@@ -23,17 +23,23 @@ def test_findings_are_rich(client, run_id):
     findings = client.get(f"/api/v1/runs/{run_id}/findings").json()
     assert len(findings) >= 1
     for finding in findings:
-        assert finding["severity"] in {"low", "medium", "high"}
+        assert finding["severity"] in {"critical", "high", "medium", "low", "info"}
+        assert finding["category"]
         assert finding["description"]
         assert finding["confidence"] >= 0
+        assert isinstance(finding["cves"], list)
+        assert isinstance(finding["known_exploits"], list)
+        assert isinstance(finding["references"], list)
 
 
 def test_result_findings_are_rich(client, run_id):
     run = client.get(f"/api/v1/runs/{run_id}").json()
     assert len(run["result"]["findings"]) >= 1
     for finding in run["result"]["findings"]:
-        assert finding["severity"] in {"low", "medium", "high"}
+        assert finding["severity"] in {"critical", "high", "medium", "low", "info"}
+        assert finding["category"]
         assert finding["description"]
+        assert finding["remediation"]
 
 
 def test_run_persists_decisions(client, run_id):
@@ -83,7 +89,28 @@ def test_export_json(client, run_id):
 def test_export_markdown(client, run_id):
     response = client.get(f"/api/v1/runs/{run_id}/export", params={"format": "markdown"})
     assert response.status_code == 200
-    assert response.text.startswith("# Findings")
+    assert response.text.startswith("# Relatório de segurança")
+    assert "Remediação" in response.text
+
+
+def test_report(client, run_id):
+    response = client.get(f"/api/v1/runs/{run_id}/report")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == run_id
+    assert body["summary"]["total_findings"] >= 1
+    assert "by_severity" in body["summary"]
+    assert "observability" in body
+    assert body["started_at"] is not None
+    assert body["finished_at"] is not None
+    assert isinstance(body["duration_ms"], int)
+    assert isinstance(body["trace"], list)
+    assert isinstance(body["history"], list)
+    for finding in body["findings"]:
+        assert "severity" in finding
+        assert "cves" in finding
+        assert "known_exploits" in finding
+        assert "remediation" in finding
 
 
 def test_export_bad_format(client, run_id):

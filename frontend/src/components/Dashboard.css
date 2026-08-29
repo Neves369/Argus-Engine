@@ -154,3 +154,56 @@
   background: rgba(210, 70, 70, 0.12);
   border-color: rgba(210, 70, 70, 0.4);
 }
+
+.dashboard-findings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-sev-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.dashboard-sev-chip {
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.dashboard-sev-chip--critical {
+  color: #fca5a5;
+  background: rgba(220, 60, 60, 0.16);
+  border-color: rgba(220, 60, 60, 0.5);
+}
+
+.dashboard-sev-chip--high {
+  color: #fdba74;
+  background: rgba(240, 140, 50, 0.16);
+  border-color: rgba(240, 140, 50, 0.5);
+}
+
+.dashboard-sev-chip--medium {
+  color: #fde68a;
+  background: rgba(240, 200, 60, 0.16);
+  border-color: rgba(240, 200, 60, 0.5);
+}
+
+.dashboard-sev-chip--low {
+  color: #86efac;
+  background: rgba(90, 190, 100, 0.16);
+  border-color: rgba(90, 190, 100, 0.5);
+}
+
+.dashboard-sev-chip--info,
+.dashboard-sev-chip--unknown {
+  color: #c4b5fd;
+  background: rgba(170, 59, 255, 0.16);
+  border-color: rgba(170, 59, 255, 0.5);
+}
