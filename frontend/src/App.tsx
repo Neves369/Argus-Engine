@@ -19,17 +19,21 @@ import {
   createComposition,
   getActiveRun,
   getReport,
+  reviewRun,
   runStream,
   type ActiveRunInfo,
   type ChatMessage,
   type Composition,
   type HistoryEntry,
+  type PendingReview,
+  type ReviewPayload,
   type RunFinding,
   type RunLogLine,
   type RunMeta,
   type StreamEvent,
   type RunEndSignal,
   type TraceStep,
+  type Report,
 } from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
 import { CARD_ARCHETYPES } from "./data/agents";
@@ -79,6 +83,8 @@ function App() {
   const [runMeta, setRunMeta] = useState<RunMeta>({});
   const [runFindings, setRunFindings] = useState<RunFinding[]>([]);
   const [runTrace, setRunTrace] = useState<TraceStep[]>([]);
+  const [runPendingReview, setRunPendingReview] = useState<PendingReview | null>(null);
+  const [runReviewing, setRunReviewing] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
   const lastTraceLenRef = useRef(0);
@@ -228,6 +234,8 @@ function App() {
     setRunMeta({});
     setRunFindings([]);
     setRunTrace([]);
+    setRunPendingReview(null);
+    setRunReviewing(false);
     setRunError(null);
     setRunResult(null);
     setConnectionsOn(true);
@@ -243,20 +251,26 @@ function App() {
     setRunEnded(true);
     try {
       const report = await getReport(run_id);
-      setRunFindings(report.findings);
-      setRunTrace(report.trace ?? []);
-      setRunError(null);
-      setRunMeta((prev) => ({
-        ...prev,
-        tokens: report.observability.tokens_used ?? prev.tokens,
-        cost: report.observability.cost ?? prev.cost,
-        target: report.target || prev.target,
-        durationMs: report.duration_ms ?? prev.durationMs,
-        stopReason: report.observability.stop_reason ?? prev.stopReason,
-      }));
+      applyReport(report);
     } catch {
       // painel segue mostrando os dados ao vivo
     }
+  }
+
+  function applyReport(report: Report) {
+    setRunFindings(report.findings);
+    setRunTrace(report.trace ?? []);
+    setRunError(null);
+    setRunStatus(report.status);
+    setRunPendingReview(report.pending_review ?? null);
+    setRunMeta((prev) => ({
+      ...prev,
+      tokens: report.observability.tokens_used ?? prev.tokens,
+      cost: report.observability.cost ?? prev.cost,
+      target: report.target || prev.target,
+      durationMs: report.duration_ms ?? prev.durationMs,
+      stopReason: report.observability.stop_reason ?? prev.stopReason,
+    }));
   }
 
   async function openReport(runNumber: number) {
@@ -270,6 +284,7 @@ function App() {
     setRunMeta({});
     setRunFindings([]);
     setRunTrace([]);
+    setRunPendingReview(null);
     setRunError(null);
     setRunResult(null);
     setRunEnded(true);
@@ -277,9 +292,6 @@ function App() {
       const report = await getReport(runNumber);
       const trace = report.trace ?? [];
       const history = report.history ?? [];
-      setRunStatus(report.status);
-      setRunError(null);
-      setRunTrace(trace);
       setRunLog(
         trace.map((step) => ({ node: step.node ?? '?', text: formatTraceStep(step) })),
       );
@@ -290,16 +302,28 @@ function App() {
           reasoning: String(entry.reasoning ?? ''),
         })),
       );
-      setRunFindings(report.findings);
-      setRunMeta({
-        tokens: report.observability.tokens_used,
-        cost: report.observability.cost,
-        target: report.target,
-        durationMs: report.duration_ms ?? undefined,
-        stopReason: report.observability.stop_reason,
-      });
+      applyReport(report);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleReview(approved: boolean, note: string) {
+    if (runId == null || runPendingReview == null) return;
+    setRunReviewing(true);
+    try {
+      const payload: ReviewPayload = {
+        approval_id: runPendingReview.id,
+        approved,
+        note: note || undefined,
+      };
+      await reviewRun(runId, payload);
+      const report = await getReport(runId);
+      applyReport(report);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunReviewing(false);
     }
   }
 
@@ -486,7 +510,10 @@ function App() {
           findings={runFindings}
           trace={runTrace}
           error={runError}
+          pendingReview={runPendingReview}
+          reviewing={runReviewing}
           readonly={readOnlyReport}
+          onReview={(approved, note) => void handleReview(approved, note)}
           onCancel={() => void handleCancel()}
           onClose={() => {
             setRunId(null);

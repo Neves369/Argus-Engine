@@ -110,6 +110,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
         "duration_ms": _duration_ms(run.started_at, run.finished_at),
         "trace": (result.get("trace") or []),
         "history": (result.get("history") or []),
+        "pending_review": (result.get("pending_review") or None),
         "summary": {
             "total_findings": len(findings),
             "by_severity": by_severity,

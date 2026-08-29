@@ -69,8 +69,10 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   **relatar ≠ ensinar** (`docs/adr/0005-reporting.md`).
 - **Ver runs antigos:** Dashboard (**Ver**) e Sessões (**Ver**) abrem o RunPanel em
   modo somente-leitura via `getReport(id)` no `App.tsx` (`openReport`/`finishRun`),
-  que já traz `findings`/`summary`/`observability`/`trace`/`history`. O painel também
-  expõe botões de export (Markdown/JSON/CSV/SARIF) via `GET /runs/{id}/export`.
+  que já traz `findings`/`summary`/`observability`/`trace`/`history`/`pending_review`.
+  O painel também expõe botões de export (Markdown/JSON/CSV/SARIF) via
+  `GET /runs/{id}/export` e, para runs `pending_review`, a UI de revisão HITL
+  (**Aprovar**/**Rejeitar** → `POST /runs/{id}/review`) — loop HITL fechado na UI.
 
 ## Comandos
 

@@ -30,7 +30,10 @@ Os achados também aparecem **ao vivo** durante a execução: o evento `node` do
 carrega `update.findings`, que a UI ingere direto no painel (não só no fim). O painel
 de run traz ainda botões de **export** (Markdown/JSON/CSV/SARIF) que baixam o
 relatório. Para runs antigos, use **Ver** no Dashboard ou em Sessões (abre o mesmo
-painel em modo somente-leitura). Pela API:
+painel em modo somente-leitura). Quando um run para em `pending_review` (Modo Diabo),
+o painel mostra a **revisão humana** (contexto + proposta) com botões **Aprovar**/**
+Rejeitar** (mapeia `POST /runs/{id}/review`); o Dashboard rotula a ação como
+**Revisar** nesses casos. Pela API:
 - `GET /runs/{id}/report` — **relatório estruturado** (`summary` + `findings[]` +
   `observability` + `trace` + `history` + `started_at`/`finished_at`/`duration_ms`),
   a forma canônica do "o que foi achado" (consumido pela UI em `finishRun`/`openReport`).

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   ChatMessage,
+  PendingReview,
   ReportFormat,
   RunFinding,
   RunLogLine,
@@ -24,6 +25,9 @@ interface RunPanelProps {
   trace: TraceStep[];
   error?: string | null;
   readonly?: boolean;
+  pendingReview?: PendingReview | null;
+  reviewing?: boolean;
+  onReview: (approved: boolean, note: string) => void;
   onCancel: () => void;
   onClose: () => void;
 }
@@ -58,11 +62,15 @@ function RunPanel({
   trace,
   error,
   readonly = false,
+  pendingReview,
+  reviewing = false,
+  onReview,
   onCancel,
   onClose,
 }: RunPanelProps) {
   const [tab, setTab] = useState<Tab>('results');
   const [exporting, setExporting] = useState<ReportFormat | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevRunningRef = useRef(running);
 
@@ -142,6 +150,50 @@ function RunPanel({
           </button>
         </div>
       </div>
+
+      {status === 'pending_review' && pendingReview && (
+        <div className="run-panel-review">
+          <div className="run-panel-review-title">
+            Revisão humana exigida
+            <span className={`run-panel-review-kind run-panel-review-kind--${pendingReview.kind}`}>
+              {pendingReview.kind}
+            </span>
+          </div>
+          {pendingReview.context && (
+            <p className="run-panel-review-context">{pendingReview.context}</p>
+          )}
+          {pendingReview.proposal && (
+            <pre className="run-panel-review-proposal">
+              {JSON.stringify(pendingReview.proposal, null, 2)}
+            </pre>
+          )}
+          <textarea
+            className="run-panel-review-note"
+            placeholder="Nota (opcional)"
+            value={reviewNote}
+            onChange={(e) => setReviewNote(e.target.value)}
+            rows={2}
+          />
+          <div className="run-panel-review-actions">
+            <button
+              type="button"
+              className="run-panel-review-approve"
+              disabled={reviewing}
+              onClick={() => onReview(true, reviewNote)}
+            >
+              {reviewing ? 'Enviando…' : 'Aprovar'}
+            </button>
+            <button
+              type="button"
+              className="run-panel-review-reject"
+              disabled={reviewing}
+              onClick={() => onReview(false, reviewNote)}
+            >
+              {reviewing ? 'Enviando…' : 'Rejeitar'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="run-panel-tabs" role="tablist">
         <button

@@ -120,6 +120,111 @@
   padding: 8px 10px 0;
 }
 
+.run-panel-review {
+  margin: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(252, 211, 77, 0.5);
+  background: rgba(252, 211, 77, 0.08);
+  border-radius: 10px;
+}
+
+.run-panel-review-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: Cinzel, serif;
+  font-size: 13px;
+  color: #fcd34d;
+  letter-spacing: 0.4px;
+}
+
+.run-panel-review-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid rgba(252, 211, 77, 0.5);
+  color: #fde68a;
+}
+
+.run-panel-review-kind--destructive_action {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.6);
+}
+
+.run-panel-review-context {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #e9d5ff;
+  line-height: 1.4;
+}
+
+.run-panel-review-proposal {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #c4b5fd;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.run-panel-review-note {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(170, 59, 255, 0.3);
+  border-radius: 6px;
+  color: #e9d5ff;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.run-panel-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.run-panel-review-approve,
+.run-panel-review-reject {
+  flex: 1;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.run-panel-review-approve {
+  border: 1px solid rgba(134, 239, 172, 0.6);
+  background: rgba(134, 239, 172, 0.12);
+  color: #86efac;
+}
+
+.run-panel-review-reject {
+  border: 1px solid rgba(252, 165, 165, 0.6);
+  background: rgba(252, 165, 165, 0.12);
+  color: #fca5a5;
+}
+
+.run-panel-review-approve:hover:not(:disabled),
+.run-panel-review-reject:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.run-panel-review-approve:disabled,
+.run-panel-review-reject:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .run-panel-tab {
   border: none;
   border-bottom: 2px solid transparent;

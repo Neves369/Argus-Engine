@@ -163,7 +163,7 @@ function Dashboard({ onOpenReport }: DashboardProps) {
                     className="dashboard-action"
                     onClick={() => onOpenReport(run.id)}
                   >
-                    Ver
+                    {run.status === 'pending_review' ? 'Revisar' : 'Ver'}
                   </button>
                 </span>
               </div>

@@ -138,6 +138,20 @@ export interface ReportObservability {
   stop_reason?: string;
 }
 
+export interface PendingReview {
+  id: string;
+  kind: string;
+  context?: string;
+  proposal?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface ReviewPayload {
+  approval_id: string;
+  approved: boolean;
+  note?: string;
+}
+
 export interface Report {
   run_id: number;
   target?: string;
@@ -151,6 +165,7 @@ export interface Report {
   observability: ReportObservability;
   trace?: TraceStep[];
   history?: HistoryEntry[];
+  pending_review?: PendingReview | null;
 }
 
 export interface RunStreamOptions {
@@ -308,6 +323,13 @@ export function getReportExport(runId: number, format: ReportFormat): Promise<st
       });
     }
     return res.text();
+  });
+}
+
+export function reviewRun(runId: number, payload: ReviewPayload): Promise<Run> {
+  return request<Run>(`/runs/${runId}/review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
