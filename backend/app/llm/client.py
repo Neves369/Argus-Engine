@@ -39,8 +39,11 @@ class UnifiedClient:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> CompletionResult:
-        max_chars = get_settings().llm_max_prompt_chars
-        messages = compress_messages(messages, max_chars=max_chars)
+        settings = get_settings()
+        max_chars = settings.llm_max_prompt_chars
+        messages = compress_messages(
+            messages, max_chars=max_chars, caveman=settings.caveman_prompts
+        )
         # Hardening (Etapa 10): never forward a secret-shaped string to a
         # third-party provider, even if it slipped into a node's context.
         messages = [ChatMessage(role=m.role, content=redact(m.content)) for m in messages]

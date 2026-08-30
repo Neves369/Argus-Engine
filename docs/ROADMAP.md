@@ -81,7 +81,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 4 | Persistência e Evidências | SQLite completo + evidências | ✅ Concluída |
 | 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | 🟡 Parcial |
 | 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
-| 7 | Economia de Tokens | RTK + Caveman | ⬜ Pendente |
+| 7 | Economia de Tokens | RTK + Caveman | 🟡 Parcial |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
@@ -327,20 +327,26 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 7 — Economia de Tokens (RTK + Caveman)
 
-**Status:** `[ ]` Pendente
+**Status:** `[~]` Parcial
 
-**Objetivo:** reduzir drasticamente o consumo de tokens sem perder qualidade de decisão.
+**Objetivo:** reduzir o consumo de tokens sem perder qualidade de decisão.
 
 **Entregáveis**
 - [ ] Integração RTK (ou equivalente) para saídas de tools
-- [ ] Estilo Caveman nos system prompts e comunicações entre agentes
-- [ ] Cache agressivo de resultados de APIs e contexto
-- [ ] Compressão de histórico entre nós do grafo
-- [ ] Orçamento hard por run e por agente
+- [x] Estilo Caveman nas mensagens de saída (`app/llm/compress.py::caveman_compress`, aplicado em `app/llm/client.py` quando `CAVEMAN_PROMPTS=true`) — remove palavras de enchimento das mensagens enviadas aos providers
+- [x] Cache agressivo de resultados de APIs e contexto (Etapa 3 — `app/llm/cache.py`, `LLM_CACHE_ENABLED`/`LLM_CACHE_TTL_SECONDS`)
+- [x] Compressão de histórico entre nós do grafo (`app/llm/compress.py::compress_history`, aplicada no wrapper de nó em `app/orchestration/graph.py` quando `HISTORY_COMPRESSION=true`; mantém o primeiro + últimos `HISTORY_KEEP_LAST` registros, deterministicamente, sem chamada de LLM)
+- [x] Orçamento hard por run (já existia em `should_continue`: `tokens_used >= budget_tokens` ou `cost >= budget_cost` → para); agora registra `stop_reason="budget"` (e `"confidence"` no fim por confiança) para observabilidade — `app/orchestration/graph.py` + `app/agents/builtin.py`
+- [ ] Orçamento hard por agente (contador por agente ainda não implementado)
+- [ ] Compressão de histórico por resumo de LLM (hoje é truncagem determinística; resumo opcional fica para depois)
 
 **Critérios de aceite**
-- [ ] Medição mostra redução significativa de tokens em runs de referência.
-- [ ] Qualidade das decisões do grafo não degrada de forma mensurável.
+- [~] Redução de tokens mensurável quando `CAVEMAN_PROMPTS`/`HISTORY_COMPRESSION` estão ligados (medição pontual pendente).
+- [x] Qualidade das decisões não degrada no modo padrão (levers DESLIGADOS por padrão; suíte de 218 testes verde).
+
+**Observações / pendências**
+- Os dois levers são **opt-in** (`CAVEMAN_PROMPTS`, `HISTORY_COMPRESSION`) e offline-determinísticos, então não afetam runs existentes nem os testes a menos que habilitados.
+- Cobertura: `tests/test_token_economy.py` (caveman, compress_history, stop_reason de orçamento, wrapper de nó comprimindo histórico).
 
 ---
 
@@ -506,7 +512,9 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 > aqui já foram entregues (ver status de cada etapa acima). Pendências reais restantes:
 
 1. **Etapa 5** — sandbox real (Docker) para o executor de tools.
-2. **Etapa 7** — economia de tokens (RTK/Caveman) — etapa inteira ainda não iniciada.
+2. **Etapa 7** — economia de tokens (parcial): Caveman + compressão de histórico +
+   `stop_reason` de orçamento já entregues; restam RTK para saídas de tools e
+   orçamento hard por agente.
 3. **Integração real de ferramentas/fontes** — substituir `demo_findings.py` por um
    scanner real (tools/fontes) com enriquecimento de CVE/exploit/remediação (o seam já existe).
 

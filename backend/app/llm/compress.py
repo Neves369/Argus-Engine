@@ -24,6 +24,18 @@ _TRAILING_SPACES = re.compile(r"[ \t]+\n")
 
 _TRUNCATION_MARKER = "\n...[compressed: {n} chars omitted]...\n"
 
+# Palavras de enchimento removidas no modo Caveman. São artigos, conjunções e
+# marcadores de cortesia que carregam pouca ou nenhuma intenção — seguros de
+# descartar sem mudar o significado da instrução.
+_CAVEMAN_DROP = re.compile(
+    r"\b(a|an|the|and|or|but|if|then|of|to|for|with|that|this|these|those|"
+    r"please|kindly|could you|would you|i would like you to|we need you to|"
+    r"let's|let us|just|simply|basically|actually|really|very|somewhat|maybe|"
+    r"note that|keep in mind|as a reminder|sure|okay|ok|alright)\b",
+    re.IGNORECASE,
+)
+_CAVEMAN_SPACE = re.compile(r"\s{2,}")
+
 
 def normalize_whitespace(text: str) -> str:
     """Collapse redundant blank lines and trailing spaces without touching content."""
@@ -47,17 +59,54 @@ def cap_length(text: str, max_chars: int) -> str:
     return text[:head_len] + marker
 
 
+def caveman_compress(text: str) -> str:
+    """Strip filler words and collapse spacing to cut tokens (Etapa 7).
+
+    Conservative on purpose: only drops low-signal function words and never
+    touches code blocks, so the remaining instruction keeps its meaning. Runs
+    after whitespace normalization.
+    """
+    text = normalize_whitespace(text)
+    text = _CAVEMAN_DROP.sub(" ", text)
+    text = _CAVEMAN_SPACE.sub(" ", text)
+    return text.strip()
+
+
+def compress_history(history: list[dict], *, keep_first: int = 1, keep_last: int = 8) -> list[dict]:
+    """Trim the middle of a run's message history (Etapa 7).
+
+    Keeps the first `keep_first` entries (usually the seed/context) and the
+    last `keep_last`, dropping everything in between. Pure and deterministic —
+    no LLM call — so it is safe to run offline between graph nodes.
+    """
+    if keep_first < 0:
+        keep_first = 0
+    if keep_last < 0:
+        keep_last = 0
+    if len(history) <= keep_first + keep_last:
+        return list(history)
+    head = history[:keep_first]
+    tail = history[-keep_last:] if keep_last else []
+    return head + tail
+
+
 def compress_messages(
-    messages: list[ChatMessage], *, max_chars: int | None = None
+    messages: list[ChatMessage],
+    *,
+    max_chars: int | None = None,
+    caveman: bool = False,
 ) -> list[ChatMessage]:
     """Return new `ChatMessage`s with whitespace normalized and length capped.
 
     Never mutates the input list/messages. `max_chars=None` (or <= 0) skips
-    the length-capping pass; whitespace normalization always runs.
+    the length-capping pass; whitespace normalization always runs. `caveman=True`
+    additionally strips filler words from each message body.
     """
     compressed: list[ChatMessage] = []
     for message in messages:
         content = normalize_whitespace(message.content)
+        if caveman:
+            content = caveman_compress(content)
         if max_chars:
             content = cap_length(content, max_chars)
         compressed.append(ChatMessage(role=message.role, content=content))

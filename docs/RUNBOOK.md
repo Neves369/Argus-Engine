@@ -83,6 +83,8 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `ALLOWED_SCOPES` | Allowlist de alvos. Um run contra alvo fora da lista é recusado antes de gastar qualquer token. |
 | `LLM_STRATEGY` | `priority`\|`fallback`\|`cost-optimized`\|`auto` — como o gateway ordena os providers. Trocar para `cost-optimized` é a alavanca mais rápida se o custo de LLM subir inesperadamente. |
 | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL_SECONDS` | Cache de prefixo em memória (por processo). Desligar (`false`) se estiver depurando um provider e precisar garantir que toda chamada é real. |
+| `CAVEMAN_PROMPTS` | `true` remove palavras de enchimento das mensagens enviadas aos providers (Economia de Tokens, Etapa 7). **Desligado por padrão.** |
+| `HISTORY_COMPRESSION` / `HISTORY_KEEP_LAST` | `true` trunca o histórico entre nós do grafo (mantém o primeiro + últimos N=8 registros), cortando tokens de contexto. **Desligado por padrão** (opt-in). |
 | `TOOL_SUBPROCESS_MEMORY_LIMIT_MB` / `TOOL_SUBPROCESS_MAX_OUTPUT_BYTES` | Limites de recurso por invocação de tool CLI (§6.3). Suba o de memória se uma tool legítima estiver sendo matada por OOM do próprio limite. |
 | `DATABASE_URL` | Aponta para o SQLite. Trocar exige rodar `alembic upgrade head` contra o novo arquivo antes do primeiro boot. |
 | `EVIDENCE_DIR` | Onde os arquivos de evidência (hash SHA-256) são gravados. Precisa ser volume persistente e com backup — ver §7.2. |

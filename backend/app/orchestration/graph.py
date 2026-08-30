@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 from app.agents import get_archetype
 from app.core.config import get_settings
 from app.core.security import is_devil_mode_enabled, is_kill_switch_active
+from app.llm.compress import compress_history
 from app.orchestration.hitl import is_answered, resolve
 from app.orchestration.state import GraphState
 
@@ -26,6 +27,16 @@ def _provisioned(
     async def node(state: GraphState) -> dict:
         if provision is not None:
             provision(state)
+        settings = get_settings()
+        if (
+            settings.history_compression
+            and len(state.history) > settings.history_keep_last + 1
+        ):
+            state.history = compress_history(
+                state.history,
+                keep_first=1,
+                keep_last=settings.history_keep_last,
+            )
         result = await fn(state)
         return result
 
@@ -71,8 +82,12 @@ def should_continue(state: GraphState) -> str:
     if is_kill_switch_active():
         return "stop"
     if state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
+        if state.stop_reason is None:
+            state.stop_reason = "budget"
         return "stop"
     if state.confidence >= settings.confidence_threshold:
+        if state.stop_reason is None:
+            state.stop_reason = "confidence"
         return "stop"
 
     return route_after_director(state)

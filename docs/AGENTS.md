@@ -81,7 +81,15 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   que já traz `findings`/`summary`/`observability`/`trace`/`history`/`pending_review`.
   O painel também expõe botões de export (Markdown/JSON/CSV/SARIF) via
   `GET /runs/{id}/export` e, para runs `pending_review`, a UI de revisão HITL
-  (**Aprovar**/**Rejeitar** → `POST /runs/{id}/review`) — loop HITL fechado na UI.
+  (**Aprovar**/**Rejeitar** → `POST /runs/{id}/review`) —   loop HITL fechado na UI.
+- **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`
+  remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
+  `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo
+  (mantém primeiro + últimos `HISTORY_KEEP_LAST`, determinístico, sem LLM) no wrapper de
+  nó em `app/orchestration/graph.py`. Orçamento hard por run já existe em
+  `should_continue` e agora registra `stop_reason="budget"`/`"confidence"`. Nunca ligue
+  esses levers em testes (quebrariam a determinância do grafo simulado) nem os deixe
+  ativos sem querer em produção sem medir o impacto nas decisões.
 
 ## Comandos
 

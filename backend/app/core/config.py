@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     # runs). See app/llm/compress.py.
     llm_max_prompt_chars: int = 8000
 
+    # Economia de tokens (Etapa 7) — ambos DESLIGADOS por padrão. Veja
+    # app/llm/compress.py e app/orchestration/graph.py.
+    # Caveman: remove palavras de enchimento (artigos/conjunções) das mensagens
+    # de saída para cortar tokens sem mudar a intenção.
+    caveman_prompts: bool = False
+    # Compressão de histórico entre nós: mantém o primeiro + os últimos N
+    # registros e descarta o meio, reduzindo o contexto passado a cada agente.
+    history_compression: bool = False
+    history_keep_last: int = 8
+
     # Hardening (Etapa 10): resource limits applied to every CLI tool
     # subprocess (POSIX only — no-op elsewhere). See app/tools/executor.py.
     tool_subprocess_memory_limit_mb: int = 512

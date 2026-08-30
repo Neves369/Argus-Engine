@@ -371,9 +371,16 @@ class JusticeAgent(BaseArchetype):
             "candidates": len(state.findings),
             "sources": len(state.sources),
         }
+        # Preserva uma razão de parada final já definida (ex.: estouro de
+        # orçamento em should_continue); não herda "pending_review" de uma
+        # parada HITL anterior — o nó final sempre encerra como "completed".
+        if state.stop_reason in ("budget", "confidence"):
+            final_reason = state.stop_reason
+        else:
+            final_reason = "completed"
         update: dict[str, Any] = {
             "next_agent": None,
-            "stop_reason": "completed",
+            "stop_reason": final_reason,
         }
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         entry = self.validate_entry(entry)
