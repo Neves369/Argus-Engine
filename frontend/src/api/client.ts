@@ -269,6 +269,15 @@ export function setProviderEnabled(provider: string, enabled: boolean): Promise<
 
 const BASE_URL = '/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -276,7 +285,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
-    throw new Error(`API ${path} failed: ${response.status}`);
+    let detail = `API ${path} failed: ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === 'string') detail = body.detail;
+    } catch {
+      // keep status-based detail
+    }
+    throw new ApiError(response.status, detail);
   }
   return response.json() as Promise<T>;
 }
@@ -411,8 +427,8 @@ export function logout(): Promise<{ authenticated: boolean }> {
   return request<{ authenticated: boolean }>('/auth/logout', { method: 'POST' });
 }
 
-export function getMe(): Promise<{ authenticated: boolean }> {
-  return request<{ authenticated: boolean }>('/auth/me');
+export function getMe(): Promise<{ authenticated: boolean; ui_enabled: boolean }> {
+  return request<{ authenticated: boolean; ui_enabled: boolean }>('/auth/me');
 }
 
 export function cancelRun(runId: number): Promise<{ status: string; run_id: number; run_status: string }> {
