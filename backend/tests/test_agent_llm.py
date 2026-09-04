@@ -56,8 +56,6 @@ def test_hermit_uses_llm_result_and_tracks_real_usage(monkeypatch):
     entry = result["history"][-1]
     assert entry["reasoning"] == "pong"
     assert entry["decision"]["mode"] == "judgment"
-    assert result["findings"][-1]["severity"] in {"critical", "high", "medium", "low", "info"}
-    assert result["findings"][-1]["cves"] == []
 
 
 def test_hermit_falls_back_deterministic_without_api_key(monkeypatch):
@@ -90,7 +88,10 @@ def test_hermit_falls_back_on_provider_error():
 
 
 @respx.mock
-def test_chariot_requires_approval_then_executes():
+def test_chariot_requires_approval_then_reports_no_backend():
+    """No real destructive-execution backend ships with Argus Engine by design
+    (see ADR on Devil Mode scope) — once approved, Chariot must honestly report
+    that nothing was executed rather than fabricating a success finding."""
     respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
         return_value=_ok_response("llama-3.3-70b-versatile")
     )
@@ -110,8 +111,10 @@ def test_chariot_requires_approval_then_executes():
     result = _run("chariot", state2)
 
     entry = result["history"][-1]
-    assert entry["action"] == "execute"
-    assert result["findings"][-1]["title"].startswith("Executed action")
+    assert entry["action"] == "no_backend"
+    assert "nenhum backend" in entry["note"].lower()
+    # Never a fabricated success record — no finding is invented.
+    assert "findings" not in result or result["findings"] == []
 
 
 @respx.mock

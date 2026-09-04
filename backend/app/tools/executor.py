@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import json
 import logging
 import time
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.llm.compress import compact_tool_output
 from app.tools.registry import ToolRegistry
 from app.tools.spec import ToolKind, ToolSpec
 
@@ -40,6 +42,20 @@ def _apply_subprocess_limits(memory_mb: int) -> None:
         resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
     with contextlib.suppress(ValueError, OSError):
         resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
+
+
+def _compact_json_body(text: str) -> str:
+    """If `text` is JSON, strip structural noise and re-serialize minified.
+
+    Falls back to whitespace-trimmed plain text when it isn't valid JSON —
+    never raises on non-JSON tool output.
+    """
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        return " ".join(text.split())
+    compacted = compact_tool_output(parsed)
+    return json.dumps(compacted, separators=(",", ":"), ensure_ascii=False)
 
 
 def _truncate_output(data: bytes, max_bytes: int) -> tuple[str, bool]:
@@ -104,6 +120,8 @@ class ToolExecutor:
                 "duration_ms": round((time.monotonic() - started) * 1000, 2),
             },
         )
+        if get_settings().tool_output_compression:
+            result = compact_tool_output(result)
         return result
 
     async def _execute_http(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
@@ -122,7 +140,10 @@ class ToolExecutor:
             raise ToolExecutionError(
                 f"Tool {tool.name} returned {response.status_code}: {response.text[:200]}"
             )
-        return {"tool": tool.name, "status_code": response.status_code, "body": response.text}
+        result = {"tool": tool.name, "status_code": response.status_code, "body": response.text}
+        if get_settings().tool_output_compression:
+            result["body"] = _compact_json_body(response.text)
+        return result
 
     async def _execute_cli(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
         if not tool.command:

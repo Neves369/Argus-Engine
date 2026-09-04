@@ -6,6 +6,7 @@ import CharacterPanel from "./components/CharacterPanel";
 import Dashboard from "./components/Dashboard";
 import DeathOverlay from "./components/DeathOverlay";
 import EndTurnButton from "./components/EndTurnButton";
+import NewSessionButton from "./components/NewSessionButton";
 import EnemyForm from "./components/EnemyForm";
 import Hand from "./components/Hand";
 import Login from "./components/Login";
@@ -37,7 +38,7 @@ import {
   type Report,
 } from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
-import { CARD_ARCHETYPES } from "./data/agents";
+import { CARD_AGENT_IDS } from "./data/agents";
 import "./App.css";
 
 function formatDuration(ms?: number): string {
@@ -113,7 +114,7 @@ function App() {
   useEffect(() => {
     setNodes((prev) =>
       prev.map((node) => {
-        const isActive = CARD_ARCHETYPES[node.data.id] === activeArchetype;
+        const isActive = CARD_AGENT_IDS[node.data.id] === activeArchetype;
         return {
           ...node,
           data: {
@@ -194,9 +195,44 @@ function App() {
     window.setTimeout(() => setReturnedCard(undefined), 100);
   }
 
+  function handleNewSession() {
+    const hasSomethingToLose =
+      nodes.length > 0 || runId !== null || historyRunId !== null || enemyInfo.name.trim() !== '';
+    if (hasSomethingToLose) {
+      const confirmed = window.confirm(
+        'Iniciar uma nova sessão? Isso limpa o alvo, as cartas jogadas e o relatório atual.',
+      );
+      if (!confirmed) return;
+    }
+
+    setNodes([]);
+    setEdges([]);
+    setActiveArchetype(null);
+    setRunEnded(false);
+    setEnemyInfo({ name: '', url: '', notes: '' });
+    setRunId(null);
+    setHistoryRunId(null);
+    setRunStatus(null);
+    setRunLog([]);
+    setChat([]);
+    setRunMeta({});
+    setRunFindings([]);
+    setRunTrace([]);
+    setRunPendingReview(null);
+    setRunError(null);
+    setRunResult(null);
+    lastTraceLenRef.current = 0;
+    lastHistoryLenRef.current = 0;
+    try {
+      localStorage.removeItem('argus.lastRunId');
+    } catch {
+      // localStorage indisponível; ignora
+    }
+  }
+
   function currentArchetypes(): string[] {
     const sorted = [...nodes].sort((a, b) => a.position.x - b.position.x);
-    return sorted.map((node) => CARD_ARCHETYPES[node.data.id]);
+    return sorted.map((node) => CARD_AGENT_IDS[node.data.id]);
   }
 
   function ingestEvent(event: StreamEvent): void {
@@ -448,7 +484,7 @@ function App() {
     setRunEnded(false);
     const archetypes = composition.config?.archetypes ?? [];
     const idByArchetype: Record<string, number> = {};
-    for (const [strId, key] of Object.entries(CARD_ARCHETYPES)) {
+    for (const [strId, key] of Object.entries(CARD_AGENT_IDS)) {
       idByArchetype[key] = Number(strId);
     }
 
@@ -524,6 +560,15 @@ function App() {
         onConnect={() => undefined}
       />
       <DeathOverlay intensity={deathMode ? 'full' : 'light'} />
+      <NewSessionButton
+        onClick={handleNewSession}
+        disabled={busy || runLocked}
+        hint={
+          runLocked
+            ? `Há um run ativo (#${activeRun.run_id}, ${activeRun.status}) — aguarde para iniciar uma nova sessão.`
+            : undefined
+        }
+      />
       <EndTurnButton
         active={connectionsOn}
         onClick={handleRun}

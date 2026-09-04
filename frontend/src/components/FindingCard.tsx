@@ -73,6 +73,13 @@ function FindingCard({
         <div className="finding-card-description">{finding.description}</div>
       )}
 
+      {finding.evidence && (
+        <div className="finding-card-evidence">
+          <span className="finding-card-evidence-label">Evidência (dado real consultado):</span>
+          <span className="finding-card-evidence-text">{finding.evidence}</span>
+        </div>
+      )}
+
       {finding.remediation && (
         <div className="finding-card-remediation">
           <span className="finding-card-remediation-label">Remediação:</span>{' '}

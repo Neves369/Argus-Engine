@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import enum
-from typing import Any
+import ipaddress
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +10,15 @@ from pydantic import BaseModel, Field
 class SourceKind(enum.StrEnum):
     HTTP = "http"
     CVE = "cve"
+
+
+def looks_like_ip(value: str) -> bool:
+    """True if `value` parses as an IPv4/IPv6 address (vs. a hostname/domain)."""
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
 
 
 class DataSourceSpec(BaseModel):
@@ -24,7 +34,25 @@ class DataSourceSpec(BaseModel):
     url: str | None = None
     method: str = "GET"
     params_template: dict[str, Any] = Field(default_factory=dict)
+    #: Static request headers, merged into every call. A value of the exact
+    #: form ``"${ENV_VAR}"`` is resolved from the process environment at
+    #: request time (never stored as a literal secret in the manifest); if
+    #: the variable is unset, that header is simply omitted rather than sent
+    #: as the literal placeholder string.
+    headers_template: dict[str, str] = Field(default_factory=dict)
     timeout: float = 10.0
     rate_limit: float = 0.0
     ttl: int = 3600
     fields: list[str] = Field(default_factory=list)
+    #: Name of the parameter the collector's generic query value is placed
+    #: under when calling this source (e.g. ``"ipAddress"`` for AbuseIPDB,
+    #: ``"keywordSearch"`` for NVD). Also matches a ``{name}`` placeholder in
+    #: ``url`` for path-style APIs (e.g. ``http://ip-api.com/json/{query}``).
+    query_param: str = "q"
+    #: What kind of target this source is meaningful for. The generic,
+    #: per-run OSINT sweep (``BaseArchetype._collect_sources``) only calls a
+    #: source automatically when the run's target matches: "domain" sources
+    #: skip IP targets and vice versa; "cve" sources are never called by the
+    #: generic sweep (they need an actual CVE ID, supplied via a direct
+    #: `POST /sources/{name}/query` call instead); "any" always matches.
+    target_kind: Literal["any", "domain", "ip", "cve"] = "any"

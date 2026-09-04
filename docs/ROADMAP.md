@@ -81,8 +81,8 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 4 | Persistência e Evidências | SQLite completo + evidências | ✅ Concluída |
 | 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | 🟡 Parcial |
 | 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
-| 7 | Economia de Tokens | RTK + Caveman | 🟡 Parcial |
-| 8 | Interface e Composição Visual | Canvas de arquétipos | 🟡 Parcial |
+| 7 | Economia de Tokens | RTK + Caveman | ✅ Concluída |
+| 8 | Interface e Composição Visual | Canvas de arquétipos | ✅ Concluído |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
 | 11 | Relatório de Segurança | Achados com substância (severidade/CVE/exploit/remediação) | ✅ Concluída |
@@ -327,26 +327,55 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 7 — Economia de Tokens (RTK + Caveman)
 
-**Status:** `[~]` Parcial
+**Status:** `[x]` Concluída (compressão de histórico por resumo de LLM permanece deliberadamente adiada — ver observações)
 
 **Objetivo:** reduzir o consumo de tokens sem perder qualidade de decisão.
 
 **Entregáveis**
-- [ ] Integração RTK (ou equivalente) para saídas de tools
+- [x] Compactação de saída de tools ("RTK ou equivalente") — `app/llm/compress.py::compact_tool_output`,
+      aplicada em `app/tools/executor.py` quando `TOOL_OUTPUT_COMPRESSION=true`: remove
+      recursivamente chaves/itens nulos ou vazios (nunca remove `0`/`False`, que são dado real)
+      e reserializa o corpo JSON de respostas HTTP de forma minificada. Nenhum agente hoje
+      injeta saída de tool diretamente num prompt de LLM — é infraestrutura pronta para quando
+      isso acontecer, mas já reduz de verdade o JSON que a API de tools devolve ao operador.
 - [x] Estilo Caveman nas mensagens de saída (`app/llm/compress.py::caveman_compress`, aplicado em `app/llm/client.py` quando `CAVEMAN_PROMPTS=true`) — remove palavras de enchimento das mensagens enviadas aos providers
 - [x] Cache agressivo de resultados de APIs e contexto (Etapa 3 — `app/llm/cache.py`, `LLM_CACHE_ENABLED`/`LLM_CACHE_TTL_SECONDS`)
 - [x] Compressão de histórico entre nós do grafo (`app/llm/compress.py::compress_history`, aplicada no wrapper de nó em `app/orchestration/graph.py` quando `HISTORY_COMPRESSION=true`; mantém o primeiro + últimos `HISTORY_KEEP_LAST` registros, deterministicamente, sem chamada de LLM)
 - [x] Orçamento hard por run (já existia em `should_continue`: `tokens_used >= budget_tokens` ou `cost >= budget_cost` → para); agora registra `stop_reason="budget"` (e `"confidence"` no fim por confiança) para observabilidade — `app/orchestration/graph.py` + `app/agents/builtin.py`
-- [ ] Orçamento hard por agente (contador por agente ainda não implementado)
-- [ ] Compressão de histórico por resumo de LLM (hoje é truncagem determinística; resumo opcional fica para depois)
+- [x] Orçamento hard por agente — `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT` (desligado por
+      padrão), checado em `should_continue` contra o PRÓXIMO agente que executaria (relevante só
+      para Eremita/Carro no modo padrão, que podem repetir); motivo de parada `stop_reason="agent_budget"`.
+      Contadores acumulados por agente em `GraphState.tokens_by_agent`/`cost_by_agent` (via `_apply_llm`).
+- [~] Compressão de histórico por resumo de LLM — permanece deliberadamente adiada (ver observações)
 
 **Critérios de aceite**
-- [~] Redução de tokens mensurável quando `CAVEMAN_PROMPTS`/`HISTORY_COMPRESSION` estão ligados (medição pontual pendente).
-- [x] Qualidade das decisões não degrada no modo padrão (levers DESLIGADOS por padrão; suíte de 218 testes verde).
+- [x] Redução de tokens mensurável quando os levers estão ligados — números reais medidos e
+      travados por asserção em `tests/test_token_savings_measurement.py`:
+
+      | Lever | Amostra | Antes → Depois | Redução |
+      |---|---|---|---|
+      | Caveman (contexto verboso/conversacional) | frase de instrução típica de operador | 276 → 188 caracteres | ~32% |
+      | Caveman (prompt de sistema já enxuto) | `HermitAgent.system_prompt()` real | 524 → 486 caracteres | ~7% (esperado — o lever ajuda pouco em texto já escrito de forma direta) |
+      | Compactação de tool output | resposta realista estilo AbuseIPDB (campos opcionais nulos) | 391 → 269 bytes (JSON) | ~31% |
+      | Compressão de histórico | 20 entradas realistas de `history` | 6490 → 2924 bytes (JSON), 20 → 9 entradas | ~55% |
+
+      Medição por contagem de caracteres/bytes (não há tokenizer integrado ao projeto) — proxy
+      razoável, não uma contagem de tokens exata.
+- [x] Qualidade das decisões não degrada no modo padrão (levers DESLIGADOS por padrão; suíte de 262 testes verde).
 
 **Observações / pendências**
-- Os dois levers são **opt-in** (`CAVEMAN_PROMPTS`, `HISTORY_COMPRESSION`) e offline-determinísticos, então não afetam runs existentes nem os testes a menos que habilitados.
-- Cobertura: `tests/test_token_economy.py` (caveman, compress_history, stop_reason de orçamento, wrapper de nó comprimindo histórico).
+- **Compressão de histórico por resumo de LLM** fica de fora por decisão: usar uma chamada de LLM
+  pra resumir e economizar tokens é uma troca (custo/latência da chamada de resumo vs. economia
+  no prompt seguinte; risco do resumo perder nuance) que não deveria ser ligada silenciosamente —
+  é uma decisão de produto, não uma implementação técnica pendente. A alternativa determinística
+  (`compress_history`, mantém primeiro + últimos N) já está implementada e cobre o caso de uso
+  sem esse risco.
+- Os levers são **opt-in** (`CAVEMAN_PROMPTS`, `HISTORY_COMPRESSION`, `TOOL_OUTPUT_COMPRESSION`,
+  `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT`) e offline-determinísticos, então não afetam
+  runs existentes nem os testes a menos que habilitados.
+- Cobertura: `tests/test_token_economy.py` (caveman, compress_history, orçamento por run/agente,
+  compactação de tool output, wrapper de nó) e `tests/test_token_savings_measurement.py`
+  (números reais de redução, travados por asserção).
 
 ---
 

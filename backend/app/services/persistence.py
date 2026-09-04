@@ -61,13 +61,18 @@ async def persist_run_result(
 
     for item in state.findings:
         status = str(item.get("status", "candidate"))
-        if item.get("requires_human_review"):
+        # `requires_human_review` is metadata surfaced to the operator (the
+        # finding stays "candidate" either way — the existing async review
+        # lifecycle, /findings/{id}/validate and PATCH .../status, is how a
+        # human actually clears it). Only an EXPLICIT rejection — recorded
+        # via a "finding_review" HITL gate, for any archetype that requests
+        # one through `_request_approval` — discards it automatically here;
+        # the mere absence of a verdict must never silently discard a
+        # finding before a human had any chance to see it.
+        if item.get("requires_human_review") and status == FindingStatus.CANDIDATE.value:
             verdict = verdict_by_finding.get(str(item.get("id")))
-            if status == FindingStatus.CANDIDATE.value:
-                if verdict == "rejected":
-                    status = FindingStatus.DISCARDED.value
-                elif not verdict:
-                    status = FindingStatus.DISCARDED.value
+            if verdict == "rejected":
+                status = FindingStatus.DISCARDED.value
         db.add(
             Finding(
                 run_id=run_id,

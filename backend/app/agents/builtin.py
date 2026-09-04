@@ -14,7 +14,7 @@ from app.agents.schemas import (
 )
 from app.orchestration.hitl import consume, is_answered, is_approved
 from app.orchestration.state import GraphState
-from app.services.demo_findings import demo_executed_finding, demo_findings
+from app.services.source_findings import derive_findings_from_sources
 
 
 def _utcnow() -> datetime:
@@ -32,7 +32,13 @@ def _apply_llm(
 
     When ``result`` is ``None`` (no API key / provider failure) the entry keeps
     the fixed simulation token count so offline runs behave as before.
+
+    Also accumulates per-agent totals (``tokens_by_agent``/``cost_by_agent``,
+    keyed by ``entry["agent"]``) alongside the run-wide totals, so a
+    per-agent budget cap (``settings.budget_tokens_per_agent``) can be
+    enforced independently of the run-wide one — see `should_continue`.
     """
+    agent_key = entry["agent"]
     if result is not None:
         entry["reasoning"] = result.content
         entry["decision"] = result.decision
@@ -43,11 +49,26 @@ def _apply_llm(
         entry["provider"] = result.provider
         entry["model"] = result.model
         entry["strategy"] = result.strategy
-        update["tokens_used"] = state.tokens_used + result.usage.total_tokens
-        update["cost"] = round(state.cost + result.usage.cost, 6)
+        added_tokens = result.usage.total_tokens
+        added_cost = result.usage.cost
+        update["cost"] = round(state.cost + added_cost, 6)
     else:
         entry["tokens"] = fallback_tokens
-        update["tokens_used"] = state.tokens_used + fallback_tokens
+        added_tokens = fallback_tokens
+        added_cost = 0.0
+        # No real cost incurred offline — leave `cost` out of the update
+        # entirely (unchanged) rather than echoing back the same value.
+
+    update["tokens_used"] = state.tokens_used + added_tokens
+    update["tokens_by_agent"] = {
+        **state.tokens_by_agent,
+        agent_key: state.tokens_by_agent.get(agent_key, 0) + added_tokens,
+    }
+    if added_cost:
+        update["cost_by_agent"] = {
+            **state.cost_by_agent,
+            agent_key: round(state.cost_by_agent.get(agent_key, 0.0) + added_cost, 6),
+        }
 
 
 class EmperorAgent(BaseArchetype):
@@ -119,10 +140,17 @@ class HermitAgent(BaseArchetype):
         sources = await self._collect_sources(state)
         target = state.target.get("name", "unknown")
 
-        # The hermit node loops until the confidence threshold is met; avoid
-        # re-appending the fixed demo set on subsequent passes.
-        existing_ids = {str(f.get("id")) for f in state.findings}
-        findings = [f for f in demo_findings(target) if str(f.get("id")) not in existing_ids]
+        # The hermit node loops until the confidence threshold is met; dedupe
+        # by title against findings already recorded (a subsequent pass may
+        # re-derive the same lead from a cached source result).
+        existing_titles = {f.get("title") for f in state.findings}
+        derived = derive_findings_from_sources(target, sources)
+        findings = []
+        for finding in derived:
+            if finding["title"] in existing_titles:
+                continue
+            finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(finding)
 
         entry: dict[str, Any] = {
             "agent": self.key,
@@ -282,25 +310,28 @@ class ChariotAgent(BaseArchetype):
             }
 
         result = await self._attempt(state, devil_mode=True)
-        new_confidence = min(1.0, state.confidence + 0.4)
 
-        finding = demo_executed_finding(target)
-        finding["id"] = f"F-{len(state.findings) + 1}"
+        # Argus Engine ships without a real destructive-execution backend by
+        # design (see ROADMAP/ADR on Devil Mode scope) — the action IS
+        # approved at this point, but there is nothing real to run. Report
+        # that honestly instead of fabricating a success record: a security
+        # tool's audit trail must never claim an action happened when it
+        # didn't.
         entry = {
             "agent": self.key,
-            "action": "execute",
+            "action": "no_backend",
             "mode": "devil",
-            "findings": 1,
+            "note": (
+                "Ação aprovada pelo operador, mas nenhum backend de execução "
+                "real está configurado nesta instância — nada foi executado."
+            ),
+            "findings": 0,
         }
-        update: dict[str, Any] = {
-            **consumed,
-            "findings": [*state.findings, finding],
-            "confidence": new_confidence,
-        }
-        _apply_llm(entry, update, state, result, fallback_tokens=500)
+        update: dict[str, Any] = {**consumed, "stop_reason": "no_backend"}
+        _apply_llm(entry, update, state, result, fallback_tokens=0)
         entry = self.validate_entry(entry)
         update["history"] = [*state.history, entry]
-        update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
+        update.update(self._trace_update(state, entry, started_at))
         return update
 
 
@@ -374,7 +405,7 @@ class JusticeAgent(BaseArchetype):
         # Preserva uma razão de parada final já definida (ex.: estouro de
         # orçamento em should_continue); não herda "pending_review" de uma
         # parada HITL anterior — o nó final sempre encerra como "completed".
-        if state.stop_reason in ("budget", "confidence"):
+        if state.stop_reason in ("budget", "agent_budget", "confidence", "declined", "no_backend"):
             final_reason = state.stop_reason
         else:
             final_reason = "completed"

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChatMessage,
   PendingReview,
@@ -116,6 +116,27 @@ function RunPanel({
 
   const exportFormats: ReportFormat[] = ['markdown', 'json', 'csv', 'sarif'];
 
+  const severityCounts = useMemo(() => {
+    const order = ['critical', 'high', 'medium', 'low', 'info'] as const;
+    const counts: Record<(typeof order)[number], number> = {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    };
+    for (const finding of findings) {
+      const sev = (finding.severity ?? 'info').toLowerCase();
+      if (sev in counts) counts[sev as (typeof order)[number]] += 1;
+    }
+    return order.filter((sev) => counts[sev] > 0).map((sev) => ({ sev, count: counts[sev] }));
+  }, [findings]);
+
+  const pendingReviewCount = useMemo(
+    () => findings.filter((f) => f.requires_human_review).length,
+    [findings],
+  );
+
   return (
     <div className="run-panel">
       <div className="run-panel-header">
@@ -126,18 +147,29 @@ function RunPanel({
         <div className="run-panel-actions">
           {runId != null && (
             <span className="run-panel-export-group">
-              <span className="run-panel-export-label">Exportar</span>
-              {exportFormats.map((fmt) => (
-                <button
-                  key={fmt}
-                  type="button"
-                  className="run-panel-export"
-                  disabled={exporting !== null}
-                  onClick={() => void handleExport(fmt)}
-                >
-                  {exporting === fmt ? '…' : fmt.toUpperCase()}
-                </button>
-              ))}
+              <label htmlFor="run-panel-export-select" className="run-panel-export-label">
+                Exportar
+              </label>
+              <select
+                id="run-panel-export-select"
+                className="run-panel-export-select"
+                value=""
+                disabled={exporting !== null}
+                aria-busy={exporting !== null}
+                onChange={(e) => {
+                  const fmt = e.target.value as ReportFormat;
+                  if (fmt) void handleExport(fmt);
+                }}
+              >
+                <option value="" disabled>
+                  {exporting ? `Exportando ${exporting.toUpperCase()}…` : 'Escolher formato…'}
+                </option>
+                {exportFormats.map((fmt) => (
+                  <option key={fmt} value={fmt}>
+                    {fmt.toUpperCase()}
+                  </option>
+                ))}
+              </select>
             </span>
           )}
           {running && !readonly && (
@@ -267,9 +299,30 @@ function RunPanel({
             {error && <div className="run-panel-error">{error}</div>}
 
             <div className="run-panel-section-title">Achados</div>
+
+            {findings.length > 0 && (
+              <div className="run-panel-severity-summary">
+                {severityCounts.map(({ sev, count }) => (
+                  <span
+                    key={sev}
+                    className={`run-panel-severity-chip run-panel-severity-chip--${sev}`}
+                  >
+                    {count} {sev}
+                  </span>
+                ))}
+                {pendingReviewCount > 0 && (
+                  <span className="run-panel-severity-chip run-panel-severity-chip--review">
+                    {pendingReviewCount} aguardando revisão humana
+                  </span>
+                )}
+              </div>
+            )}
+
             {findings.length === 0 ? (
               <div className="run-panel-empty">
-                {running ? 'Buscando achados…' : 'Nenhum achado registrado.'}
+                {running
+                  ? 'Buscando achados nas fontes reais…'
+                  : 'Nenhum indício encontrado nas fontes reais consultadas para este alvo — isso é um resultado válido, não um erro.'}
               </div>
             ) : (
               <div className="run-panel-table">

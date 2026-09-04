@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import RunPanel from '../RunPanel'
 import type { PendingReview, RunFinding } from '../../api/client'
+import { getReportExport } from '../../api/client'
 
 vi.mock('../../api/client')
 
@@ -69,5 +70,23 @@ describe('RunPanel', () => {
 
     fireEvent.click(screen.getByText('Rejeitar'))
     expect(baseProps.onReview).toHaveBeenCalledWith(false, '')
+  })
+
+  it('exporta o relatório no formato escolhido pelo select', async () => {
+    vi.mocked(getReportExport).mockResolvedValue('conteúdo-exportado')
+    // jsdom não implementa createObjectURL/revokeObjectURL.
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock')
+    const revokeObjectURL = vi.fn()
+    Object.assign(URL, { createObjectURL, revokeObjectURL })
+
+    render(<RunPanel {...baseProps} />)
+
+    const select = screen.getByLabelText('Exportar') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'sarif' } })
+
+    await waitFor(() => expect(getReportExport).toHaveBeenCalledWith(1, 'sarif'))
+    expect(createObjectURL).toHaveBeenCalled()
+    // o select volta para o placeholder — permite exportar o mesmo formato de novo
+    await waitFor(() => expect(select.value).toBe(''))
   })
 })

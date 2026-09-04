@@ -50,18 +50,30 @@ class BaseArchetype(ABC):
     async def _collect_sources(self, state: GraphState) -> list[dict]:
         """Query every configured data source by role, without knowing specific
         sources. Returns normalized/fallback results (deterministic offline).
+
+        Each source declares its own `query_param` (the key its API expects
+        the target under, e.g. "ipAddress" for AbuseIPDB vs "q" for crt.sh)
+        and `target_kind` (skip IP-only sources for a domain target and vice
+        versa; "cve"-kind sources are never auto-queried here — they need an
+        actual CVE ID, supplied via a direct `/sources/{name}/query` call).
         """
         service = state.sources_service
         if service is None:
             return []
 
         from app.sources.service import DataSourceError
+        from app.sources.spec import looks_like_ip
 
-        query = {"q": state.target.get("name", "")}
+        target_name = state.target.get("name", "")
+        target_kind = "ip" if looks_like_ip(target_name) else "domain"
+
         results: list[dict] = []
         for name in service.available_sources():
+            spec = service.get_source(name)
+            if spec.target_kind not in ("any", target_kind):
+                continue
             try:
-                results.append(await service.query(name, query))
+                results.append(await service.query(name, {spec.query_param: target_name}))
             except DataSourceError:
                 continue
         return results

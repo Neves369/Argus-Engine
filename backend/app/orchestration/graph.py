@@ -81,16 +81,42 @@ def should_continue(state: GraphState) -> str:
         return "gate"
     if is_kill_switch_active():
         return "stop"
+    # A node that already set a definitive stop_reason (e.g. Chariot's
+    # "declined"/"no_backend" outcomes) must end the run immediately —
+    # without this, the graph fell through to route_after_director() and
+    # looped back into the same node repeatedly (re-declining, re-reporting
+    # no backend) until the token/cost budget ran out, burning real LLM
+    # spend on a foregone conclusion.
+    if state.stop_reason is not None:
+        return "stop"
     if state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
         if state.stop_reason is None:
             state.stop_reason = "budget"
         return "stop"
+    # Per-agent budget: only checked against the archetype about to run NEXT
+    # (route_after_director's choice) — an agent already over its own cap
+    # must not be allowed to loop again, even if the run-wide budget still
+    # has headroom. Off by default (both settings 0).
+    next_node = route_after_director(state)
+    if next_node in ("hermit", "chariot"):
+        over_tokens = (
+            settings.budget_tokens_per_agent > 0
+            and state.tokens_by_agent.get(next_node, 0) >= settings.budget_tokens_per_agent
+        )
+        over_cost = (
+            settings.budget_cost_per_agent > 0
+            and state.cost_by_agent.get(next_node, 0.0) >= settings.budget_cost_per_agent
+        )
+        if over_tokens or over_cost:
+            if state.stop_reason is None:
+                state.stop_reason = "agent_budget"
+            return "stop"
     if state.confidence >= settings.confidence_threshold:
         if state.stop_reason is None:
             state.stop_reason = "confidence"
         return "stop"
 
-    return route_after_director(state)
+    return next_node
 
 
 def after_gate(state: GraphState, known: frozenset[str] = frozenset()) -> str:

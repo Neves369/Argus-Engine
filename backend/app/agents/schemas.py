@@ -80,10 +80,15 @@ class ChariotOutput(ArchetypeOutputBase):
     Fields are optional beyond ``agent``/``action``/``mode`` because the
     branch taken depends on the HITL approval state at call time: a ``noop``
     (devil mode off) or ``declined`` (operator rejected) entry never reaches
-    the LLM gateway or produces findings, while ``execute`` always does.
+    the LLM gateway or produces findings. ``no_backend`` is reached once the
+    action IS approved but no real execution tool is wired up — Argus Engine
+    ships without one by design (see ADR on Devil Mode scope); this action
+    honestly reports that nothing was performed rather than fabricating a
+    success record. ``execute`` is reserved for when an operator has actually
+    configured a real execution backend for this deployment.
     """
 
-    action: Literal["noop", "declined", "execute"]
+    action: Literal["noop", "declined", "no_backend", "execute"]
     mode: Literal["simulate", "devil"]
     note: str | None = None
     findings: int | None = None

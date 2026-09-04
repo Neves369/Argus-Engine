@@ -16,6 +16,7 @@ Two independent, deliberately conservative passes:
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.llm.types import ChatMessage
 
@@ -111,3 +112,35 @@ def compress_messages(
             content = cap_length(content, max_chars)
         compressed.append(ChatMessage(role=message.role, content=content))
     return compressed
+
+
+_EMPTY = (None, "", [], {})
+
+
+def compact_tool_output(data: Any) -> Any:
+    """Strip structural noise from tool/source output ("RTK ou equivalente", Etapa 7).
+
+    Recursively drops keys/items whose value is ``None``, ``""``, ``[]`` or
+    ``{}`` and collapses whitespace runs in strings — a field with no content
+    carries no signal a model (or a human) needs, so removing it is pure
+    token/byte savings, never a loss of information. Falsy-but-meaningful
+    values (``0``, ``False``) are always kept.
+
+    Applied to tool execution results (`app/tools/executor.py`) before they
+    are stored or handed to an LLM prompt. Pure and deterministic — safe to
+    run unconditionally when `settings.tool_output_compression` is enabled.
+    """
+    if isinstance(data, dict):
+        compacted: dict[str, Any] = {}
+        for key, value in data.items():
+            value = compact_tool_output(value)
+            if value in _EMPTY:
+                continue
+            compacted[key] = value
+        return compacted
+    if isinstance(data, list):
+        items = [compact_tool_output(v) for v in data]
+        return [v for v in items if v not in _EMPTY]
+    if isinstance(data, str):
+        return " ".join(data.split())
+    return data

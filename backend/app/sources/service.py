@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
+import string
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy import select
@@ -17,6 +21,51 @@ from app.sources.registry import DataSourceRegistry
 from app.sources.spec import DataSourceSpec, SourceKind
 
 logger = logging.getLogger(__name__)
+
+_ENV_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
+_URL_FORMATTER = string.Formatter()
+
+
+def _resolve_headers(template: dict[str, str]) -> dict[str, str]:
+    """Resolve ``${ENV_VAR}`` header values from the environment.
+
+    A header whose value is exactly ``${ENV_VAR}`` and the variable is unset
+    is dropped entirely — never sent as the literal placeholder string. This
+    keeps API keys out of the checked-in sources manifest; operators set the
+    real key via the environment (see `.env.example`).
+    """
+    resolved: dict[str, str] = {}
+    for key, value in template.items():
+        match = _ENV_PLACEHOLDER.match(value)
+        if match:
+            env_value = os.environ.get(match.group(1))
+            if env_value:
+                resolved[key] = env_value
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def _split_path_and_query_params(
+    url: str, merged: dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
+    """Fill ``{placeholder}`` segments in `url` from `merged`, path-quoted.
+
+    Placeholders are consumed from `merged` (not left over as query
+    parameters) so a path-style API (e.g. ``ip-api.com/json/{query}``) and a
+    query-string API (e.g. ``crt.sh/?q=...``) can share the same
+    ``query_param``-based dispatch in `DataSourceService._fetch`.
+    """
+    placeholders = {name for _, name, _, _ in _URL_FORMATTER.parse(url) if name}
+    if not placeholders:
+        return url, merged
+    remaining = dict(merged)
+    path_values = {}
+    for name in placeholders:
+        if name not in remaining:
+            raise DataSourceError(f"URL template requires '{name}' in params")
+        path_values[name] = quote(str(remaining.pop(name)), safe="")
+    return url.format(**path_values), remaining
 
 
 class DataSourceError(RuntimeError):
@@ -70,6 +119,9 @@ class DataSourceService:
         """Names of every configured source (agents query by role, not by name)."""
         return self._registry.available_sources()
 
+    def get_source(self, name: str) -> DataSourceSpec:
+        return self._registry.get_source(name)
+
     def _check_rate_limit(self, source: DataSourceSpec) -> None:
         if source.rate_limit <= 0:
             return
@@ -112,12 +164,14 @@ class DataSourceService:
         if not source.url:
             raise DataSourceError(f"Source {source.name} has no URL configured")
         merged = {**source.params_template, **params}
+        url, merged = _split_path_and_query_params(source.url, merged)
+        headers = _resolve_headers(source.headers_template) if source.headers_template else {}
         try:
             async with httpx.AsyncClient(timeout=source.timeout) as client:
                 if source.method.upper() == "POST":
-                    response = await client.post(source.url, json=merged)
+                    response = await client.post(url, json=merged, headers=headers)
                 else:
-                    response = await client.get(source.url, params=merged)
+                    response = await client.get(url, params=merged, headers=headers)
         except httpx.HTTPError as exc:
             raise DataSourceError(f"Source {source.name} request failed: {exc}") from exc
 

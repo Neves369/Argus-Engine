@@ -41,6 +41,7 @@ def _sources_service() -> Any:
 
     return SimpleNamespace(
         available_sources=lambda: ["shodan", "cve"],
+        get_source=lambda name: SimpleNamespace(target_kind="any", query_param="q"),
         query=query,
     )
 

@@ -42,6 +42,9 @@ def test_devil_mode_on_requires_human_approval():
 
 
 def test_devil_mode_executes_after_approval():
+    """No real destructive-execution backend ships with Argus Engine by design —
+    once approved, Chariot honestly reports "no_backend" instead of fabricating
+    a success. See ADR on Devil Mode scope."""
     get_settings().devil_mode = True
 
     async def _run() -> GraphState:
@@ -57,8 +60,9 @@ def test_devil_mode_executes_after_approval():
 
     final = asyncio.run(_run())
 
-    assert "execute" in _actions(final)
-    assert final.stop_reason == "completed"
+    assert "no_backend" in _actions(final)
+    assert "execute" not in _actions(final)
+    assert final.stop_reason == "no_backend"
     assert final.pending_review is None
 
 

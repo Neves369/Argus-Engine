@@ -129,6 +129,31 @@
   color: #fcd34d;
 }
 
+.finding-card-evidence {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(125, 211, 252, 0.06);
+  border-left: 2px solid rgba(125, 211, 252, 0.4);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.finding-card-evidence-label {
+  display: block;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #7dd3fc;
+  margin-bottom: 2px;
+}
+
+.finding-card-evidence-text {
+  color: #bae6fd;
+  font-family: var(--mono, monospace);
+  word-break: break-word;
+}
+
 .finding-card-remediation {
   margin-top: 6px;
   font-size: 11px;

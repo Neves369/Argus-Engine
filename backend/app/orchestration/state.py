@@ -21,6 +21,14 @@ class GraphState(BaseModel):
     tokens_used: int = 0
     cost: float = 0.0
 
+    #: Per-agent totals, keyed by archetype key (e.g. "hermit"). Only
+    #: meaningful for archetypes that can loop (hermit/chariot in the default
+    #: pipeline) — a custom pipeline runs each archetype once, so its own
+    #: total is just that single call's usage. See `budget_tokens_per_agent`
+    #: in settings and `should_continue` in `app.orchestration.graph`.
+    tokens_by_agent: dict[str, int] = Field(default_factory=dict)
+    cost_by_agent: dict[str, float] = Field(default_factory=dict)
+
     budget_tokens: int = 100_000
     budget_cost: float = 1.0
 

@@ -17,6 +17,8 @@ class SourceRead(BaseModel):
     name: str
     description: str
     kind: str
+    query_param: str
+    target_kind: str
 
 
 class SourceQuery(BaseModel):
@@ -35,6 +37,8 @@ async def list_sources() -> list[SourceRead]:
             name=source.name,
             description=source.description,
             kind=source.kind,
+            query_param=source.query_param,
+            target_kind=source.target_kind,
         )
         for source in (_registry.get_source(name) for name in _registry.available_sources())
     ]

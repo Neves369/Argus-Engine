@@ -114,6 +114,43 @@
   cursor: default;
 }
 
+.run-panel-export-select {
+  border: 1px solid rgba(170, 59, 255, 0.35);
+  background: rgba(170, 59, 255, 0.08);
+  color: #d8b4fe;
+  border-radius: 6px;
+  padding: 3px 22px 3px 7px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23d8b4fe' stroke-width='1.5' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+}
+
+.run-panel-export-select:hover:not(:disabled) {
+  background-color: rgba(170, 59, 255, 0.22);
+}
+
+.run-panel-export-select:focus-visible {
+  outline: 1px solid rgba(216, 180, 254, 0.8);
+  outline-offset: 1px;
+}
+
+.run-panel-export-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.run-panel-export-select option {
+  background: #1a0c26;
+  color: #d8b4fe;
+}
+
 .run-panel-tabs {
   display: flex;
   gap: 4px;
@@ -372,6 +409,62 @@
 
 .run-panel-observability {
   margin-top: 8px;
+}
+
+.run-panel-severity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.run-panel-severity-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+}
+
+.run-panel-severity-chip--critical {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.run-panel-severity-chip--high {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.run-panel-severity-chip--medium {
+  background: rgba(252, 211, 77, 0.14);
+  color: #fde68a;
+  border-color: rgba(252, 211, 77, 0.3);
+}
+
+.run-panel-severity-chip--low {
+  background: rgba(134, 239, 172, 0.12);
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.3);
+}
+
+.run-panel-severity-chip--info {
+  background: rgba(125, 211, 252, 0.14);
+  color: #7dd3fc;
+  border-color: rgba(125, 211, 252, 0.3);
+}
+
+.run-panel-severity-chip--review {
+  background: rgba(196, 181, 253, 0.12);
+  color: #c4b5fd;
+  border-color: rgba(196, 181, 253, 0.3);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .run-panel-observability summary {

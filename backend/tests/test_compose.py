@@ -37,7 +37,11 @@ def test_director_runs_custom_pipeline():
 
     assert final.stop_reason == "completed"
     assert len(final.history) == 3
-    assert len(final.findings) == 3
+    # No sources_service configured in this test -> no real signal -> no
+    # findings fabricated. This is the correct, honest behavior: findings
+    # only appear when a real, successfully-queried source justifies one
+    # (see app.services.source_findings).
+    assert final.findings == []
 
 
 def test_director_runs_six_archetypes():

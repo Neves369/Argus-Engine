@@ -99,6 +99,7 @@ export interface RunFinding {
   severity?: string | null;
   category?: string | null;
   affected?: string | null;
+  evidence?: string | null;
   cvss_score?: number | null;
   cvss_vector?: string | null;
   cves?: string[] | null;

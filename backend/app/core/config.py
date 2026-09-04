@@ -70,6 +70,20 @@ class Settings(BaseSettings):
     # registros e descarta o meio, reduzindo o contexto passado a cada agente.
     history_compression: bool = False
     history_keep_last: int = 8
+    # Orçamento hard por agente (0 = desligado): além do orçamento do run
+    # inteiro (`default_budget_tokens`/`default_budget_cost`), limita quanto
+    # UM arquétipo específico pode consumir sozinho. Só tem efeito prático em
+    # arquétipos que repetem (Eremita/Carro no modo padrão) — numa composição
+    # customizada cada carta roda uma vez só. Ver `should_continue` em
+    # app/orchestration/graph.py.
+    budget_tokens_per_agent: int = 0
+    budget_cost_per_agent: float = 0.0
+
+    # Tool output compression ("RTK ou equivalente", Etapa 7): antes de um
+    # resultado de tool/fonte entrar no contexto de um prompt, remove
+    # ruído estrutural (chaves nulas/vazias, espaço em branco de JSON) sem
+    # perder nenhum dado. Ver app/llm/compress.py::compact_tool_output.
+    tool_output_compression: bool = False
 
     # Hardening (Etapa 10): resource limits applied to every CLI tool
     # subprocess (POSIX only — no-op elsewhere). See app/tools/executor.py.
