@@ -2,8 +2,8 @@
 
 ## Uso autorizado
 
-O **Argus Engine** é uma plataforma de orquestração de agentes para segurança ofensiva
-**autorizada**. O uso é permitido somente em:
+O **Argus Engine** é uma plataforma de **pentest e bug bounty autorizada** com scanning
+ativo e orquestração de agentes. O uso é permitido somente em:
 
 - alvos com **autorização explícita** do dono do ativo;
 - **escopo definido** e documentado;
@@ -23,10 +23,29 @@ A plataforma implementa controles que não devem ser desativados:
 | Auditoria | Logging estruturado e histórico de decisões persistido. |
 | HITL | Aprovação humana obrigatória em ações destrutivas (Modo Diabo). |
 | Auth da UI | Senha única de operador + cookie de sessão assinado (HMAC, HttpOnly, SameSite=Lax). |
+| Scanning ativo | Rate limiting, timeout, self-imposed restrictions, logging de todas as requisições ao alvo. |
+
+## Scanning Ativo
+
+O scanning ativo (download de página, crawl, análise de headers/forms, detecção de
+vulnerabilidades OWASP Top 10) é funcionalidade **core** da plataforma — sempre roda
+quando o alvo está dentro de `ALLOWED_SCOPES`, **independentemente do Modo Diabo**.
+
+Controles de scanning ativo:
+- `ALLOWED_SCOPES` validado antes de qualquer requisição ao alvo
+- Rate limiting por target (`SCAN_RATE_LIMIT`, configurável)
+- Timeout por requisição (`SCAN_REQUEST_TIMEOUT`, configurável)
+- Self-imposed restrictions: respeitar `robots.txt`, não executar payloads destrutivos
+- Logging completo de todas as requisições ao alvo
+- Kill-switch interrompe scanning em andamento
+
+O scanning ativo NÃO é Modo Diabo — é funcionalidade padrão da plataforma. Ver
+`docs/adr/0006-active-scanning.md`.
 
 ## Modo Diabo
 
-O `DEVIL_MODE` habilita a execução real de scripts invasivos/destrutivos. Mesmo ativo,
+O `DEVIL_MODE` habilita a execução **sem restrições** de scripts invasivos/destrutivos
+(futuramente: exploits). É uma camada **separada** do scanning ativo. Mesmo ativo,
 permanecem obrigatórios: escopo validado, sandbox, kill-switch, auditoria completa e HITL.
 
 ## Autenticação da interface
@@ -41,12 +60,12 @@ nem recuperação — trocar o segredo invalida todas as sessões.
 
 ## Relatar vs ensinar
 
-O produto final da plataforma é um **relatório de segurança**. Relatar inteligência de
-vulnerabilidade é permitido e esperado:
+O produto final da plataforma é um **relatório de pentest/bug bounty**. Relatar
+inteligência de vulnerabilidade é permitido e esperado:
 
 - classe/classificação (CWE/OWASP), severidade (qualitativa e CVSS);
 - CVE IDs e referência a exploits públicos conhecidos;
-- orientação de remediação/mitigação e evidência observada.
+- orientação de remediação/mitigação e evidência observada (incluindo dados de scanning ativo).
 
 Permanece proibido (em relatório e em prompts): detalhar ou ensinar técnica ofensiva,
 payload, chaining ou passo-a-passo de exploração — bem como executar ataques reais fora do

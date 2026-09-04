@@ -1,8 +1,8 @@
 # ROADMAP — Argus Engine
 
-Plano vivo de implementação da plataforma de orquestração de agentes para segurança
-ofensiva **autorizada**. Este documento é a fonte de verdade das etapas, com o estado
-atual do repositório e o que falta em cada fase.
+Plano vivo de implementação da plataforma de **pentest e bug bounty autorizada** com
+scanning ativo e orquestração de agentes. Este documento é a fonte de verdade das
+etapas, com o estado atual do repositório e o que falta em cada fase.
 
 > **Uso autorizado apenas.** Este projeto só deve ser usado em alvos com autorização
 > explícita e escopo definido, em conformidade com leis locais e políticas de bug bounty.
@@ -12,29 +12,24 @@ atual do repositório e o que falta em cada fase.
 ## Princípios inegociáveis (repetir em toda etapa)
 
 1. Uso exclusivo em alvos com autorização explícita e escopo definido.
-2. Nenhum detalhe de técnicas de reconhecimento, exploração, payloads ou chaining.
+2. **Relatar ≠ ensinar**: o relatório de segurança pode conter classe (CWE/OWASP), severidade (CVSS), CVE IDs, referência a exploit público e remediação; o que segue proibido é detalhar/ensinar a técnica ofensiva em si (payloads, chaining, passo-a-passo de exploração).
 3. Controles de segurança operacional, logging completo e kill-switch desde o dia 1.
 4. Modelos abliterados apenas atrás de policy gateway + sandbox + human-in-the-loop em ações sensíveis.
 5. Economia de tokens e observabilidade desde o início.
-6. Modo Diabo (execução real de scripts invasivos/destrutivos) só ativável com escopo validado + sandbox + kill-switch + auditoria completa + HITL em ações destrutivas.
+6. **Scanning ativo** (download de página, crawl, análise de headers/forms, detecção de vulnerabilidades OWASP Top 10) roda **sempre** quando o alvo está em `ALLOWED_SCOPES` — não depende do Modo Diabo. **Modo Diabo** (execução destrutiva/invasiva, futuramente exploits) é uma camada separada que exige escopo validado + sandbox + kill-switch + auditoria + HITL.
 
 ---
 
-## Modo Diabo (modo de execução dual)
+## Scanning Ativo vs Modo Diabo
 
-O **Diabo** deixou de ser um arquétipo e virou um **modo de execução** do sistema — um
-toggle global (`DEVIL_MODE`) que muda o comportamento de toda a plataforma.
+Estas são duas funcionalidades **separadas**:
 
-| Estado | Comportamento |
-|---|---|
-| **OFF (padrão)** | Apenas **investigação e simulação**. Nenhum ataque real ocorre: os agentes levantam informações e simulam cenários, sem executar scripts invasivos. |
-| **ON** | Agentes de **execução** usam modelos **sem restrição** e **executam de fato** scripts invasivos/destrutivos. Os agentes de **julgamento/investigação** permanecem em **modelos fixos (restritos)** para validar, julgar e auditar o que foi feito. |
+| Funcionalidade | Quando roda | O que faz | Controles |
+|---|---|---|---|
+| **Scanning Ativo** (padrão) | **Sempre** quando alvo em `ALLOWED_SCOPES` | Download de página, crawl, análise de headers/forms, fingerprinting, detecção de vulnerabilidades OWASP Top 10 | Rate limiting, timeout, self-imposed restrictions, logging completo |
+| **Modo Diabo** (futuro) | Só com `DEVIL_MODE=ON` | Execução de scripts invasivos/destrutivos (exploits) | Escopo validado + sandbox + kill-switch + auditoria + HITL |
 
-**Controles sempre obrigatórios (mesmo com o modo ON):** validação de escopo, sandbox
-(Docker), kill-switch, auditoria completa e HITL em ações destrutivas.
-
-**Roteamento por modo:** os agentes de execução só têm acesso ao caminho "agressivo"
-quando `DEVIL_MODE=ON`; caso contrário, rodam no modo simulado (não-invasivo).
+**Scanning ativo NÃO é Modo Diabo.** O scanning é funcionalidade core — ele访访 o alvo para encontrar vulnerabilidades reais. O Modo Diabo é uma camada adicional para execução sem restrições.
 
 ---
 
@@ -86,6 +81,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
 | 11 | Relatório de Segurança | Achados com substância (severidade/CVE/exploit/remediação) | ✅ Concluída |
+| 12 | Scanning Ativo (OWASP Top 10) | Download de página, crawl, análise de headers/forms, detecção de vulnerabilidades | 🟡 Parcial |
 
 ---
 
@@ -535,6 +531,45 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 
 ---
 
+## Etapa 12 — Scanning Ativo (OWASP Top 10)
+
+**Status:** `[~]` Parcial
+
+**Objetivo:** o Argus Engine precisa interagir com o alvo para encontrar vulnerabilidades
+reais. Scanning ativo é funcionalidade core — sempre roda quando o alvo está em
+`ALLOWED_SCOPES`, independentemente do Modo Diabo. Ver `docs/adr/0006-active-scanning.md`.
+
+**Entregáveis**
+- [ ] Módulo `app/scanning/` — HTTP client com rate limiting e timeout
+- [ ] Download e parsing de página HTML (análise de conteúdo, forms, links)
+- [ ] Análise de headers de resposta (segurança, cookies, CORS, CSP)
+- [ ] Crawl de links internos e extração de endpoints
+- [ ] Fingerprinting de tecnologias (server, framework, linguagem, versão)
+- [ ] Detecção de vulnerabilidades OWASP Top 10 (vetores passivos — forms, parâmetros, headers)
+- [ ] Integração com `HermitAgent` (scanning ativo + OSINT passivo)
+- [ ] Rate limiting por target (`SCAN_RATE_LIMIT`, configurável)
+- [ ] Timeout por requisição (`SCAN_REQUEST_TIMEOUT`, configurável)
+- [ ] Self-imposed restrictions (respeitar `robots.txt`, não executar payloads destrutivos)
+- [ ] Logging completo de todas as requisições ao alvo
+- [ ] Findings com evidência de scanning real (respostas HTTP, headers, conteúdo)
+- [ ] Controles de segurança: scanning só com alvo em `ALLOWED_SCOPES`
+
+**Critérios de aceite**
+- [ ] Um run contra um alvo em `ALLOWED_SCOPES` gera findings de scanning ativo (download de página, análise de headers, detecção de vulnerabilidades)
+- [ ] Scanning ativo NÃO depende do `DEVIL_MODE` — roda com escopo validado
+- [ ] Rate limiting e timeout funcionam (configuráveis via env)
+- [ ] `robots.txt` é respeitado (self-imposed restriction)
+- [ ] Todas as requisições ao alvo são logadas
+- [ ] Findings de scanning ativo têm evidência real (resposta HTTP, header, conteúdo)
+
+**Observações / pendências**
+- Scanning ativo é separado do Modo Diabo — este é para execução destrutiva/futura (exploits)
+- Detecção de vulnerabilidades é passiva (análise de resposta, não injeção de payloads) —
+  injeção real de payloads (SQLi, XSS) ficaria no Modo Diabo futuro
+- O módulo de scanning pode ser expandido para incluir testes autenticados (login + scan)
+
+---
+
 ## Próximos passos sugeridos
 
 > Lista revisada — os itens de Etapas 1, 2, 3, 4, 5, 6, 8, 10 e 11 originalmente listados
@@ -544,8 +579,8 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 2. **Etapa 7** — economia de tokens (parcial): Caveman + compressão de histórico +
    `stop_reason` de orçamento já entregues; restam RTK para saídas de tools e
    orçamento hard por agente.
-3. **Integração real de ferramentas/fontes** — substituir `demo_findings.py` por um
-   scanner real (tools/fontes) com enriquecimento de CVE/exploit/remediação (o seam já existe).
+3. **Etapa 12** — scanning ativo: módulo `app/scanning/`, integração com HermitAgent,
+   controles de rate limiting/timeout/self-imposed restrictions.
 
 ## Como manter este documento
 

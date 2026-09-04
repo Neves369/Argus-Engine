@@ -4,22 +4,18 @@ Instruções para agentes de IA (Claude, Cursor, Codex, etc.) trabalhando neste 
 
 ## Visão geral
 
-**Argus Engine** — plataforma de orquestração de agentes para segurança ofensiva
-**autorizada**. Backend Python (FastAPI + LangGraph + SQLite) e frontend React (Vite +
-React Flow) com arquétipos visuais estilo tarô.
+**Argus Engine** — plataforma de **pentest e bug bounty autorizada** com scanning
+ativo e orquestração de agentes. Backend Python (FastAPI + LangGraph + SQLite) e
+frontend React (Vite + React Flow) com arquétipos visuais estilo tarô.
 
 ## Princípios inegociáveis (respeitar em toda mudança)
 
 1. Uso exclusivo em alvos com autorização explícita e escopo definido.
-2. Nenhum detalhe de técnicas de reconhecimento, exploração, payloads ou chaining —
-   apenas arquitetura, abstração e fluxo de dados. **Relatar ≠ ensinar**: o relatório de
-   segurança pode conter classe (CWE/OWASP), severidade (CVSS), CVE IDs, referência a
-   exploit público e remediação; o que segue proibido é detalhar/ensinar a técnica
-   ofensiva em si (ver `docs/adr/0005-reporting.md`).
+2. **Relatar ≠ ensinar**: o relatório de segurança pode conter classe (CWE/OWASP), severidade (CVSS), CVE IDs, referência a exploit público e remediação; o que segue proibido é detalhar/ensinar a técnica ofensiva em si (payloads, chaining, passo-a-passo de exploração — ver `docs/adr/0005-reporting.md`).
 3. Controles de segurança operacional, logging completo e kill-switch desde o dia 1.
 4. Modelos abliterados apenas atrás de policy gateway + sandbox + HITL.
 5. Economia de tokens e observabilidade desde o início.
-6. Modo Diabo (execução real) só com escopo validado + sandbox + kill-switch + auditoria + HITL.
+6. **Scanning ativo** (download de página, crawl, análise de headers/forms, detecção de vulnerabilidades OWASP Top 10) roda **sempre** quando o alvo está em `ALLOWED_SCOPES` — não depende do Modo Diabo. **Modo Diabo** (execução destrutiva/invasiva, futuramente exploits) é uma camada separada que exige escopo validado + sandbox + kill-switch + auditoria + HITL.
 
 ## Documentos obrigatórios de contexto
 
@@ -37,6 +33,7 @@ backend/        FastAPI + LangGraph + SQLAlchemy (async) + SQLite
   app/api/v1/   router, targets, runs, compositions, providers, dashboard
   app/orchestration/  state, graph, director, hitl
   app/agents/   BaseArchetype + 6 arquetipos (Imperador, Eremita, Louco, Justiça, Carro, Mago)
+  app/scanning/ HTTP client, parsers, detecção de vulnerabilidades (Etapa 12)
   app/services/ run_executor, persistence, export, run_control (lock + cancel)
 frontend/       Vite + React + @xyflow/react (mock)
 ```
@@ -52,6 +49,10 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   `POST /runs`, `GET /runs/stream`, `POST /compositions/{id}/execute`. Cliente que
   tentar iniciar com run ativo recebe `409`.
 - `GET /runs/active` expõe o run ativo à UI (polling + restauração após refresh).
+- **Scanning ativo (Etapa 12):** quando o alvo está em `ALLOWED_SCOPES`, o sistema
+  realiza download de página, crawl, análise de headers/forms e detecção de
+  vulnerabilidades OWASP Top 10 — **independentemente do Modo Diabo**. O scanning
+  ativo é funcionalidade core, não uma opção. Ver `docs/adr/0006-active-scanning.md`.
 - **Auth leve da UI (Etapa 11 — hardening):** proteção por senha única de operador
   (`UI_PASSWORD`) + cookie de sessão assinado (`argus_session`, HMAC/HttpOnly/SameSite=Lax).
   Toda rota operacional é registrada em `app/api/v1/router.py` com
@@ -129,6 +130,8 @@ npm run dev
 
 ## Restrições de conteúdo
 
-Não gerar, explicar ou detalhar: reconhecimento, validação, exploração, payloads,
-chaining de vulnerabilidades ou qualquer técnica de hacking concreta. O trabalho fica no
-nível de arquitetura de sistemas, abstração de ferramentas e fluxo de dados.
+Não gerar, explicar ou detalhar: payloads, chaining de vulnerabilidades ou passo-a-passo
+de exploração. O trabalho fica no nível de arquitetura de sistemas, abstração de
+ferramentas e fluxo de dados. Scanning ativo (download de página, crawl, análise de
+headers/forms, detecção de vulnerabilidades) é funcionalidade permitida e esperada — o
+que não é permitido é detalhar como explorar uma vulnerabilidade encontrada.

@@ -32,10 +32,19 @@ por onde começar, antes de gastar chamadas reais de API em fontes externas.
 direto ao Eremita.
 
 ### 🔍 O Eremita (`hermit`) — coleta real
-É a **única carta que consulta as fontes de pesquisa de verdade**: NVD
-(CVE), crt.sh (certificado/subdomínio), AbuseIPDB (reputação de IP),
-cve.report, urlscan.io e ip-api.com — dependendo do tipo do alvo (domínio vs
-IP; ver `docs/RUNBOOK.md` sobre chaves de API opcionais).
+É a **única carta que consulta as fontes de pesquisa de verdade** e realiza
+**scanning ativo** do alvo. Duas camadas de coleta:
+
+1. **Scanning ativo:** download de página, crawl de links, análise de headers
+   HTTP, extração de forms/parâmetros, fingerprinting de tecnologias, detecção
+   de vulnerabilidades OWASP Top 10. Roda sempre que o alvo está em
+   `ALLOWED_SCOPES` (não depende do Modo Diabo). Sujeito a rate limiting,
+   timeout e self-imposed restrictions (respeitar `robots.txt`).
+
+2. **OSINT passivo:** consulta de APIs externas — NVD (CVE), crt.sh
+   (certificado/subdomínio), AbuseIPDB (reputação de IP), cve.report,
+   urlscan.io e ip-api.com — dependendo do tipo do alvo (domínio vs IP; ver
+   `docs/RUNBOOK.md` sobre chaves de API opcionais).
 
 Todo achado que aparece no relatório final **nasce aqui** (ou não aparece).
 Se nenhuma fonte real tiver dado significativo pro alvo, o Eremita não
@@ -86,12 +95,12 @@ só resume o estado final pro registro.
 
 | Combinação | Quando usar |
 |---|---|
-| **Eremita → Justiça** | O mínimo útil. Coleta real + fechamento. Use quando já sabe o alvo e só quer o levantamento. |
-| **Louco → Eremita → Justiça** | Quando quer que o sistema pense no que procurar antes de consultar as fontes. |
+| **Eremita → Justiça** | O mínimo útil. Scanning ativo + OSINT passivo + fechamento. Use quando já sabe o alvo e quer um scan completo. |
+| **Louco → Eremita → Justiça** | Quando quer que o sistema pense no que procurar antes de escanear e consultar as fontes. |
 | **Eremita → Mago → Justiça** | Quando o resultado vai para alguém não-técnico — adiciona um resumo em linguagem natural. |
-| **Louco → Eremita → Mago → Justiça** | A sessão "completa" de reconhecimento: hipótese → coleta real → síntese → fechamento. |
-| **Carro → Justiça** (sem Eremita) | **Não recomendado.** Sem coleta antes, não há nada para basear uma ação, e não há backend real por trás mesmo assim — a sessão fecha sem achado nenhum. |
-| **Justiça sozinha** | Válido pelas regras, mas inútil — fecha uma sessão vazia, sem nenhuma coleta. |
+| **Louco → Eremita → Mago → Justiça** | A sessão "completa": hipótese → scanning ativo + coleta real → síntese → fechamento. |
+| **Carro → Justiça** (sem Eremita) | **Não recomendado.** Sem scanning ativo antes, não há nada para basear uma ação, e não há backend real por trás mesmo assim — a sessão fecha sem achado nenhum. |
+| **Justiça sozinha** | Válido pelas regras, mas inútil — fecha uma sessão vazia, sem nenhum scan. |
 
 ## O que NÃO está nas cartas (ainda)
 

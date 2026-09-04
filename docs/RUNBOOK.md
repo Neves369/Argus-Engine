@@ -13,6 +13,12 @@ processo da API. Isso simplifica operação (um processo para subir, um processo
 para monitorar), mas também significa que **o processo da API é o único ponto de
 falha** para runs em andamento — ver §7.1.
 
+**Scanning ativo:** quando o alvo está dentro de `ALLOWED_SCOPES`, o sistema
+realiza download de página, crawl, análise de headers/forms e detecção de
+vulnerabilidades OWASP Top 10 — **independentemente do Modo Diabo**. O scanning
+ativo é funcionalidade core (ver `docs/adr/0006-active-scanning.md`), com rate
+limiting, timeout e self-imposed restrictions.
+
 **Run único por vez:** a plataforma só permite **um run ativo por vez** (status
 `running` ou `pending_review`). Qualquer tentativa de iniciar outro run nesse
 estado retorna `409` (`POST /runs`, `GET /runs/stream`,
@@ -79,8 +85,8 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | Variável | Efeito operacional |
 |---|---|
 | `KILL_SWITCH` | `true` interrompe qualquer run em andamento e bloqueia novos. Ver §6. |
-| `DEVIL_MODE` | Habilita o toggle de execução do `ChariotAgent` (ainda exige aprovação HITL por ação — ver §5). |
-| `ALLOWED_SCOPES` | Allowlist de alvos. Um run contra alvo fora da lista é recusado antes de gastar qualquer token. |
+| `DEVIL_MODE` | Habilita o toggle de execução do `ChariotAgent` (ainda exige aprovação HITL por ação — ver §5). Não afeta scanning ativo, que roda sempre com escopo validado. |
+| `ALLOWED_SCOPES` | Allowlist de alvos. Scanning ativo e OSINT rodam apenas contra alvos dentro desta lista. |
 | `LLM_STRATEGY` | `priority`\|`fallback`\|`cost-optimized`\|`auto` — como o gateway ordena os providers. Trocar para `cost-optimized` é a alavanca mais rápida se o custo de LLM subir inesperadamente. |
 | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL_SECONDS` | Cache de prefixo em memória (por processo). Desligar (`false`) se estiver depurando um provider e precisar garantir que toda chamada é real. |
 | `CAVEMAN_PROMPTS` | `true` remove palavras de enchimento das mensagens enviadas aos providers (Economia de Tokens, Etapa 7). **Desligado por padrão.** |
@@ -90,6 +96,9 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `EVIDENCE_DIR` | Onde os arquivos de evidência (hash SHA-256) são gravados. Precisa ser volume persistente e com backup — ver §7.2. |
 | `UI_PASSWORD` | Se definida, a UI exige login com essa senha (cookie de sessão HMAC). Se vazia, a API roda em **modo aberto** (sem auth) — útil para dev/teste local, nunca para expor em rede. |
 | `ARGUS_SESSION_SECRET` | Chave de assinatura do cookie de sessão. Se vazia, deriva de `UI_PASSWORD`; defina explicitamente em produção. |
+| `SCAN_RATE_LIMIT` | Requisições por segundo ao alvo durante scanning ativo. Default: 10. |
+| `SCAN_REQUEST_TIMEOUT` | Timeout em segundos por requisição HTTP ao alvo. Default: 30. |
+| `SCAN_RESPECT_ROBOTS_TXT` | `true` (default) faz o scanner respeitar `robots.txt` do alvo (self-imposed restriction). |
 
 ## 4. Kill-switch
 
@@ -190,6 +199,32 @@ compartilham a mesma camada (`app/llm/`). Ver `docs/ROADMAP.md` (Etapa 3) para o
 funcionamento; `LLM_CACHE_ENABLED=false` é o botão de emergência se uma resposta
 cacheada indevidamente virar suspeita durante um incidente.
 
+### 6.5 Scanning Ativo — controles e limites
+
+Scanning ativo é funcionalidade core — roda sempre que o alvo está em
+`ALLOWED_SCOPES`, independentemente do Modo Diabo. Controles:
+
+- **Rate limiting:** `SCAN_RATE_LIMIT` (default 10 req/s). Configure por
+  ambiente; valores muito altos podem ser interpretados como ataque pelo alvo.
+- **Timeout:** `SCAN_REQUEST_TIMEOUT` (default 30s). Requisições que excedem
+  o timeout são canceladas.
+- **Self-imposed restrictions:** `SCAN_RESPECT_ROBOTS_TXT` (default `true`)
+  faz o scanner respeitar `robots.txt`. Desativar só em ambientes controlados
+  (labs, CTFs) onde `robots.txt` pode bloquear scanning legítimo.
+- **Logging:** toda requisição HTTP ao alvo é logada (URL, status, duração).
+- **Kill-switch:** `KILL_SWITCH=true` interrompe scanning em andamento.
+
+**Runbook — scanning ativo bloqueado por robots.txt:**
+1. Confirme que `SCAN_RESPECT_ROBOTS_TXT=true` (comportamento esperado).
+2. Se o alvo é um lab/CTF/ambiente controlado, defina `SCAN_RESPECT_ROBOTS_TXT=false`.
+3. Em produção, **nunca** desative self-imposed restrictions.
+
+**Runbook — scanning ativo muito lento:**
+1. Confirme `SCAN_RATE_LIMIT` — valores muito baixos (ex.: 1) causam lentidão.
+2. Para labs/CTFs, suba o rate limit com cautela.
+3. Verifique `SCAN_REQUEST_TIMEOUT` — timeouts muito curtos causam falhas em
+   páginas lentas.
+
 ## 7. Dados: backup e recuperação
 
 ### 7.1 Banco (SQLite)
@@ -237,6 +272,8 @@ cacheada indevidamente virar suspeita durante um incidente.
 | Comportamento fora de escopo ou suspeita de segurança | §4 (kill-switch) |
 | Precisa restaurar de um backup | §7 |
 | UI pede login / sessão expira | §10 |
+| Scanning ativo bloqueado por robots.txt | §6.5 |
+| Scanning ativo muito lento ou com timeouts | §6.5 |
 
 ## 10. Autenticação leve da UI (Etapa 11 — hardening)
 

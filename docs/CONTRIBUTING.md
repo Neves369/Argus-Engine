@@ -2,11 +2,13 @@
 
 Obrigado pelo interesse em contribuir com o **Argus Engine**.
 
-> **Aviso legal e ético:** este projeto só deve ser usado em alvos com autorização
-> explícita e escopo definido, em conformidade com leis locais e políticas de bug bounty.
-> Não são aceitas contribuições que detalhem técnicas de reconhecimento, exploração,
-> payloads ou chaining de vulnerabilidades — a discussão fica no nível de arquitetura de
-> software, abstração de ferramentas e fluxo de dados.
+> **Aviso legal e ético:** este projeto é uma plataforma de **pentest e bug bounty
+> autorizada** com scanning ativo. Só deve ser usado em alvos com autorização explícita e
+> escopo definido, em conformidade com leis locais e políticas de bug bounty. Scanning
+> ativo (download de página, crawl, análise de headers/forms, detecção de vulnerabilidades)
+> é funcionalidade permitida e esperada. Não são aceitas contribuições que detalhem payloads,
+> chaining de vulnerabilidades ou passo-a-passo de exploração — a discussão fica no nível de
+> arquitetura de software, abstração de ferramentas e fluxo de dados.
 
 ## Antes de começar
 
@@ -64,6 +66,6 @@ npm run build
 
 ## O que NÃO é aceito
 
-- Técnicas ofensivas concretas (payloads, exploits, chaining) — apenas abstração e arquitetura.
+- Payloads, chaining de vulnerabilidades ou passo-a-passo de exploração — apenas abstração e arquitetura.
 - Remoção dos controles de segurança (escopo, sandbox, kill-switch, auditoria, HITL).
 - Código que execute ações fora de ambiente isolado e escopo validado.

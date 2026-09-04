@@ -1,11 +1,12 @@
 # Política de Uso Autorizado — Argus Engine
 
-**Versão:** 1.0.0
+**Versão:** 1.1.0
 
 ## 1. Princípio
 
-O Argus Engine é uma plataforma de orquestração de agentes para segurança ofensiva
-**autorizada**. Seu uso é estritamente limitado a atividades com autorização explícita.
+O Argus Engine é uma plataforma de **pentest e bug bounty autorizada** com scanning
+ativo e orquestração de agentes. Seu uso é estritamente limitado a atividades com
+autorização explícita.
 
 ## 2. Requisitos para uso
 
@@ -19,25 +20,27 @@ Antes de iniciar qualquer run, o operador deve confirmar que:
 ## 3. Escopo
 
 - O escopo é definido via `ALLOWED_SCOPES` e validado em tempo de execução por `validate_scope`.
+- Scanning ativo (download de página, crawl, análise de headers/forms, detecção de vulnerabilidades) roda apenas contra alvos dentro do escopo.
 - Qualquer alvo fora do escopo é recusado automaticamente.
 
 ## 4. Controles obrigatórios
 
+- **Scanning ativo:** rate limiting, timeout, self-imposed restrictions (respeitar `robots.txt`), logging completo de requisições ao alvo.
 - Sandbox para execução de ferramentas.
 - Kill-switch disponível a qualquer momento.
 - Auditoria completa (logging estruturado + histórico de decisões).
 - HITL (aprovação humana) em ações destrutivas.
 
-## 5. Modo Diabo
+## 5. Scanning Ativo vs Modo Diabo
 
-O Modo Diabo (execução real de scripts invasivos/destrutivos) só pode ser ativado com
-escopo validado, sandbox, kill-switch, auditoria completa e HITL em ações destrutivas.
+- **Scanning ativo** é funcionalidade core — roda sempre que o alvo está em `ALLOWED_SCOPES`, independentemente do Modo Diabo.
+- **Modo Diabo** (execução real de scripts invasivos/destrutivos, futuramente exploits) é uma camada separada que exige escopo validado, sandbox, kill-switch, auditoria completa e HITL.
 
 ## 6. Proibições
 
 - Uso em alvos sem autorização explícita.
 - Uso para fins ilegais ou fora do escopo autorizado.
-- Detalhamento ou compartilhamento de técnicas ofensivas concretas.
+- Detalhamento ou compartilhamento de payloads, chaining de vulnerabilidades ou passo-a-passo de exploração.
 
 ## 7. Responsabilidade
 

@@ -1,7 +1,8 @@
 # Argus Engine — Backend
 
-Backend de orquestração de agentes para **segurança ofensiva autorizada**. Este serviço
-fornece a fundação (Etapa 0) e o núcleo de orquestração em grafo (Etapa 1) do plano.
+Backend de orquestração de agentes para **pentest e bug bounty autorizado** com scanning
+ativo. Este serviço fornece a fundação (Etapa 0), o núcleo de orquestração em grafo
+(Etapa 1) e scanning ativo (Etapa 12) do plano.
 
 > **Uso autorizado apenas.** Este projeto só deve ser usado em alvos com autorização
 > explícita e escopo definido, em conformidade com leis locais e políticas de bug bounty.
@@ -25,6 +26,7 @@ app/
 ├── api/v1/               # router, targets, runs, sources, compositions
 ├── orchestration/        # state, graph, director
 ├── agents/               # BaseArchetype + arquetipos minimos
+├── scanning/             # HTTP client, parsers, detecção de vulnerabilidades (Etapa 12)
 ├── llm/                  # gateway multi-provider (Etapa 3): client, providers, router
 ├── sources/              # fontes de dados externas plugadas (Etapa 9): registry + service
 ├── tools/                # tool registry + executor (Etapa 5)
@@ -153,8 +155,5 @@ O entrypoint `argus` está declarado em `[project.scripts]`; a exportação reut
 
 ## Próximas fases
 
-- Etapa 2: System prompts por persona + JSON Schema de saída por arquétipo
-- Etapa 3: LLM Gateway — cost-optimized/auto, cache de prefixo, Google Gemini, wiring nos agentes
-- Etapa 4: Alembic + sessions + cve_cache/external_data_cache + SARIF
 - Etapa 5: Tool Registry — sandbox Docker
-- Etapa 6: Filtro de Qualidade — Agente Validador com LLM juiz
+- Etapa 12: Scanning Ativo — módulo `app/scanning/`, HTTP client com rate limiting/timeout, integração com HermitAgent
