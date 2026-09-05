@@ -357,6 +357,28 @@
   letter-spacing: 0.5px;
 }
 
+.run-panel-chat-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.run-panel-chat-chip {
+  font-size: 11px;
+  color: #e9d5ff;
+  background: rgba(170, 59, 255, 0.16);
+  border: 1px solid rgba(170, 59, 255, 0.35);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.run-panel-chat-chip--cve {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
 .run-panel-chat-text {
   color: #e9d5ff;
   font-style: italic;

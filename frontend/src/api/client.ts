@@ -85,6 +85,11 @@ export interface ChatMessage {
   agent: string;
   action: string;
   reasoning: string;
+  findings?: number;
+  sources?: number;
+  scanned?: boolean;
+  pages?: number;
+  cve_correlations?: number;
 }
 
 export interface RunLogLine {

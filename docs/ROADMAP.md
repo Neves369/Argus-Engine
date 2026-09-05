@@ -650,6 +650,10 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   `ALLOWED_SCOPES` e degradam de forma determinística quando o binário não está
   instalado (`FileNotFoundError` → `ToolExecutionError`, nunca 500). Eremita não faz
   shell-out para elas por design (agente só lê das sources configuradas).
+- **Frontend**: o bubble do Eremita na aba Chat agora mostra o meta do entry —
+  `cve_correlations` (chips "N correlações CVE"), achados, fontes e scan ativo
+  (páginas) — propagado do `history` tanto no SSE ao vivo quanto no report
+  (`frontend/src/App.tsx` → `ChatMessage` → `RunPanel`).
 - **Validação ao vivo** via `python -m app.cli.main sources smoke` (comando da
   Etapa 13): NVD `keywordSearch` não deve levar `keywordExactMatch` (a API 2.0 o
   rejeita com 404); `rate_burst` (default 1) libera o NVD com burst 5 para o

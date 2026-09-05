@@ -270,6 +270,17 @@ function App() {
             agent,
             action: entry.action ?? '',
             reasoning: String(entry.reasoning ?? ''),
+            findings: typeof entry.findings === 'number' ? entry.findings : undefined,
+            sources:
+              typeof entry.sources_consulted === 'number'
+                ? entry.sources_consulted
+                : undefined,
+            scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
+            pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
+            cve_correlations:
+              typeof entry.cve_correlations === 'number'
+                ? entry.cve_correlations
+                : undefined,
           },
         ]);
       });
@@ -373,6 +384,15 @@ function App() {
           agent: entry.agent ?? '?',
           action: entry.action ?? '',
           reasoning: String(entry.reasoning ?? ''),
+          findings: typeof entry.findings === 'number' ? entry.findings : undefined,
+          sources:
+            typeof entry.sources_consulted === 'number'
+              ? entry.sources_consulted
+              : undefined,
+          scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
+          pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
+          cve_correlations:
+            typeof entry.cve_correlations === 'number' ? entry.cve_correlations : undefined,
         })),
       );
       applyReport(report);

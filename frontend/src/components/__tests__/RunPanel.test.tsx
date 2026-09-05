@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import RunPanel from '../RunPanel'
-import type { PendingReview, RunFinding } from '../../api/client'
+import type { ChatMessage, PendingReview, RunFinding } from '../../api/client'
 import { getReportExport } from '../../api/client'
 
 vi.mock('../../api/client')
@@ -88,5 +88,36 @@ describe('RunPanel', () => {
     expect(createObjectURL).toHaveBeenCalled()
     // o select volta para o placeholder — permite exportar o mesmo formato de novo
     await waitFor(() => expect(select.value).toBe(''))
+  })
+
+  it('mostra os metadados do entry (correlações CVE, achados, fontes, scan) no chat', () => {
+    const messages: ChatMessage[] = [
+      {
+        agent: 'hermit',
+        action: 'simulate',
+        reasoning: 'Resumo da investigação.',
+        findings: 3,
+        sources: 2,
+        scanned: true,
+        pages: 5,
+        cve_correlations: 2,
+      },
+      {
+        agent: 'justice',
+        action: 'validate',
+        reasoning: 'Avaliação final.',
+      },
+    ]
+    const { container } = render(<RunPanel {...baseProps} chat={messages} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Chat/ }))
+    expect(screen.getByText('2 correlações CVE')).toBeInTheDocument()
+    expect(screen.getByText('3 achados')).toBeInTheDocument()
+    expect(screen.getByText('2 fontes')).toBeInTheDocument()
+    expect(screen.getByText(/scan ativo/)).toBeInTheDocument()
+    expect(screen.getByText(/5 páginas/)).toBeInTheDocument()
+    // entry sem metadados não renderiza a linha de chips
+    const chips = container.querySelectorAll('.run-panel-chat-chip')
+    expect(chips.length).toBe(4)
   })
 })

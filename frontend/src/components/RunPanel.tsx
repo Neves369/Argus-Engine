@@ -278,6 +278,37 @@ function RunPanel({
                     <span className="run-panel-chat-agent">{message.agent}</span>
                     <span className="run-panel-chat-action">{message.action}</span>
                   </div>
+                  {(message.cve_correlations !== undefined ||
+                    message.findings !== undefined ||
+                    message.sources !== undefined ||
+                    message.scanned) && (
+                    <div className="run-panel-chat-meta">
+{message.cve_correlations !== undefined && message.cve_correlations > 0 && (
+                        <span className="run-panel-chat-chip run-panel-chat-chip--cve">
+                          {message.cve_correlations} correlaç
+                          {message.cve_correlations === 1 ? 'ão CVE' : 'ões CVE'}
+                        </span>
+                      )}
+                      {message.findings !== undefined && message.findings > 0 && (
+                        <span className="run-panel-chat-chip">
+                          {message.findings} achado{message.findings === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {message.sources !== undefined && message.sources > 0 && (
+                        <span className="run-panel-chat-chip">
+                          {message.sources} fonte{message.sources === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {message.scanned && (
+                        <span className="run-panel-chat-chip">
+                          scan ativo
+                          {message.pages !== undefined && message.pages > 0
+                            ? ` · ${message.pages} página${message.pages === 1 ? '' : 's'}`
+                            : ''}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {message.reasoning && (
                     <div className="run-panel-chat-text">{message.reasoning}</div>
                   )}
