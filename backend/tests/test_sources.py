@@ -52,8 +52,8 @@ CVE_SOURCE = DataSourceSpec(
 def test_registry_loads_manifest():
     path = Path(__file__).resolve().parents[1] / "sources.json"
     reg = DataSourceRegistry(path)
-    assert {"cve", "osint"} <= set(reg.available_sources())
-    assert reg.has_source("cve")
+    assert {"nvd", "hackertarget", "crtsh"} <= set(reg.available_sources())
+    assert reg.has_source("hackertarget")
     assert not reg.has_source("nope")
 
 
@@ -186,22 +186,22 @@ def test_list_sources_api(client):
     resp = client.get("/api/v1/sources")
     assert resp.status_code == 200
     names = {s["name"] for s in resp.json()}
-    assert "cve" in names
-    assert "osint" in names
+    assert "hackertarget" in names
+    assert "nvd" in names
 
 
 @respx.mock
 def test_query_source_api(client):
-    respx.get("https://cve.example.local/api/cve").mock(
-        return_value=Response(200, json={"cve_id": "CVE-2024-9999", "cvss": 9.8, "extra": 1})
+    respx.get("https://api.hackertarget.com/hostsearch/").mock(
+        return_value=Response(200, text="www.example.com,1.2.3.4\napi.example.com,5.6.7.8\n")
     )
     resp = client.post(
-        "/api/v1/sources/cve/query", json={"params": {"id": "CVE-2024-9999"}}
+        "/api/v1/sources/hackertarget/query", json={"params": {"q": "example.com"}}
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["data"] == {"cve_id": "CVE-2024-9999", "cvss": 9.8}
+    assert "www.example.com" in body["data"]["response"]
 
 
 @respx.mock
@@ -212,18 +212,18 @@ def test_query_source_api_unknown_source(client):
 
 def test_query_source_api_scope_denied(client):
     resp = client.post(
-        "/api/v1/sources/cve/query", json={"params": {}, "target": "evil.example.org"}
+        "/api/v1/sources/hackertarget/query", json={"params": {}, "target": "evil.example.org"}
     )
     assert resp.status_code == 403
 
 
 @respx.mock
 def test_query_source_api_scope_allowed(client):
-    respx.get("https://cve.example.local/api/cve").mock(
+    respx.get("https://api.hackertarget.com/hostsearch/").mock(
         return_value=Response(500, text="down")
     )
     resp = client.post(
-        "/api/v1/sources/cve/query", json={"params": {}, "target": "example.com"}
+        "/api/v1/sources/hackertarget/query", json={"params": {}, "target": "example.com"}
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "simulated"

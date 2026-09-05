@@ -672,6 +672,20 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
     `Rate limit exceeded`. Fix: `fetch_no_rate_limit()` para requests de
     infraestrutura (`robots.txt` não consome o orçamento do scan) em
     `app/scanning/client.py` + `service.py`.
+- **Fontes configuradas = reais, sem placeholders mortos**: o manifesto
+  `sources.json` foi saneado — removidas as fontes fictícias `cve`
+  (`cve.example.local`) e `osint` (`osint.example.local`); adicionada
+  **`hackertarget`** (hostsearch, forward-DNS passivo, grátis sem chave,
+  ~20 queries/dia, 50 resultados; `rate_burst: 5` como o NVD). Toda fonte do
+  manifesto agora é real e responde. E2E ao vivo validado (`compose execute`
+  contra `example.com`): `hackertarget` respondeu `status=ok` com
+  `www.example.com,104.20.23.154` e gerou o finding de forward-DNS
+  (`app/services/source_findings.py::_hackertarget_finding`, padronizado
+  candidate/info, categoria "Superfície de ataque").
+- **Coinflip de rate-limit no pipeline**: um source com `rate_limit` baixo e
+  `rate_burst` default 1 esgota o bucket no 1º uso do run e um 2º uso (sweep +
+  re-consulta do mesmo run) cai em `429 Too Many Requests` — sintoma real
+  reproduzido em teste antes de dar burst ao hackertarget.
 
 ## Próximos passos sugeridos
 

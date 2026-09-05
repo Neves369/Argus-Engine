@@ -243,6 +243,55 @@ def _ip_api_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _hackertarget_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse HackerTarget hostsearch plain-text output.
+
+    The API returns one ``hostname,ip`` pair per line (verified live); any
+    other/unknown shape is skipped rather than guessed at.
+    """
+    payload = data.get("response")
+    if not isinstance(payload, str) or not payload.strip():
+        return None
+    hosts: set[str] = set()
+    for line in payload.splitlines():
+        host, sep, ip = line.strip().partition(",")
+        host = host.strip().lower()
+        if not (sep and host and ip.strip() and host != target.lower()):
+            continue
+        hosts.add(host)
+    if not hosts:
+        return None
+    ordered = sorted(hosts)
+    sample = ordered[:15]
+    more = f" (+{len(ordered) - len(sample)} outro(s))" if len(ordered) > len(sample) else ""
+    return {
+        "id": None,
+        "title": f"{len(ordered)} host(s) de forward DNS encontrado(s) para {target}",
+        "description": (
+            "O hostsearch do HackerTarget (forward-DNS passivo) lista nomes de "
+            "host que resolvem para este domínio. Amplia a superfície de ataque "
+            "declarada — vale confirmar se cada host está ativo, autorizado e "
+            "protegido no mesmo nível do domínio principal."
+        ),
+        "severity": "info",
+        "category": "Superfície de ataque",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": [],
+        "known_exploits": [],
+        "remediation": (
+            "Para cada host: confirme se está ativo e autorizado; remova DNS e "
+            "serviços que não estejam mais em uso para reduzir a superfície."
+        ),
+        "references": [f"https://hackertarget.com/host-search/{target}"],
+        "evidence": "Hosts: " + ", ".join(sample) + more,
+        "confidence": 0.7,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
 #: Only sources with a verified, stable response shape get a finding
 #: extractor. Every other configured source (cve_report, and any
 #: future/operator-added source) still gets queried and its raw result
@@ -255,6 +304,7 @@ _EXTRACTORS = {
     "nvd": _nvd_finding,
     "urlscan": _urlscan_finding,
     "ip_api": _ip_api_finding,
+    "hackertarget": _hackertarget_finding,
 }
 
 

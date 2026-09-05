@@ -258,14 +258,13 @@ def test_real_sources_manifest_loads_all_expected_sources():
     path = Path(__file__).resolve().parents[1] / "sources.json"
     reg = DataSourceRegistry(path)
     expected = {
-        "cve",
-        "osint",
         "nvd",
         "cve_report",
         "crtsh",
         "abuseipdb",
         "urlscan",
         "ip_api",
+        "hackertarget",
         "kev",
     }
     assert expected <= set(reg.available_sources())
@@ -280,6 +279,7 @@ def test_real_sources_manifest_loads_all_expected_sources():
         ("abuseipdb", "ip"),
         ("urlscan", "domain"),
         ("ip_api", "ip"),
+        ("hackertarget", "domain"),
         ("kev", "any"),
     ],
 )
@@ -378,6 +378,50 @@ def test_ip_api_extractor_flags_proxy_and_hosting():
 
 def test_ip_api_extractor_skips_residential_ip():
     assert _derived("ip_api", {"proxy": False, "hosting": False}) == []
+
+
+def test_hackertarget_extractor_parses_hostname_lines():
+    data = {
+        "response": (
+            "www.example.com,1.2.3.4\n"
+            "api.example.com,5.6.7.8\n"
+            "\n"
+            "WWW.EXAMPLE.COM,1.2.3.4\n"
+        )
+    }
+    findings = _derived("hackertarget", data)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["title"].startswith("2 host(s) de forward DNS")
+    assert "www.example.com" in finding["evidence"]
+    assert "api.example.com" in finding["evidence"]
+    assert finding["severity"] == "info"
+    assert finding["status"] == "candidate"
+    assert finding["requires_human_review"] is True
+
+
+def test_hackertarget_extractor_ignores_target_itself():
+    data = {"response": "example.com,1.2.3.4\nwww.example.com,5.6.7.8\n"}
+    findings = _derived("hackertarget", data)
+    assert len(findings) == 1
+    assert "example.com,1.2.3.4" not in findings[0]["evidence"]
+
+
+def test_hackertarget_extractor_skips_empty_or_unknown_shapes():
+    assert _derived("hackertarget", {"response": ""}) == []
+    assert _derived("hackertarget", {"response": "\n\n"}) == []
+    assert _derived("hackertarget", {"response": "no-ip-here"}) == []
+
+
+def test_hackertarget_extractor_ignores_simulated_results():
+    results = [
+        _source_result(
+            "hackertarget",
+            {"response": "www.example.com,1.2.3.4\n"},
+            status="simulated",
+        )
+    ]
+    assert derive_findings_from_sources("example.com", results) == []
 
 
 def test_extractors_ignore_simulated_results():

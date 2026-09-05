@@ -1,27 +1,5 @@
 [
   {
-    "name": "cve",
-    "description": "CVE lookup source (operator-provided). Configure the real URL.",
-    "kind": "cve",
-    "url": "https://cve.example.local/api/cve",
-    "method": "GET",
-    "timeout": 10.0,
-    "rate_limit": 100.0,
-    "ttl": 3600,
-    "fields": ["cve_id", "cvss", "description"]
-  },
-  {
-    "name": "osint",
-    "description": "Generic OSINT data source (operator-provided). Configure the real URL.",
-    "kind": "http",
-    "url": "https://osint.example.local/v1/query",
-    "method": "POST",
-    "timeout": 15.0,
-    "rate_limit": 100.0,
-    "ttl": 600,
-    "fields": ["indicator", "source", "reported_at"]
-  },
-  {
     "name": "nvd",
     "description": "NVD (NIST) CVE API 2.0 — keyword search across the official vulnerability database. Free, no key required (5 req/30s); set NVD_API_KEY for a higher limit (50 req/30s).",
     "kind": "cve",
@@ -105,6 +83,20 @@
     "fields": [],
     "query_param": "query",
     "target_kind": "ip"
+  },
+  {
+    "name": "hackertarget",
+    "description": "HackerTarget hostsearch — passive forward-DNS lookup listing the hostnames a domain resolves to. Free, no key, ~20 queries/day (50 results each); TTL 24h because the dataset changes slowly.",
+    "kind": "http",
+    "url": "https://api.hackertarget.com/hostsearch/",
+    "method": "GET",
+    "timeout": 15.0,
+    "rate_limit": 0.05,
+    "rate_burst": 5,
+    "ttl": 86400,
+    "fields": [],
+    "query_param": "q",
+    "target_kind": "domain"
   },
   {
     "name": "kev",
