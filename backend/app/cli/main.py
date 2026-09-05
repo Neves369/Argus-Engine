@@ -24,6 +24,11 @@ sources = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(sources, name="sources")
+tools = typer.Typer(
+    help="Executar ferramentas de recon passivo registradas (whois/dig) contra alvos autorizados.",
+    no_args_is_help=True,
+)
+app.add_typer(tools, name="tools")
 
 console = Console()
 
@@ -498,6 +503,51 @@ def sources_smoke(
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Smoke falhou:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@tools.command("run")
+def tools_run(
+    tool: Annotated[str, typer.Argument(help="Nome da tool registrada (ex.: whois, dig)")],
+    target: Annotated[str, typer.Argument(help="Alvo autorizado (scope)")],
+) -> None:
+    """Executar uma tool de recon passivo registrada contra um alvo autorizado.
+
+    Usa o mesmo ``ToolRegistry``/``ToolExecutor`` da API; valida o alvo contra
+    ``ALLOWED_SCOPES`` antes de rodar e degrada de forma determinística quando
+    o binário não está instalado ou a rede bloqueia a chamada (nunca um 500).
+    """
+    from app.core.config import get_settings
+    from app.core.security import ScopeValidationError, validate_scope
+    from app.tools import ToolExecutionError, ToolExecutor, ToolRegistry
+    from app.tools.spec import ToolKind
+
+    registry = ToolRegistry()
+    registry.load(get_settings().tools_manifest)
+    try:
+        spec = registry.get_tool(tool)
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if spec.kind != ToolKind.CLI or spec.destructive:
+        console.print("[red]Tool não é um comando CLI passivo seguro.[/red]")
+        raise typer.Exit(code=1)
+    try:
+        validate_scope(target)
+    except ScopeValidationError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        result = asyncio.run(ToolExecutor(registry).execute(tool, {"target": target}))
+    except ToolExecutionError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold]{tool} {target}[/bold] returncode={result['returncode']}")
+    if result["returncode"] == 0 and result["stdout"]:
+        console.print(result["stdout"])
+    else:
+        console.print(f"[yellow]sem saída / egress bloqueado:[/yellow] {result['stderr'] or '-'}")
 
 
 if __name__ == "__main__":

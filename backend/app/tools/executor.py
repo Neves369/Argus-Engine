@@ -172,12 +172,19 @@ class ToolExecutor:
             else None
         )
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            preexec_fn=preexec_fn,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                preexec_fn=preexec_fn,
+            )
+        except FileNotFoundError as exc:
+            # Binário não instalado (ex.: `whois`/`dig` fora do PATH) — degrada
+            # como erro de tool (403 na API), nunca como 500 inesperado.
+            raise ToolExecutionError(
+                f"Tool {tool.name} command not found: {tool.command}"
+            ) from exc
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=tool.timeout)
         except TimeoutError as exc:

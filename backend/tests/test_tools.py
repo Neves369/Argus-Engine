@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sys
 
 import pytest
@@ -15,6 +16,14 @@ def _make_registry(*specs: ToolSpec) -> ToolRegistry:
     registry = ToolRegistry()
     for spec in specs:
         registry.register(spec)
+    return registry
+
+
+def _manifest_registry() -> ToolRegistry:
+    from app.core.config import get_settings
+
+    registry = ToolRegistry()
+    registry.load(get_settings().tools_manifest)
     return registry
 
 
@@ -109,6 +118,92 @@ def test_list_tools_endpoint(client):
     assert response.status_code == 200
     names = {tool["name"] for tool in response.json()}
     assert {"echo", "fetch", "dangerous"} <= names
+
+
+def test_manifest_registers_whois_and_dig():
+    registry = _manifest_registry()
+    for name in ("whois", "dig"):
+        spec = registry.get_tool(name)
+        assert spec.kind == ToolKind.CLI
+        assert spec.destructive is False
+        assert spec.sandbox_network is True
+        assert spec.timeout > 0
+        assert spec.rate_limit > 0
+
+
+def test_list_tools_includes_whois_and_dig(client):
+    response = client.get("/api/v1/tools")
+    assert response.status_code == 200
+    tools = {tool["name"]: tool for tool in response.json()}
+    assert {"whois", "dig"} <= tools.keys()
+    assert tools["whois"]["kind"] == "cli"
+    assert tools["whois"]["destructive"] is False
+    assert tools["dig"]["destructive"] is False
+
+
+def test_whois_invoke_outside_scope_blocked(client):
+    response = client.post(
+        "/api/v1/tools/whois/invoke",
+        json={"params": {}, "target": "example.org"},
+    )
+    assert response.status_code == 403
+
+
+def test_whois_invoke_denied_for_archetype(client):
+    response = client.post(
+        "/api/v1/tools/whois/invoke",
+        json={"params": {}, "target": "sub.example.com", "agent": "justice"},
+    )
+    assert response.status_code == 403
+
+
+def test_build_command_bare_target_value():
+    spec = ToolSpec(name="whois", kind=ToolKind.CLI, command="whois")
+    assert ToolExecutor._build_command(spec, {"target": "example.com"}) == [
+        "whois",
+        "example.com",
+    ]
+    assert ToolExecutor._build_command(spec, {"args": ["-h", "whois.iana.org", "example.com"]}) == [
+        "whois",
+        "-h",
+        "whois.iana.org",
+        "example.com",
+    ]
+
+
+def test_cli_command_missing_binary_degrades_to_tool_error():
+    spec = ToolSpec(name="ghost", kind=ToolKind.CLI, command="/no/such/binary-argus", timeout=5.0)
+    registry = _make_registry(spec)
+
+    async def _run() -> None:
+        executor = ToolExecutor(registry)
+        with pytest.raises(ToolExecutionError, match="command not found"):
+            await executor.execute("ghost", {"target": "example.com"})
+
+    asyncio.run(_run())
+
+
+def test_whois_dig_real_smoke():
+    """Best-effort: executa whois/dig reais se os binários existirem e a rede abrir.
+
+    Não é hermético por natureza (recon passivo real). Ausência do binário,
+    egress bloqueado ou porta 43/DNS inacessíveis => skip, não falha falsa.
+    """
+    registry = _manifest_registry()
+
+    for name in ("whois", "dig"):
+        if shutil.which(name) is None:
+            pytest.skip(f"{name} não instalado neste host")
+        executor = ToolExecutor(registry)
+        try:
+            result = asyncio.run(executor.execute(name, {"target": "example.com"}))
+        except ToolExecutionError:
+            pytest.skip(f"{name}: egress bloqueado / timeout neste host")
+        if result["returncode"] != 0:
+            pytest.skip(f"{name}: rede fechada neste host (rc={result['returncode']})")
+        assert result["tool"] == name
+        assert result["stdout"].strip()
+        assert result["stderr_truncated"] is False
 
 
 def test_invoke_denied_for_archetype(client):

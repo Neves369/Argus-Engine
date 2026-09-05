@@ -645,6 +645,11 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   dentro da correlação (`cves`/`references`/EPSS/KEV por CVE)
 - Correlação só dispara com versão no banner (produto sem versão é ruído)
 - Sources novas para adicionar depois: Censys/Shodan, whois passivo, certstream
+- `whois`/`dig` integrados ponta a ponta como tools operator-invoked: `argus tools run
+  <tool> <target>` (CLI) e `POST /tools/{name}/invoke` validam o alvo contra
+  `ALLOWED_SCOPES` e degradam de forma determinística quando o binário não está
+  instalado (`FileNotFoundError` → `ToolExecutionError`, nunca 500). Eremita não faz
+  shell-out para elas por design (agente só lê das sources configuradas).
 - **Validação ao vivo** via `python -m app.cli.main sources smoke` (comando da
   Etapa 13): NVD `keywordSearch` não deve levar `keywordExactMatch` (a API 2.0 o
   rejeita com 404); `rate_burst` (default 1) libera o NVD com burst 5 para o
