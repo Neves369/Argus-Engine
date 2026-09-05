@@ -113,7 +113,7 @@ class DataSourceService:
 
     def __init__(self, registry: DataSourceRegistry) -> None:
         self._registry = registry
-        self._last_invocation: dict[str, float] = {}
+        self._buckets: dict[str, tuple[int, float]] = {}
 
     def available_sources(self) -> list[str]:
         """Names of every configured source (agents query by role, not by name)."""
@@ -123,13 +123,24 @@ class DataSourceService:
         return self._registry.get_source(name)
 
     def _check_rate_limit(self, source: DataSourceSpec) -> None:
+        """Token-bucket guard per source: refills at ``rate_limit``/s, allowing
+        an immediate burst of up to ``rate_burst`` calls.
+
+        A single run legitimately calls NVD twice within seconds (the OSINT
+        sweep's keyword search, then the CVE correlation's keyword search); a
+        strict one-call-per-window limiter would silently starve the
+        correlation. The burst mirrors NVD's anonymous 5 req/30s budget while
+        the refill keeps sustained usage inside it.
+        """
         if source.rate_limit <= 0:
             return
-        last = self._last_invocation.get(source.name)
+        burst = max(1, source.rate_burst)
         now = time.monotonic()
-        if last is not None and (now - last) < (1.0 / source.rate_limit):
+        tokens, last = self._buckets.get(source.name, (burst, now))
+        tokens = min(burst, tokens + (now - last) * source.rate_limit)
+        if tokens < 1:
             raise DataSourceError(f"Rate limit exceeded for source {source.name}")
-        self._last_invocation[source.name] = now
+        self._buckets[source.name] = (tokens - 1, now)
 
     async def query(self, name: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}

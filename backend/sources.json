@@ -30,6 +30,7 @@
     "headers_template": { "apiKey": "${NVD_API_KEY}" },
     "timeout": 15.0,
     "rate_limit": 0.15,
+    "rate_burst": 5,
     "ttl": 21600,
     "fields": ["totalResults", "vulnerabilities"],
     "query_param": "keywordSearch",

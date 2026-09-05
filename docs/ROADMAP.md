@@ -619,7 +619,8 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   abuseipdb, crtsh, nvd, **urlscan**, **ip_api**; respostas simuladas/irreconhecíveis são
   ignoradas (nunca fabrica valor)
 - [x] Correlação CVE por produto+versão do banner (`app/services/cve_correlate.py`):
-  NVD keywordSearch (`keywordExactMatch`, `resultsPerPage`), CISA KEV (catálogo
+  NVD keywordSearch (`resultsPerPage`; sem `keywordExactMatch` — a API 2.0 o
+  rejeita com 404, validado ao vivo), CISA KEV (catálogo
   full-feed como source `kev`, `skip_sweep`), CVE.report (ID → refs + EPSS/KEV)
 - [x] Findings de correlação sempre `status="candidate"` + `requires_human_review=True`
   (correlação é lead textual, não confirmação); degradação offline determinística
@@ -644,6 +645,10 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   dentro da correlação (`cves`/`references`/EPSS/KEV por CVE)
 - Correlação só dispara com versão no banner (produto sem versão é ruído)
 - Sources novas para adicionar depois: Censys/Shodan, whois passivo, certstream
+- **Validação ao vivo** via `python -m app.cli.main sources smoke` (comando da
+  Etapa 13): NVD `keywordSearch` não deve levar `keywordExactMatch` (a API 2.0 o
+  rejeita com 404); `rate_burst` (default 1) libera o NVD com burst 5 para o
+  sweep + correlação rodarem no mesmo run (ver `docs/adr/0008-cve-correlation.md`)
 
 ## Próximos passos sugeridos
 

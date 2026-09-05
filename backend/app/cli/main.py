@@ -19,6 +19,11 @@ compose = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(compose, name="compose")
+sources = typer.Typer(
+    help="Validar fontes de dados externas ao vivo (smoke).",
+    no_args_is_help=True,
+)
+app.add_typer(sources, name="sources")
 
 console = Console()
 
@@ -414,6 +419,85 @@ def _session_review(run_id: int, approved: bool, note: str | None) -> str:
             return run.status
 
     return asyncio.run(_run())
+
+
+@sources.command("smoke")
+def sources_smoke(
+    keyword: Annotated[
+        str,
+        typer.Option(
+            "--keyword", help="Produto+versão a correlacionar (ex.: apache http server 2.4.49)"
+        ),
+    ] = "apache http server 2.4.49",
+) -> None:
+    """Validar NVD / CISA KEV / CVE.report ao vivo (+ correlação).
+
+    Faz requisições reais contra as APIS públicas usando o mesmo
+    ``DataSourceService`` do pipeline e imprime os shapes normalizados —
+    para conferir se os dados reais ainda batem com os extractors parsers
+    (NVD pode adicionar CVSS v4, mudar campos, etc.).
+    """
+    from app.scanning.service import ScanReport
+    from app.scanning.spec import TargetPage
+    from app.services.cve_correlate import correlate_scan_report
+    from app.sources.service import build_sources_service
+
+    async def _probe() -> None:
+        service = build_sources_service()
+
+        kev = await service.query("kev", {})
+        console.print(f"[bold]kev[/bold] status={kev['status']}")
+        if kev["status"] in ("ok", "cache"):
+            entries = (kev.get("data") or {}).get("vulnerabilities") or []
+            console.print(f"  catalogo={kev['data'].get('catalogVersion')} entradas={len(entries)}")
+
+        corpus = {
+            "target": "example.com",
+            "pages": [
+                TargetPage(
+                    url="http://example.com/",
+                    status_code=200,
+                    headers={"server": "Apache/2.4.49 (Ubuntu)"},
+                    body="<html><body>x</body></html>",
+                )
+            ],
+        }
+        report = ScanReport(**corpus)
+        correlated = await correlate_scan_report(report, service)
+        console.print(f"[bold]correlacao[/bold] findings={len(correlated)}")
+        for finding in correlated:
+            console.print(f"  title={finding['title']}")
+            console.print(f"  severity={finding['severity']} cvss={finding['cvss_score']}")
+            console.print(f"  cves={finding['cves']}")
+            console.print(f"  known_exploits={len(finding['known_exploits'])}")
+            console.print(f"  references={len(finding['references'])}")
+            console.print(f"  status={finding['status']} review={finding['requires_human_review']}")
+
+        # NVD raw shape after the correlation — it owns the first-burst slot so
+        # this follow-up read may legitimately be rate-limited (deterministic
+        # degradation, not an error). The correlation result above is the
+        # meaningful signal.
+        nvd = await service.query(
+            "nvd",
+            {
+                "keywordSearch": keyword,
+                "resultsPerPage": "5",
+            },
+        )
+        console.print(f"[bold]nvd[/bold] status={nvd['status']}")
+        if nvd["status"] in ("ok", "cache"):
+            vulns = (nvd.get("data") or {}).get("vulnerabilities") or []
+            console.print(f"  totalResults={nvd['data'].get('totalResults')} vulns={len(vulns)}")
+            if vulns:
+                cve = vulns[0].get("cve") or {}
+                cvss_keys = list((cve.get("metrics") or {}).keys()) or []
+                console.print(f"  primeiro: {cve.get('id')} cvss-keys={cvss_keys}")
+
+    try:
+        asyncio.run(_probe())
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Smoke falhou:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 if __name__ == "__main__":

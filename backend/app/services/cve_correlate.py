@@ -332,7 +332,6 @@ async def correlate_product_cves(
         "nvd",
         {
             "keywordSearch": keyword,
-            "keywordExactMatch": "false",
             "resultsPerPage": str(limit),
         },
     )

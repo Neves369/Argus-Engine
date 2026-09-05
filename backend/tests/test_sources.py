@@ -164,6 +164,24 @@ def test_rate_limit_raises():
         _run(svc.query("http-limited", {}))
 
 
+@respx.mock
+def test_rate_limit_burst_allows_back_to_back_calls():
+    burst = HTTP_SOURCE.model_copy(
+        update={"name": "http-burst", "rate_limit": 1.0, "rate_burst": 3}
+    )
+    route = respx.get("https://data.test.local/query").mock(
+        return_value=Response(200, json={"id": "b", "score": 1})
+    )
+    svc = DataSourceService(_registry(burst))
+    # Distinct params -> distinct cache keys -> each call fetches over HTTP.
+    for i in range(3):
+        result = _run(svc.query("http-burst", {"q": f"burst-{i}"}))
+        assert result["status"] == "ok"
+    with pytest.raises(DataSourceError):
+        _run(svc.query("http-burst", {"q": "burst-3"}))
+    assert route.call_count == 3
+
+
 def test_list_sources_api(client):
     resp = client.get("/api/v1/sources")
     assert resp.status_code == 200

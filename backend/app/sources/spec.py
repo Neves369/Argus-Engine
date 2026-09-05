@@ -42,6 +42,12 @@ class DataSourceSpec(BaseModel):
     headers_template: dict[str, str] = Field(default_factory=dict)
     timeout: float = 10.0
     rate_limit: float = 0.0
+    #: Token-bucket burst capacity for ``rate_limit``: how many calls may be
+    #: served back-to-back before the refill rate (``rate_limit`` per second)
+    #: governs. Default 1 preserves strict one-call-per-window behavior; a
+    #: single run may need e.g. the sweep *and* the CVE correlation to query
+    #: NVD within seconds — burst 5 mirrors NVD's anonymous 5 req/30s budget.
+    rate_burst: int = 1
     ttl: int = 3600
     fields: list[str] = Field(default_factory=list)
     #: Name of the parameter the collector's generic query value is placed

@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from pathlib import Path
+
+import pytest
+import respx
+from httpx import Response
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents import get_archetype
 from app.orchestration.state import GraphState
@@ -13,7 +20,8 @@ from app.services.cve_correlate import (
     product_from_banner,
 )
 from app.sources.registry import DataSourceRegistry
-from app.sources.service import DataSourceError
+from app.sources.service import DataSourceError, DataSourceService
+from app.sources.spec import DataSourceSpec, SourceKind
 
 _SOURCES_PATH = Path(__file__).resolve().parents[1] / "sources.json"
 
@@ -344,3 +352,176 @@ class _BoomSourcesService:
 
     async def query(self, name: str, params: dict | None = None) -> dict:
         raise RuntimeError("unexpected correlation failure")
+
+
+# --- integration with the real DataSourceService (respx) ---------------------
+#
+# These specs mirror `sources.json` but are built in memory so the recorded
+# HTTP interaction is fully deterministic and isolated from the shared test
+# database's external-source cache table.
+
+_NVD_SPEC = DataSourceSpec(
+    name="nvd",
+    description="test",
+    kind=SourceKind.CVE,
+    url="https://services.nvd.nist.gov/rest/json/cves/2.0",
+    method="GET",
+    headers_template={"apiKey": "${NVD_API_KEY}"},
+    timeout=5.0,
+    rate_limit=0.0,
+    ttl=21600,
+    fields=["totalResults", "vulnerabilities"],
+    query_param="keywordSearch",
+    target_kind="domain",
+)
+
+_KEV_SPEC = DataSourceSpec(
+    name="kev",
+    description="test",
+    kind=SourceKind.HTTP,
+    url="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+    method="GET",
+    timeout=5.0,
+    rate_limit=0.0,
+    ttl=86400,
+    fields=["vulnerabilities"],
+    query_param="q",
+    target_kind="any",
+    skip_sweep=True,
+)
+
+_CVE_REPORT_SPEC = DataSourceSpec(
+    name="cve_report",
+    description="test",
+    kind=SourceKind.CVE,
+    url="https://cve.report/api/cve/{query}.json",
+    method="GET",
+    timeout=5.0,
+    rate_limit=0.0,
+    ttl=86400,
+    fields=[],
+    query_param="query",
+    target_kind="cve",
+)
+
+
+def _real_service() -> DataSourceService:
+    registry = DataSourceRegistry()
+    registry.register(_NVD_SPEC)
+    registry.register(_KEV_SPEC)
+    registry.register(_CVE_REPORT_SPEC)
+    return DataSourceService(registry)
+
+
+@pytest.fixture
+def isolated_cache_db(monkeypatch):
+    """Point the sources service at a throwaway cache DB.
+
+    ``DataSourceService`` reads/writes ``cve_cache``/``external_data_cache``
+    through the app-wide ``async_session_factory`` — pointing it at the shared
+    ``test.db`` would (a) require the alembic migration to have run first and
+    (b) pollute tables other tests assert on (``test_new_models_crud`` expects
+    exactly one ``external_data_cache`` row). A temp DB with just the two cache
+    tables keeps the respx integration tests hermetic.
+    """
+    from app.db.base import Base
+    from app.db.models.cve_cache import CveCache
+    from app.db.models.external_data_cache import ExternalDataCache
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _create() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                Base.metadata.create_all,
+                tables=[CveCache.__table__, ExternalDataCache.__table__],
+            )
+
+    asyncio.run(_create())
+    monkeypatch.setattr("app.sources.service.async_session_factory", factory)
+    yield
+    asyncio.run(engine.dispose())
+    os.unlink(path)
+
+
+@respx.mock
+def test_real_service_correlate_end_to_end(isolated_cache_db):
+    nvd = respx.get("https://services.nvd.nist.gov/rest/json/cves/2.0").mock(
+        return_value=Response(200, json=_NVD_DATA)
+    )
+    kev = respx.get(
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    ).mock(return_value=Response(200, json=_KEV_DATA))
+    cve_report = respx.get("https://cve.report/api/cve/CVE-2021-41773.json").mock(
+        return_value=Response(200, json=_CVE_REPORT_DATA)
+    )
+    respx.get("https://cve.report/api/cve/CVE-2021-42013.json").mock(
+        return_value=Response(200, json={"cve_id": "CVE-2021-42013"})
+    )
+
+    finding = _run(correlate_product_cves("apache http server", "2.4.49", _real_service()))
+
+    assert nvd.called
+    request = nvd.calls[0].request
+    assert request.url.params.get("keywordSearch") == "apache http server 2.4.49"
+    assert request.url.params.get("resultsPerPage") == "5"
+    # NVD CVE API 2.0 rejects keywordExactMatch with any value (404) — it must
+    # not be sent (verified live; documented in ADR-0008).
+    assert request.url.params.get("keywordExactMatch") is None
+
+    assert kev.called
+    assert cve_report.called
+
+    assert finding is not None
+    assert finding["cves"] == ["CVE-2021-41773", "CVE-2021-42013"]
+    assert finding["severity"] == "critical"
+    assert finding["cvss_score"] == 9.8
+    assert any("CVE-2021-41773" in e for e in finding["known_exploits"])
+    assert any("nvd.nist.gov" in r for r in finding["references"])
+    assert finding["status"] == "candidate"
+    assert finding["requires_human_review"] is True
+
+
+@respx.mock
+def test_real_service_reuses_http_cache_between_calls(isolated_cache_db):
+    route = respx.get("https://services.nvd.nist.gov/rest/json/cves/2.0").mock(
+        return_value=Response(200, json=_NVD_DATA)
+    )
+    respx.get(
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    ).mock(return_value=Response(200, json=_KEV_DATA))
+    respx.get("https://cve.report/api/cve/CVE-2021-41773.json").mock(
+        return_value=Response(200, json=_CVE_REPORT_DATA)
+    )
+
+    service = _real_service()
+    params = {
+        "keywordSearch": "apache http server 2.4.49",
+        "resultsPerPage": "5",
+    }
+    first = _run(service.query("nvd", params))
+    second = _run(service.query("nvd", params))
+
+    assert first["status"] == "ok"
+    assert second["status"] == "cache"
+    assert route.call_count == 1
+    assert second["data"]["vulnerabilities"][0]["cve"]["id"] == "CVE-2021-41773"
+
+
+@respx.mock
+def test_real_service_nvd_unreachable_yields_no_finding(isolated_cache_db):
+    respx.get("https://services.nvd.nist.gov/rest/json/cves/2.0").mock(
+        return_value=Response(503, text="down")
+    )
+    service = _real_service()
+
+    finding = _run(correlate_product_cves("apache http server", "2.4.49", service))
+
+    assert finding is None
+
+    direct = _run(service.query("nvd", {"keywordSearch": "x"}))
+    assert direct["status"] == "simulated"
+    assert direct["reason"] == "fetch-error"
