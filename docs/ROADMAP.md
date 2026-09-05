@@ -658,6 +658,20 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   Etapa 13): NVD `keywordSearch` não deve levar `keywordExactMatch` (a API 2.0 o
   rejeita com 404); `rate_burst` (default 1) libera o NVD com burst 5 para o
   sweep + correlação rodarem no mesmo run (ver `docs/adr/0008-cve-correlation.md`)
+- **E2E ao vivo (run completo) validado**: `compose execute` contra `example.com`
+  rodou o caminho lock → grafo → Eremita (simulação + scan ativo) → fontes reais
+  (NVD/crtsh/urlscan) → síntese (Mago) → validação (Justiça). Dois bugs reais
+  encontrados e corrigidos:
+  - **DB lock (CLI)**: `_session_execute` segurava a transação de escrita do
+    `Run` durante o grafo inteiro, bloqueando as escritas concorrentes do cache
+    em outra conexão → `database is locked`. Fix: `session.commit()` logo após o
+    `flush` (o que o API já fazia) + WAL com `busy_timeout=30_000` /
+    `synchronous=NORMAL` no engine SQLite (`app/db/session.py`).
+  - **Scan vazio (`pages=0`)**: `robots.txt` era buscado via `get_page()`, que
+    registrava o rate-limit do host e fazia o 1º request real do crawl estourar
+    `Rate limit exceeded`. Fix: `fetch_no_rate_limit()` para requests de
+    infraestrutura (`robots.txt` não consome o orçamento do scan) em
+    `app/scanning/client.py` + `service.py`.
 
 ## Próximos passos sugeridos
 
