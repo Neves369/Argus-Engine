@@ -218,6 +218,11 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
             session.add(run)
             await session.flush()
             run_id = run.id
+            # Libera a transação de escrita ANTES do run longo: segurar um lock
+            # de escrita SQLite durante o grafo inteiro faria as escritas de
+            # cache do DataSourceService (outra conexão no mesmo arquivo)
+            # estourarem "database is locked" (validado no E2E ao vivo).
+            await session.commit()
 
             try:
                 await execute_run(

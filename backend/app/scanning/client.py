@@ -119,11 +119,21 @@ class ScanHTTPClient:
         """Submit form-encoded data (used by dynamic login), bounded and logged."""
         return await self._send("POST", url, data=data)
 
+    async def fetch_no_rate_limit(self, url: str) -> TargetPage:
+        """Fetch a single page bypassing rate limiting (used for robots.txt)."""
+        return await self._send("GET", url, skip_rate_limit=True)
+
     async def _send(
-        self, method: str, url: str, *, data: dict[str, str] | None = None
+        self,
+        method: str,
+        url: str,
+        *,
+        data: dict[str, str] | None = None,
+        skip_rate_limit: bool = False,
     ) -> TargetPage:
         host = urlparse(url).netloc
-        self._check_rate_limit(host)
+        if not skip_rate_limit:
+            self._check_rate_limit(host)
 
         headers = {"User-Agent": self.user_agent, **self._extra_headers}
         cookie = self._cookie_header(host)

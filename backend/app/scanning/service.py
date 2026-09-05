@@ -202,7 +202,7 @@ class ScanService:
     async def _load_robots(self, base_url: str) -> RobotsRules:
         robots_url = urljoin(base_url, "robots.txt")
         try:
-            page = await self._client.get_page(robots_url)
+            page = await self._client.fetch_no_rate_limit(robots_url)
         except ScanError:
             return RobotsRules.allow_all()
         if page.status_code not in (200, 204):

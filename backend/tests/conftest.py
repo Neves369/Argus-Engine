@@ -82,11 +82,17 @@ def _clean_db():
     evidence_dir = Path("data/test_evidence")
     if db_path.exists():
         db_path.unlink()
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"data/test.db{suffix}")
+        if sidecar.exists():
+            sidecar.unlink()
     if evidence_dir.exists():
         shutil.rmtree(evidence_dir)
     yield
-    if db_path.exists():
-        db_path.unlink()
+    for db_file in ("data/test.db", "data/test.db-wal", "data/test.db-shm"):
+        candidate = Path(db_file)
+        if candidate.exists():
+            candidate.unlink()
     if evidence_dir.exists():
         shutil.rmtree(evidence_dir)
 
