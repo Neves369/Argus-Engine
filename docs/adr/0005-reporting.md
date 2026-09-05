@@ -29,10 +29,11 @@ perdendo o propósito do produto.
   ofensiva, payload, chaining ou passo-a-passo de exploração, e de executar ataques reais
   fora do Modo Diabo (com escopo + sandbox + kill-switch + auditoria + HITL).
 - **Origem dos dados.** A inteligência de vulnerabilidade (CVE/CVSS/exploit/remediação) vem
-  de uma fonte determinística e curada (base de conhecimento/APIs de operador), **não** de
-  texto livre gerado pelo LLM — assim o LLM resume e redige, mas não inventa CVE/severidade.
-  Enquanto as ferramentas/APIs reais não existem, um "scanner simulado" gera achados de
-  demonstração com a forma final correta, servindo de molde para a integração futura.
+  de uma fonte determinística e curada (APIs reais: NVD, CISA KEV, CVE.report — ver
+  `docs/adr/0008-cve-correlation.md`), **não** de texto livre gerado pelo LLM — assim o LLM
+  resume e redige, mas não inventa CVE/severidade. Findings de OSINT e correlação são sempre
+  `status="candidate"` + `requires_human_review=True`; sem dado real, nenhum finding é
+  produzido.
 
 ## Consequências
 

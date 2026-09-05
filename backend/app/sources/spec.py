@@ -49,6 +49,12 @@ class DataSourceSpec(BaseModel):
     #: ``"keywordSearch"`` for NVD). Also matches a ``{name}`` placeholder in
     #: ``url`` for path-style APIs (e.g. ``http://ip-api.com/json/{query}``).
     query_param: str = "q"
+    #: When true, the generic per-run sweep (``BaseArchetype._collect_sources``)
+    #: never calls this source automatically. Used for sources that are only
+    #: meaningful via a targeted lookup (e.g. the CISA KEV catalog, queried by
+    #: the CVE-correlation service with its own CVE IDs) — keeps a full-feed
+    #: download out of every run's sweep.
+    skip_sweep: bool = False
     #: What kind of target this source is meaningful for. The generic,
     #: per-run OSINT sweep (``BaseArchetype._collect_sources``) only calls a
     #: source automatically when the run's target matches: "domain" sources

@@ -17,6 +17,7 @@ class GraphState(BaseModel):
     history: list[dict[str, Any]] = Field(default_factory=list)
     trace: list[dict[str, Any]] = Field(default_factory=list)
     sources: list[dict[str, Any]] = Field(default_factory=list)
+    scan: list[dict[str, Any]] = Field(default_factory=list)
 
     tokens_used: int = 0
     cost: float = 0.0
@@ -46,6 +47,8 @@ class GraphState(BaseModel):
 
     # Runtime-only injectable (not serialized): lets agents query data sources.
     _sources_service: Any = PrivateAttr(default=None)
+    # Runtime-only injectable (not serialized): active scanning (Etapa 12).
+    _scan_service: Any = PrivateAttr(default=None)
 
     @property
     def sources_service(self) -> Any:
@@ -53,3 +56,10 @@ class GraphState(BaseModel):
 
     def set_sources_service(self, service: Any) -> None:
         self._sources_service = service
+
+    @property
+    def scan_service(self) -> Any:
+        return self._scan_service
+
+    def set_scan_service(self, service: Any) -> None:
+        self._scan_service = service

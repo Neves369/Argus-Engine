@@ -25,5 +25,25 @@
     "command": "echo",
     "timeout": 5.0,
     "destructive": true
+  },
+  {
+    "name": "whois",
+    "description": "WHOIS lookup for a domain/IP (passive recon; requires network in sandbox).",
+    "kind": "cli",
+    "command": "whois",
+    "timeout": 15.0,
+    "rate_limit": 0.5,
+    "destructive": false,
+    "sandbox_network": true
+  },
+  {
+    "name": "dig",
+    "description": "DNS lookup for a domain (passive recon; requires network in sandbox).",
+    "kind": "cli",
+    "command": "dig",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false,
+    "sandbox_network": true
   }
 ]

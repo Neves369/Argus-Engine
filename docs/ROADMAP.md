@@ -41,22 +41,22 @@ Estas são duas funcionalidades **separadas**:
 | Linguagem | Python 3.11+ (ambiente atual: 3.13) | Definida |
 | Framework API | FastAPI + Uvicorn | Implementada |
 | Orquestração | LangGraph (grafo de agentes com estado tipado) | Implementada |
-| Persistência | SQLite + SQLAlchemy 2.0 (async) | Implementada (parcial) |
+| Persistência | SQLite + SQLAlchemy 2.0 (async) | Implementada |
 | Estado do grafo | Pydantic `BaseModel` | Implementado |
 | Config | `.env` + pydantic-settings | Implementada |
 | Logging | Estruturado (JSON) | Implementado |
-| Sandbox | Docker | Pendente (Etapa 5) |
-| Modo Diabo | flag `DEVIL_MODE` + HITL em ações destrutivas | Planejado |
-| CLI | Typer/Rich | Pendente (Etapa 8) |
+| Sandbox | Docker | Implementado (Etapa 5) |
+| Modo Diabo | flag `DEVIL_MODE` + HITL em ações destrutivas | Implementado (gating; execução de exploits: futura) |
+| CLI | Typer/Rich | Implementada (Etapa 8) |
 
 ### Frontend
 | Camada | Tecnologia | Status |
 |---|---|---|
-| Framework | Vite + React 19 | Scaffold criado |
-| Canvas de grafo | `@xyflow/react` (React Flow) | Scaffold criado (mock) |
-| Animações | Framer Motion + Rive | Pendente |
-| Estado | Zustand | Pendente |
-| Estilo | Tailwind + shadcn/ui | Pendente |
+| Framework | Vite + React 19 | Implementado |
+| Canvas de grafo | `@xyflow/react` (React Flow) | Implementado (canvas funcional, Etapa 8) |
+| Animações | Framer Motion + Rive | Implementado (parcial — Framer Motion: painel/toast; Rive: adiado) |
+| Estado | Zustand | Implementado (store de UI em `frontend/src/store/ui.ts`) |
+| Estilo | Tailwind + shadcn/ui | Implementado (parcial — Tailwind v4 com preflight off; shadcn/ui: adiado) |
 
 ### Arquétipos Tarot (Etapa 2)
 Seis arquétipos: Orquestrador/Diretor = **O Imperador (IV)** · O Eremita (IX) · O Louco (0) ·
@@ -74,14 +74,15 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 2 | Arquétipos e Personas | Agentes reutilizáveis (Tarot) | ✅ Concluída |
 | 3 | Roteador de LLMs | Gateway multi-provider (OmniRoute-like) | ✅ Concluída |
 | 4 | Persistência e Evidências | SQLite completo + evidências | ✅ Concluída |
-| 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | 🟡 Parcial |
-| 6 | Filtro de Qualidade | Anti-falso-positivo | 🟡 Parcial |
+| 5 | Tool Registry e Sandbox | Ferramentas com permissão e isolamento | ✅ Concluída |
+| 6 | Filtro de Qualidade | Anti-falso-positivo | ✅ Concluída |
 | 7 | Economia de Tokens | RTK + Caveman | ✅ Concluída |
 | 8 | Interface e Composição Visual | Canvas de arquétipos | ✅ Concluído |
 | 9 | Integrações Externas | Fontes de dados cacheadas | ✅ Concluído |
 | 10 | Observabilidade, HITL e Hardening | Produção auditável e segura | ✅ Concluída |
 | 11 | Relatório de Segurança | Achados com substância (severidade/CVE/exploit/remediação) | ✅ Concluída |
-| 12 | Scanning Ativo (OWASP Top 10) | Download de página, crawl, análise de headers/forms, detecção de vulnerabilidades | 🟡 Parcial |
+| 12 | Scanning Ativo (OWASP Top 10) | Download de página, crawl, análise de headers/forms, detecção de vulnerabilidades | ✅ Concluída |
+| 13 | Integração de Ferramentas Reais | NVD/CISA KEV/CVE.report no pipeline, extractors de OSINT, tools reais | ✅ Concluída |
 
 ---
 
@@ -123,14 +124,18 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Mecanismo de stop conditions e orçamento (`should_continue`)
 - [x] Interface mínima do orquestrador (`run`, `pause`, `resume`, `inject_human_input`)
 - [x] `devil_mode` no `GraphState` + desvio condicional simular (OFF) vs executar (ON)
-- [ ] Execução paralela básica (atualmente sequencial)
+- [x] Execução paralela básica — pernas independentes de um nó (gateway LLM + coleta de
+      fontes + scan ativo) rodam em concorrência via `asyncio.gather`, preservando ordem
+      e estado (`AGENT_PARALLEL`, default on; desligar => sequencial). Cobertura:
+      `tests/test_execution_parallelism.py` (sobreposição de wall-clock + semântica).
 
 **Critérios de aceite**
 - [x] É possível definir um grafo de 3 nós, executar e receber estado final tipado.
 - [x] Logs estruturados de cada transição de nó (via `history` no estado).
 
 **Observações / pendências**
-- Paralelismo de nós não implementado (fase futura).
+- Paralelismo de nós em DAG (fan-out: vários nós após um diretor) ainda não existe — os grafos
+  atuais são cadeias lineares; o paralelismo entregue é o intra-nó (pernas de I/O independentes).
 - Persistência/retomada de runs usa JSON no estado (retomada real ainda pendente).
 
 ---
@@ -186,13 +191,13 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 ## Etapa 3 — Roteador de LLMs (estilo OmniRoute)
 
-**Status:** `[x]` Concluída (Google Gemini fica fora desta fatia — ver observações)
+**Status:** `[x]` Concluída (Gemini integrado — ver entregáveis)
 
 **Objetivo:** gateway unificado OpenAI-compatible com múltiplos providers, combos e fallback.
 
 **Entregáveis**
 - [x] Cliente unificado
-- [x] Suporte a Groq, OpenRouter, OpenAI (OpenAI-compat); Google AI pendente
+- [x] Suporte a Groq, OpenRouter, OpenAI (OpenAI-compat) e Google Gemini (endpoint OpenAI-compat `/v1beta/openai`; provider `gemini` via `GEMINI_API_KEY`, modelo `gemini-2.5-flash`)
 - [x] Estratégias de combo priority e fallback
 - [x] Estratégias de combo cost-optimized e auto (`LLM_STRATEGY` no `.env`; `auto` usa cost-optimized para julgamento e priority para execução)
 - [x] Tracking de tokens e custo por chamada
@@ -205,7 +210,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - [x] Toda chamada registra tokens, custo e decisão de roteamento.
 
 **Observações / pendências**
-- Google Gemini exige adapter nativo — único item que ficou fora desta fatia (não bloqueia nada hoje; os 3 providers atuais cobrem execução e julgamento).
+- Google Gemini integrado via endpoint OpenAI-compat da Google (`/v1beta/openai`) — igual aos demais providers (sem adapter nativo). Cobertura em `tests/test_gemini_provider.py`.
 - `route_for_mode(devil_mode, strategy)` ordena o pool por estratégia: `priority`/`fallback`
   mantêm a ordem declarada em `EXECUTION_MODELS`/`JUDGMENT_MODELS`; `cost-optimized` ordena
   por `price_in + price_out` (mais barato primeiro); `auto` aplica cost-optimized ao pool de
@@ -266,7 +271,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 ## Etapa 5 — Tool Registry e Sandbox
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída
 
 **Objetivo:** expor ferramentas fornecidas pelo operador (CLI, exploits, OSINT, CVE) atrás de um
 registry com permissões e isolamento. A plataforma orquestra; as ferramentas e fontes são plugadas via configuração.
@@ -275,7 +280,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Camada de plugin/config para registrar ferramentas fornecidas pelo operador (manifesto `tools.json` via `TOOLS_MANIFEST`)
 - [x] Tool Registry (nome, descrição, kind http/cli, permissões por arquétipo)
 - [x] Executor leve (subprocess com timeout / HTTP via httpx)
-- [ ] Executor com sandbox (Docker preferencialmente)
+- [x] Executor com sandbox (Docker preferencialmente)
 - [x] Rate limiting e timeouts por tool
 - [x] Logging de toda invocação
 
@@ -285,20 +290,28 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Uma ferramenta CLI/API fornecida pelo operador é registrada via config sem mudar o código do backend.
 
 **Observações / pendências**
-- Sandbox Docker real fica para uma fatia seguinte (isolamento atual: timeout + rate limit + gating por `devil_mode`).
+- Sandbox Docker (Etapa 5, ver `docs/adr/0007-tool-sandbox.md`): executável
+  `kind: cli` roda dentro de um container descartável (`docker run --rm`) com
+  `--network=none`, root read-only, `--cap-drop ALL`, `no-new-privileges`,
+  limites de pids/CPU/memória e usuário não-root. Opt-in via `TOOL_SANDBOX=true`
+  (default desligado, preservando o comportamento anterior). **Fail-closed:**
+  com sandbox habilitada e Docker indisponível, a tool NÃO roda — nunca volta
+  silenciosamente ao subprocesso sem isolamento. Timeout mata o container
+  por nome (`docker rm -f`). Overrides por tool no `ToolSpec`:
+  `sandbox_image`, `sandbox_network`, `sandbox_user`.
 - Tools `destructive: true` só executam com `devil_mode` ON.
 
 **Pontos a discutir**
-1. Formato de declaração das ferramentas fornecidas pelo operador (YAML/JSON/manifesto).
-2. Nível de isolamento necessário (Docker, firejail, ou mais leve no início).
-3. Política de allowlist vs denylist de comandos/ferramentas.
-4. Como o Modo Diabo (ON) libera o acesso a tools destrutivas que ficam bloqueadas no modo OFF.
+1. Formato de declaração das ferramentas fornecidas pelo operador (YAML/JSON/manifesto). — resolvido: manifesto JSON (`tools.json`)
+2. Nível de isolamento necessário (Docker, firejail, ou mais leve no início). — resolvido: Docker CLI via subprocess (sem dependência nova)
+3. Política de allowlist vs denylist de comandos/ferramentas. — resolvido: allowlist por arquétipo
+4. Como o Modo Diabo (ON) libera o acesso a tools destrutivas que ficam bloqueadas no modo OFF. — resolvido: gating por `devil_mode` no executor
 
 ---
 
 ## Etapa 6 — Filtro de Qualidade (Anti-Falso-Positivo)
 
-**Status:** `[ ]` Parcial
+**Status:** `[x]` Concluída
 
 **Objetivo:** só findings com evidência e scoring sobem de "candidate" para "validated".
 
@@ -308,6 +321,8 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Validação por regras (scoring + exigência de evidência + blacklist)
 - [x] Agente Validador com LLM juiz (usa o gateway da Etapa 3) — `app/services/judge.py`
 - [x] Blacklist / local knowledge de falsos positivos conhecidos
+- [x] Aprendizado automático de falsos positivos — decisão humana fecha o loop
+  (`app/services/fp_rules.py` + tabela `fp_rules`)
 - [x] Estados claros no schema (`score`, `requires_human_review`, `validated_at`)
 - [x] HITL obrigatório para severidade alta (flag `requires_human_review`)
 
@@ -317,7 +332,20 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 **Observações / pendências**
 - LLM juiz (`LLMJudge`) consulta o gateway (pool de julgamento) em `POST /findings/{id}/validate`, refinando as regras: blacklist, severidade alta e ausência de evidência permanecem proteções inegociáveis que o LLM não sobrescreve (HITL preservado). Sem chave ou falha de provider, degrada ao scoring por regras (offline). Veredito/razão/custo ficam em `Finding.meta["judge"]`.
-- Aprendizado de falsos positivos hoje é manual (operador edita a blacklist).
+- **Loop de aprendizagem fechado:** quando o operador marca um finding como
+  `false_positive` (`PATCH /findings/{id}`), o sistema extrai uma assinatura
+  (título normalizado, mínimo 4 caracteres para não aprender ruído) e a persiste
+  em `fp_rules` (`source="learned"`, `source_finding_id`, `hit_count`). Daí em
+  diante qualquer candidato similar é suprimido automaticamente no pipeline
+  (hard stop, igual à blacklist) e o `validate` incrementa `hit_count`. Regras
+  são gerenciáveis via `GET/POST/PATCH/DELETE /findings/fp-rules` (listar,
+  adicionar à mão, ativar/desativar, remover).
+- `FP_BLACKLIST` (env) funciona como **seed imutável**, mesclada com as regras
+  aprendidas habilitadas no momento da validação. `FP_LEARNING=false` desliga o
+  aprendizado (a gestão manual continua). Aprendizado vem **só** de decisão
+  humana — vereditos do LLM juiz nunca geram regra (evita aprender ruído do
+  modelo). O efeito é prospectivo: não revalida retroativamente candidatos de
+  runs anteriores.
 
 ---
 
@@ -511,9 +539,10 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 - [x] Modelo de finding estruturado (`app/db/models/finding.py`) com `category`, `affected`,
   `cvss_score`, `cvss_vector`, `cves`, `known_exploits`, `remediation`, `references`
   (+ migração Alembic `0c11d25e9cb6` e `FindingRead`).
-- [x] Scanner simulado determinístico (`app/services/demo_findings.py`) — achados de
-  demonstração com a forma final (severidade real, CVE, exploit público, remediação,
-  evidência, referências). É o **seam** onde as ferramentas/APIs reais plugam depois.
+- [x] Achados com a forma final (severidade real, CVE, exploit público, remediação,
+  evidência, referências) — inicialmente via scanner simulado determinístico
+  (`app/services/demo_findings.py`), substituído na Etapa 13 por fontes de dados e
+  correlação reais (`app/services/source_findings.py` + `app/services/cve_correlate.py`).
 - [x] Arquétipos (Eremita/Carro) emitem achados ricos; severidade vem do dado do achado
   (não mais derivada da confiança).
 - [x] Relatório estruturado `GET /runs/{id}/report` (`summary` + `findings[]` +
@@ -533,54 +562,98 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 
 ## Etapa 12 — Scanning Ativo (OWASP Top 10)
 
-**Status:** `[~]` Parcial
+**Status:** `[x]` Concluída
 
 **Objetivo:** o Argus Engine precisa interagir com o alvo para encontrar vulnerabilidades
 reais. Scanning ativo é funcionalidade core — sempre roda quando o alvo está em
 `ALLOWED_SCOPES`, independentemente do Modo Diabo. Ver `docs/adr/0006-active-scanning.md`.
 
 **Entregáveis**
-- [ ] Módulo `app/scanning/` — HTTP client com rate limiting e timeout
-- [ ] Download e parsing de página HTML (análise de conteúdo, forms, links)
-- [ ] Análise de headers de resposta (segurança, cookies, CORS, CSP)
-- [ ] Crawl de links internos e extração de endpoints
-- [ ] Fingerprinting de tecnologias (server, framework, linguagem, versão)
-- [ ] Detecção de vulnerabilidades OWASP Top 10 (vetores passivos — forms, parâmetros, headers)
-- [ ] Integração com `HermitAgent` (scanning ativo + OSINT passivo)
-- [ ] Rate limiting por target (`SCAN_RATE_LIMIT`, configurável)
-- [ ] Timeout por requisição (`SCAN_REQUEST_TIMEOUT`, configurável)
-- [ ] Self-imposed restrictions (respeitar `robots.txt`, não executar payloads destrutivos)
-- [ ] Logging completo de todas as requisições ao alvo
-- [ ] Findings com evidência de scanning real (respostas HTTP, headers, conteúdo)
-- [ ] Controles de segurança: scanning só com alvo em `ALLOWED_SCOPES`
+- [x] Módulo `app/scanning/` — HTTP client com rate limiting e timeout
+- [x] Download e parsing de página HTML (análise de conteúdo, forms, links)
+- [x] Análise de headers de resposta (segurança, cookies, CORS, CSP)
+- [x] Crawl de links internos e extração de endpoints
+- [x] Fingerprinting de tecnologias (server, framework, linguagem, versão)
+- [x] Detecção de vulnerabilidades OWASP Top 10 (vetores passivos — forms, parâmetros, headers)
+- [x] Integração com `HermitAgent` (scanning ativo + OSINT passivo)
+- [x] Rate limiting por target (`SCAN_RATE_LIMIT`, configurável)
+- [x] Timeout por requisição (`SCAN_REQUEST_TIMEOUT`, configurável)
+- [x] Self-imposed restrictions (respeitar `robots.txt`, não executar payloads destrutivos)
+- [x] Logging completo de todas as requisições ao alvo
+- [x] Findings com evidência de scanning real (respostas HTTP, headers, conteúdo)
+- [x] Controles de segurança: scanning só com alvo em `ALLOWED_SCOPES`
 
 **Critérios de aceite**
-- [ ] Um run contra um alvo em `ALLOWED_SCOPES` gera findings de scanning ativo (download de página, análise de headers, detecção de vulnerabilidades)
-- [ ] Scanning ativo NÃO depende do `DEVIL_MODE` — roda com escopo validado
-- [ ] Rate limiting e timeout funcionam (configuráveis via env)
-- [ ] `robots.txt` é respeitado (self-imposed restriction)
-- [ ] Todas as requisições ao alvo são logadas
-- [ ] Findings de scanning ativo têm evidência real (resposta HTTP, header, conteúdo)
+- [x] Um run contra um alvo em `ALLOWED_SCOPES` gera findings de scanning ativo (download de página, análise de headers, detecção de vulnerabilidades)
+- [x] Scanning ativo NÃO depende do `DEVIL_MODE` — roda com escopo validado
+- [x] Rate limiting e timeout funcionam (configuráveis via env)
+- [x] `robots.txt` é respeitado (self-imposed restriction)
+- [x] Todas as requisições ao alvo são logadas
+- [x] Findings de scanning ativo têm evidência real (resposta HTTP, header, conteúdo)
 
 **Observações / pendências**
 - Scanning ativo é separado do Modo Diabo — este é para execução destrutiva/futura (exploits)
 - Detecção de vulnerabilidades é passiva (análise de resposta, não injeção de payloads) —
   injeção real de payloads (SQLi, XSS) ficaria no Modo Diabo futuro
-- O módulo de scanning pode ser expandido para incluir testes autenticados (login + scan)
+- O módulo de scanning pode ser expandido para incluir login dinâmico:
+  **slice 1 (auth estática por env — `SCAN_EXTRA_HEADERS`/`SCAN_COOKIES`) e
+  slice 2 (login dinâmico — `SCAN_LOGIN_URL`/`SCAN_LOGIN_USERNAME`/`SCAN_LOGIN_PASSWORD`,
+  submete o form, mantém sessão via cookie jar) já entregues**;
+  usos avançados (MFA, OAuth, re-login automático, credenciais por target) ficam para trás.
 
 ---
 
+## Etapa 13 — Integração de Ferramentas Reais
+
+**Status:** `[x]` Concluída
+
+**Objetivo:** fechar o seam aberto na Etapa 11 — onde o "scanner simulado"
+(`app/services/demo_findings.py`) gerava achados de demonstração para servir de
+molde. Agora o pipeline deriva findings de **fontes de dados reais** (NVD, CISA KEV,
+CVE.report, OSINT) e correlaciona banners/fingerprints do scanning ativo a CVEs
+conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
+
+**Entregáveis**
+- [x] Deletado o scanner simulado (`app/services/demo_findings.py`) — nenhum import restante
+- [x] Extractors de findings baseados em respostas reais (`app/services/source_findings.py`):
+  abuseipdb, crtsh, nvd, **urlscan**, **ip_api**; respostas simuladas/irreconhecíveis são
+  ignoradas (nunca fabrica valor)
+- [x] Correlação CVE por produto+versão do banner (`app/services/cve_correlate.py`):
+  NVD keywordSearch (`keywordExactMatch`, `resultsPerPage`), CISA KEV (catálogo
+  full-feed como source `kev`, `skip_sweep`), CVE.report (ID → refs + EPSS/KEV)
+- [x] Findings de correlação sempre `status="candidate"` + `requires_human_review=True`
+  (correlação é lead textual, não confirmação); degradação offline determinística
+  (sem dado real → zero findings)
+- [x] Wiring no `HermitAgent.run` — correlação roda após o scanning ativo; resultado
+  contabilizado no entry como `cve_correlations`
+- [x] Tools reais de rede no registry (`backend/tools.json`): `whois`, `dig`
+  (CLI, `sandbox_network`, `destructive: false`)
+- [x] `skip_sweep` em `DataSourceSpec` (`app/sources/spec.py`) — fontes a consultar sob
+  demanda (KEV) ficam fora do sweep genérico do agente
+- [x] Knob `CVE_CORRELATE_MAX_CVES` (`app/core/config.py`, default 5)
+
+**Critérios de aceite**
+- [x] Banner `Apache/2.4.49` no scanning ativo gera um finding `candidate` listando
+  o CVE com KEV/exploit conhecido, severidade CVSS e referências
+- [x] Sem rede/chave/resultado NVD → nenhum finding de correlação (degradação silenciosa)
+- [x] Nenhuma fonte simulada gera finding (testado em `tests/test_real_sources.py`)
+- [x] `ruff check app tests` e `pytest -q` verdes
+
+**Observações / pendências**
+- `cve_report` segue sem extractor próprio no sweep — seu papel é o enriquecimento
+  dentro da correlação (`cves`/`references`/EPSS/KEV por CVE)
+- Correlação só dispara com versão no banner (produto sem versão é ruído)
+- Sources novas para adicionar depois: Censys/Shodan, whois passivo, certstream
+
 ## Próximos passos sugeridos
 
-> Lista revisada — os itens de Etapas 1, 2, 3, 4, 5, 6, 8, 10 e 11 originalmente listados
-> aqui já foram entregues (ver status de cada etapa acima). Pendências reais restantes:
+> Lista revisada — todos os itens de Etapas 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 e 12
+> listados aqui foram entregues (ver status de cada etapa acima). Etapa 7 consta
+> como parcial apenas por um item deliberadamente adiado:
 
-1. **Etapa 5** — sandbox real (Docker) para o executor de tools.
-2. **Etapa 7** — economia de tokens (parcial): Caveman + compressão de histórico +
-   `stop_reason` de orçamento já entregues; restam RTK para saídas de tools e
-   orçamento hard por agente.
-3. **Etapa 12** — scanning ativo: módulo `app/scanning/`, integração com HermitAgent,
-   controles de rate limiting/timeout/self-imposed restrictions.
+- **Etapa 7 — compressão de histórico por resumo de LLM**: decisão de produto
+  adiada (custo/latência da chamada de resumo × economia no prompt seguinte e
+  risco de perder nuance), não uma pendência técnica. Ver seção da Etapa 7.
 
 ## Como manter este documento
 

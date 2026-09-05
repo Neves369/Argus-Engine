@@ -104,5 +104,19 @@
     "fields": [],
     "query_param": "query",
     "target_kind": "ip"
+  },
+  {
+    "name": "kev",
+    "description": "CISA Known Exploited Vulnerabilities catalog — full feed of CVEs with evidence of active exploitation in the wild. Free, no key required. Not part of the per-run sweep (it is a full-catalog download); the CVE-correlation service queries it once and matches its own CVE IDs against this catalog.",
+    "kind": "http",
+    "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+    "method": "GET",
+    "timeout": 20.0,
+    "rate_limit": 0.02,
+    "ttl": 86400,
+    "fields": ["vulnerabilities"],
+    "query_param": "q",
+    "target_kind": "any",
+    "skip_sweep": true
   }
 ]

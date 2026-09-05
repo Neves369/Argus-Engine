@@ -20,13 +20,17 @@ class Director:
         archetypes: list[str] | None = None,
         *,
         sources_service: Any = None,
+        scan_service: Any = None,
     ) -> None:
         self._archetypes = archetypes
         self._sources_service = sources_service
+        self._scan_service = scan_service
 
         def provision(state: GraphState) -> None:
             if sources_service is not None:
                 state.set_sources_service(sources_service)
+            if scan_service is not None:
+                state.set_scan_service(scan_service)
 
         self._provision = provision
 

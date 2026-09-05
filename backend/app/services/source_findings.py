@@ -147,15 +147,114 @@ def _nvd_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _urlscan_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    results = data.get("results")
+    if not isinstance(results, list) or not results:
+        return None
+    total = data.get("total", len(results))
+    malicious = sum(
+        1
+        for result in results
+        if isinstance(result, dict)
+        and (result.get("verdicts") or {}).get("overall", {}).get("malicious") is True
+    )
+    sample_urls: list[str] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        url = (result.get("task") or {}).get("url") or (result.get("page") or {}).get("url")
+        if isinstance(url, str) and url not in sample_urls:
+            sample_urls.append(url)
+    severity = "low" if malicious else "info"
+    return {
+        "id": None,
+        "title": f"{total} avaliação(ões) pública(s) do domínio {target} no urlscan.io",
+        "description": (
+            "urlscan.io mantém histórico público de avaliações indexando este "
+            "domínio. Isso não confirma vulnerabilidade — apenas indica que o "
+            "domínio já foi observado/avaliado publicamente. "
+            + (
+                f"{malicious} avaliação(ões) foi(ram) marcada(s) como maliciosa(s) "
+                "pelo veredito agregado do urlscan.io."
+                if malicious
+                else "Nenhuma avaliação marcada como maliciosa pelo veredito agregado."
+            )
+        ),
+        "severity": severity,
+        "category": "Superfície de ataque",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": [],
+        "known_exploits": [],
+        "remediation": (
+            "Revise o conteúdo das avaliações públicas para confirmar se "
+            "expõem informação sensível do domínio e se os achados ainda são "
+            "relevantes na configuração atual."
+        ),
+        "references": [f"https://urlscan.io/domain/{target}"],
+        "evidence": (
+            "urlscan.io: " + "; ".join(sample_urls[:5]) or f"{total} avaliação(ões)"
+        ),
+        "confidence": 0.5,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
+def _ip_api_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    is_proxy = data.get("proxy") is True
+    is_hosting = data.get("hosting") is True
+    if not (is_proxy or is_hosting):
+        return None
+    org = str(data.get("org") or "").strip()
+    isp = str(data.get("isp") or "").strip()
+    roles = []
+    if is_proxy:
+        roles.append("proxy")
+    if is_hosting:
+        roles.append("data center")
+    return {
+        "id": None,
+        "title": f"IP {target} atrás de {'/'.join(roles)}",
+        "description": (
+            "A geolocalização (ip-api.com) indica que o IP é servido por "
+            "proxy ou data center. Isso não é vulnerabilidade em si, mas muda "
+            "a interpretação de outros sinais: reputação de IP compartilhado, "
+            "WAF/proxy de borda e controles de rede intermediários."
+        ),
+        "severity": "info",
+        "category": "Reputação de rede",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": [],
+        "known_exploits": [],
+        "remediation": (
+            "Considere o papel de proxy/data center ao interpretar outros "
+            "achados sobre este IP e confirme a cadeia real de serviço."
+        ),
+        "references": ["https://ip-api.com/"],
+        "evidence": f"ip-api.com: proxy={is_proxy}, hosting={is_hosting}, "
+        f"isp={isp or 'n/a'}, org={org or 'n/a'}",
+        "confidence": 0.7,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
 #: Only sources with a verified, stable response shape get a finding
-#: extractor. Every other configured source (cve_report, urlscan, ip_api, and
-#: any future/operator-added source) still gets queried and its raw result
+#: extractor. Every other configured source (cve_report, and any
+#: future/operator-added source) still gets queried and its raw result
 #: kept in `state.sources` for the report/context — it just doesn't (yet)
-#: have logic here to turn it into a `findings` entry.
+#: have logic here to turn it into a `findings` entry (cve_report is
+#: enriched inside the CVE-correlation service instead).
 _EXTRACTORS = {
     "abuseipdb": _abuseipdb_finding,
     "crtsh": _crtsh_finding,
     "nvd": _nvd_finding,
+    "urlscan": _urlscan_finding,
+    "ip_api": _ip_api_finding,
 }
 
 

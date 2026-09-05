@@ -24,9 +24,14 @@ async def execute_run(
     state: GraphState,
     archetypes: list[str] | None,
     sources_service: Any,
+    scan_service: Any | None = None,
 ) -> GraphState:
     """Execute a graph run, finalizing it or halting for a human decision."""
-    director = Director(archetypes, sources_service=sources_service)
+    director = Director(
+        archetypes,
+        sources_service=sources_service,
+        scan_service=scan_service,
+    )
     final = await director.run(state)
     if is_awaiting_review(final):
         run.status = "pending_review"
@@ -44,6 +49,7 @@ async def resume_run(
     decision: dict[str, Any],
     *,
     sources_service: Any | None = None,
+    scan_service: Any | None = None,
 ) -> GraphState:
     """Apply a human decision to a pending review and resume the run.
 
@@ -62,10 +68,14 @@ async def resume_run(
 
     state = GraphState.model_validate(saved)
     state.set_sources_service(sources_service or build_sources_service())
+    if scan_service is not None:
+        state.set_scan_service(scan_service)
     state.human_decision = decision
 
     director = Director(
-        archetypes=None, sources_service=sources_service or build_sources_service()
+        archetypes=None,
+        sources_service=sources_service or build_sources_service(),
+        scan_service=scan_service,
     )
     final = await director.run_from(state, state.next_agent or "emperor")
     if is_awaiting_review(final):

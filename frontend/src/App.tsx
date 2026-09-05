@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
+import { AnimatePresence, motion } from "framer-motion";
 import backgroundImage from "./assets/backgrounds/Background1.png";
 import deathImg from "./assets/cards/death.jpg";
 import CharacterPanel from "./components/CharacterPanel";
@@ -39,6 +40,7 @@ import {
 } from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
 import { CARD_AGENT_IDS } from "./data/agents";
+import { useUIStore } from "./store/ui";
 import "./App.css";
 
 function formatDuration(ms?: number): string {
@@ -59,17 +61,27 @@ function formatTraceStep(step: TraceStep): string {
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [enemyModalOpen, setEnemyModalOpen] = useState(false);
-  const [playerModalOpen, setPlayerModalOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [dashboardOpen, setDashboardOpen] = useState(false);
+  const playerModalOpen = useUIStore((s) => s.playerModalOpen);
+  const enemyModalOpen = useUIStore((s) => s.enemyModalOpen);
+  const settingsOpen = useUIStore((s) => s.settingsOpen);
+  const sessionsOpen = useUIStore((s) => s.sessionsOpen);
+  const dashboardOpen = useUIStore((s) => s.dashboardOpen);
+  const runResult = useUIStore((s) => s.runResult);
+  const busy = useUIStore((s) => s.busy);
+  const {
+    openPlayer,
+    closePlayer,
+    setEnemyModalOpen,
+    setSettingsOpen,
+    setSessionsOpen,
+    setDashboardOpen,
+    setRunResult,
+    setBusy,
+  } = useUIStore.getState();
   const [connectionsOn, setConnectionsOn] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
-  const [runResult, setRunResult] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [activeArchetype, setActiveArchetype] = useState<string | null>(null);
   const [runEnded, setRunEnded] = useState(false);
   const [activeRun, setActiveRun] = useState<ActiveRunInfo>({
@@ -330,7 +342,7 @@ function App() {
   }
 
   async function openReport(runNumber: number) {
-    setPlayerModalOpen(false);
+    closePlayer();
     setSessionsOpen(false);
     setDashboardOpen(false);
     setHistoryRunId(runNumber);
@@ -439,7 +451,7 @@ function App() {
       );
     }
     beginRun();
-    setPlayerModalOpen(false);
+    closePlayer();
     setSessionsOpen(false);
     try {
       const signal = await runStream(`/runs/stream?session_id=${sessionId}`, ingestEvent, {
@@ -525,6 +537,7 @@ function App() {
 
   return (
     <div
+      className="select-none"
       style={{
         backgroundImage: `url(${backgroundImage})`,
         backgroundSize: "cover",
@@ -538,7 +551,7 @@ function App() {
       }}
     >
       <CharacterPanel
-        onPhotoClick={() => setPlayerModalOpen(true)}
+        onPhotoClick={() => openPlayer()}
         image={deathMode ? deathImg : undefined}
       />
       <CharacterPanel
@@ -575,31 +588,52 @@ function App() {
         disabled={busy || runLocked}
         hint={runLocked ? `Há um run ativo (#${activeRun.run_id}, ${activeRun.status}) — aguarde.` : undefined}
       />
-      <div className={`run-result${runResult ? ' is-visible' : ''}${busy ? ' is-busy' : ''}`}>
-        {runResult ?? ''}
-      </div>
-      {showRunPanel && (
-        <RunPanel
-          runId={activeRunId}
-          status={runStatus}
-          running={busy}
-          log={runLog}
-          chat={chat}
-          meta={runMeta}
-          findings={runFindings}
-          trace={runTrace}
-          error={runError}
-          pendingReview={runPendingReview}
-          reviewing={runReviewing}
-          readonly={readOnlyReport}
-          onReview={(approved, note) => void handleReview(approved, note)}
-          onCancel={() => void handleCancel()}
-          onClose={() => {
-            setRunId(null);
-            setHistoryRunId(null);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {runResult && (
+          <motion.div
+            key="run-result"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.18 }}
+            className={`run-result is-visible${busy ? ' is-busy' : ''}`}
+          >
+            {runResult}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showRunPanel && (
+          <motion.div
+            key="run-panel"
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 40 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+          >
+            <RunPanel
+              runId={activeRunId}
+              status={runStatus}
+              running={busy}
+              log={runLog}
+              chat={chat}
+              meta={runMeta}
+              findings={runFindings}
+              trace={runTrace}
+              error={runError}
+              pendingReview={runPendingReview}
+              reviewing={runReviewing}
+              readonly={readOnlyReport}
+              onReview={(approved, note) => void handleReview(approved, note)}
+              onCancel={() => void handleCancel()}
+              onClose={() => {
+                setRunId(null);
+                setHistoryRunId(null);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
       <Modal
         open={enemyModalOpen}
         title="Informações do Alvo"
@@ -610,15 +644,15 @@ function App() {
       <Modal
         open={playerModalOpen}
         title="Menu"
-        onClose={() => setPlayerModalOpen(false)}
+        onClose={() => closePlayer()}
       >
         <div className="modal-menu">
           <button className="modal-menu-item" type="button" onClick={() => {
-            setPlayerModalOpen(false);
+            closePlayer();
             setSessionsOpen(true);
           }}>Sessões</button>
           <button className="modal-menu-item" type="button" onClick={() => {
-            setPlayerModalOpen(false);
+            closePlayer();
             setDashboardOpen(true);
           }}>Dashboard</button>
           <button
@@ -632,7 +666,7 @@ function App() {
             className="modal-menu-item"
             type="button"
             onClick={() => {
-              setPlayerModalOpen(false);
+              closePlayer();
               setSettingsOpen(true);
             }}
           >
@@ -661,6 +695,10 @@ function App() {
           onLoad={loadComposition}
           onExecute={executeSession}
           onOpenReport={(runNumber) => void openReport(runNumber)}
+          onSelectTarget={(target) => {
+            setEnemyInfo({ name: target.name, url: target.url ?? '', notes: target.notes ?? '' });
+            setSessionsOpen(false);
+          }}
         />
       </Modal>
       <Modal

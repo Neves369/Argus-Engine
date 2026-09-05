@@ -10,6 +10,7 @@ from httpx import Response
 
 from app.agents import get_archetype
 from app.orchestration.state import GraphState
+from app.services.source_findings import derive_findings_from_sources
 from app.sources.registry import DataSourceRegistry
 from app.sources.service import DataSourceError, DataSourceService, _resolve_headers
 from app.sources.spec import DataSourceSpec, SourceKind, looks_like_ip
@@ -256,7 +257,17 @@ def test_collect_sources_uses_each_sources_own_query_param():
 def test_real_sources_manifest_loads_all_expected_sources():
     path = Path(__file__).resolve().parents[1] / "sources.json"
     reg = DataSourceRegistry(path)
-    expected = {"cve", "osint", "nvd", "cve_report", "crtsh", "abuseipdb", "urlscan", "ip_api"}
+    expected = {
+        "cve",
+        "osint",
+        "nvd",
+        "cve_report",
+        "crtsh",
+        "abuseipdb",
+        "urlscan",
+        "ip_api",
+        "kev",
+    }
     assert expected <= set(reg.available_sources())
 
 
@@ -269,6 +280,7 @@ def test_real_sources_manifest_loads_all_expected_sources():
         ("abuseipdb", "ip"),
         ("urlscan", "domain"),
         ("ip_api", "ip"),
+        ("kev", "any"),
     ],
 )
 def test_real_source_declares_expected_target_kind(name: str, expected_target_kind: str):
@@ -289,3 +301,91 @@ def test_abuseipdb_and_nvd_reference_env_var_headers():
     reg = DataSourceRegistry(path)
     assert reg.get_source("abuseipdb").headers_template["Key"] == "${ABUSEIPDB_API_KEY}"
     assert reg.get_source("nvd").headers_template["apiKey"] == "${NVD_API_KEY}"
+
+
+def test_kev_is_declared_as_full_feed_collected_manually():
+    path = Path(__file__).resolve().parents[1] / "sources.json"
+    reg = DataSourceRegistry(path)
+    kev = reg.get_source("kev")
+    assert kev.kind is SourceKind.HTTP
+    assert kev.skip_sweep is True  # CISA catalog is queried only on demand (correlation)
+    assert kev.ttl == 86400
+    assert "vulnerabilities" in kev.fields
+
+
+# --- source-result findings (evidence-grounded extractors) -------------------
+
+
+def _source_result(name: str, data: dict, status: str = "ok") -> dict:
+    return {
+        "status": status,
+        "source": name,
+        "data": data,
+        "fetched_at": "2026-01-01T00:00:00+00:00",
+    }
+
+
+def _derived(source: str, data: dict) -> list[dict]:
+    return derive_findings_from_sources("example.com", [_source_result(source, data)])
+
+
+def test_urlscan_extractor_flags_malicious_verdicts():
+    data = {
+        "total": 2,
+        "results": [
+            {
+                "task": {"url": "https://example.com/page"},
+                "verdicts": {"overall": {"malicious": True}},
+            },
+            {
+                "page": {"url": "https://example.com/other"},
+                "verdicts": {"overall": {"malicious": False}},
+            },
+        ],
+    }
+    findings = _derived("urlscan", data)
+    assert len(findings) == 1
+    assert findings[0]["title"].startswith("2 avaliação(ões)")
+    assert findings[0]["severity"] == "low"
+    assert "1 avaliação(ões) foi(ram) marcada(s) como maliciosa(s)" in findings[0]["description"]
+    assert findings[0]["status"] == "candidate"
+    assert findings[0]["requires_human_review"] is True
+
+
+def test_urlscan_extractor_clean_verdicts_is_info():
+    data = {"total": 1, "results": [{"task": {"url": "https://example.com/"}}]}
+    findings = _derived("urlscan", data)
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "info"
+
+
+def test_urlscan_extractor_skips_empty_results():
+    assert _derived("urlscan", {"total": 0, "results": []}) == []
+
+
+def test_ip_api_extractor_flags_proxy_and_hosting():
+    findings = _derived(
+        "ip_api",
+        {"proxy": True, "hosting": True, "isp": "OVH", "org": "OVH SAS"},
+    )
+    assert len(findings) == 1
+    assert "proxy/data center" in findings[0]["title"]
+    assert findings[0]["severity"] == "info"
+    assert "proxy=True" in findings[0]["evidence"]
+    assert "hosting=True" in findings[0]["evidence"]
+    assert findings[0]["requires_human_review"] is True
+
+
+def test_ip_api_extractor_skips_residential_ip():
+    assert _derived("ip_api", {"proxy": False, "hosting": False}) == []
+
+
+def test_extractors_ignore_simulated_results():
+    results = [
+        _source_result(
+            "urlscan",
+            {"results": [{"task": {"url": "https://x/"}}]},
+            status="simulated",
+        )
+    ]
+    assert derive_findings_from_sources("example.com", results) == []

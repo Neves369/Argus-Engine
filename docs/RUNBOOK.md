@@ -76,7 +76,7 @@ mas `make migrate` continua útil para aplicar a migração antes do primeiro bo
 - [ ] `ALLOWED_SCOPES` contém exatamente os alvos autorizados desta implantação
 - [ ] `DEVIL_MODE` está no valor pretendido (`false` por padrão — ligar exige decisão operacional explícita, não só configuração)
 - [ ] Diretório `data/` (banco + evidências) está em um volume persistente, não efêmero
-- [ ] Chaves de provider LLM (`GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`) configuradas só para os providers realmente em uso
+- [ ] Chaves de provider LLM (`GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`) configuradas só para os providers realmente em uso
 
 ## 3. Configuração — variáveis mais operacionais
 
@@ -85,20 +85,30 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | Variável | Efeito operacional |
 |---|---|
 | `KILL_SWITCH` | `true` interrompe qualquer run em andamento e bloqueia novos. Ver §6. |
+| `FP_LEARNING` | `true` (default) aprende uma regra de falso positivo quando um finding é marcado `false_positive` (ver §6.6). |
+| `FP_BLACKLIST` | Seed imutável de falsos positivos (JSON de strings, substring match sobre título+descrição). Regras aprendidas somam a este seed na validação. |
 | `DEVIL_MODE` | Habilita o toggle de execução do `ChariotAgent` (ainda exige aprovação HITL por ação — ver §5). Não afeta scanning ativo, que roda sempre com escopo validado. |
 | `ALLOWED_SCOPES` | Allowlist de alvos. Scanning ativo e OSINT rodam apenas contra alvos dentro desta lista. |
 | `LLM_STRATEGY` | `priority`\|`fallback`\|`cost-optimized`\|`auto` — como o gateway ordena os providers. Trocar para `cost-optimized` é a alavanca mais rápida se o custo de LLM subir inesperadamente. |
+| `GEMINI_API_KEY` | Chave do Google Gemini. O provider usa o endpoint OpenAI-compat da Google (`/v1beta/openai`), então aparece no Settings UI e em `GET /api/v1/providers` como os demais. Modelo default: `gemini/gemini-2.5-flash` (adicione em `EXECUTION_MODELS`/`JUDGMENT_MODELS` para usá-lo). |
 | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL_SECONDS` | Cache de prefixo em memória (por processo). Desligar (`false`) se estiver depurando um provider e precisar garantir que toda chamada é real. |
 | `CAVEMAN_PROMPTS` | `true` remove palavras de enchimento das mensagens enviadas aos providers (Economia de Tokens, Etapa 7). **Desligado por padrão.** |
 | `HISTORY_COMPRESSION` / `HISTORY_KEEP_LAST` | `true` trunca o histórico entre nós do grafo (mantém o primeiro + últimos N=8 registros), cortando tokens de contexto. **Desligado por padrão** (opt-in). |
+| `AGENT_PARALLEL` | `true` (default) executa em concorrência as pernas independentes de um nó (gateway + fontes + scan) — mesmo resultado, latência menor. Desligue se precisar serializar chamadas ao provider/ao alvo para depurar. |
 | `TOOL_SUBPROCESS_MEMORY_LIMIT_MB` / `TOOL_SUBPROCESS_MAX_OUTPUT_BYTES` | Limites de recurso por invocação de tool CLI (§6.3). Suba o de memória se uma tool legítima estiver sendo matada por OOM do próprio limite. |
+| `TOOL_SANDBOX` | `true` roda tools `kind: cli` em container Docker descartável (§6.7). **Default `false`.** Habilitar exige Docker no host e é fail-closed: sem Docker, a tool não roda. |
+| `TOOL_SANDBOX_IMAGE` / `TOOL_SANDBOX_CPUS` / `TOOL_SANDBOX_PIDS_LIMIT` / `TOOL_SANDBOX_UID` | Defaults da sandbox (§6.7): imagem (`alpine:latest`), `--cpus` (1.0), `--pids-limit` (64) e uid não-root (65534). Override por tool no `tools.json` via `sandbox_image`/`sandbox_network`/`sandbox_user`. |
 | `DATABASE_URL` | Aponta para o SQLite. Trocar exige rodar `alembic upgrade head` contra o novo arquivo antes do primeiro boot. |
 | `EVIDENCE_DIR` | Onde os arquivos de evidência (hash SHA-256) são gravados. Precisa ser volume persistente e com backup — ver §7.2. |
 | `UI_PASSWORD` | Se definida, a UI exige login com essa senha (cookie de sessão HMAC). Se vazia, a API roda em **modo aberto** (sem auth) — útil para dev/teste local, nunca para expor em rede. |
 | `ARGUS_SESSION_SECRET` | Chave de assinatura do cookie de sessão. Se vazia, deriva de `UI_PASSWORD`; defina explicitamente em produção. |
 | `SCAN_RATE_LIMIT` | Requisições por segundo ao alvo durante scanning ativo. Default: 10. |
-| `SCAN_REQUEST_TIMEOUT` | Timeout em segundos por requisição HTTP ao alvo. Default: 30. |
-| `SCAN_RESPECT_ROBOTS_TXT` | `true` (default) faz o scanner respeitar `robots.txt` do alvo (self-imposed restriction). |
+| `SCAN_REQUEST_TIMEOUT` | Timeout em segundos por requisição HTTP ao alvo. Default: 10. |
+| `SCAN_MAX_PAGES` | Número máximo de páginas crawleadas por scan (limite de escopo). Default: 10. |
+| `SCAN_MAX_BODY_BYTES` | Teto de bytes do corpo de cada resposta baixada. Default: 512 KB. |
+| `SCAN_RESPECT_ROBOTS` | `true` (default) faz o scanner respeitar `robots.txt` do alvo (self-imposed restriction). |
+| `SCAN_EXTRA_HEADERS` / `SCAN_COOKIES` | Auth estática do scan (slice 1 de "login + scan"): headers extras em JSON (`{"Authorization":"Bearer ..."}`) e cookies de sessão (`session=abc; theme=dark`) aplicados a todo request ao alvo. Vazios por padrão. Credenciais vivem no env e **nunca** vão para log/relatório. |
+| `SCAN_LOGIN_URL` / `SCAN_LOGIN_USERNAME` / `SCAN_LOGIN_PASSWORD` | Login dinâmico (slice 2 de "login + scan"): o scanner submete o form de login do alvo e reutiliza a sessão nos demais requests. Vazios por padrão. Falha no login **não** bloqueia o scan — vira nota no relatório (`report.auth`); só efetiva quando os três estão preenchidos. |
 
 ## 4. Kill-switch
 
@@ -206,17 +216,20 @@ Scanning ativo é funcionalidade core — roda sempre que o alvo está em
 
 - **Rate limiting:** `SCAN_RATE_LIMIT` (default 10 req/s). Configure por
   ambiente; valores muito altos podem ser interpretados como ataque pelo alvo.
-- **Timeout:** `SCAN_REQUEST_TIMEOUT` (default 30s). Requisições que excedem
+- **Timeout:** `SCAN_REQUEST_TIMEOUT` (default 10s). Requisições que excedem
   o timeout são canceladas.
-- **Self-imposed restrictions:** `SCAN_RESPECT_ROBOTS_TXT` (default `true`)
+- **Limite de páginas:** `SCAN_MAX_PAGES` (default 10) limita quantas páginas
+  o crawl processa por scan; `SCAN_MAX_BODY_BYTES` (default 512 KB) limita o
+  corpo de cada resposta baixada.
+- **Self-imposed restrictions:** `SCAN_RESPECT_ROBOTS` (default `true`)
   faz o scanner respeitar `robots.txt`. Desativar só em ambientes controlados
   (labs, CTFs) onde `robots.txt` pode bloquear scanning legítimo.
 - **Logging:** toda requisição HTTP ao alvo é logada (URL, status, duração).
 - **Kill-switch:** `KILL_SWITCH=true` interrompe scanning em andamento.
 
 **Runbook — scanning ativo bloqueado por robots.txt:**
-1. Confirme que `SCAN_RESPECT_ROBOTS_TXT=true` (comportamento esperado).
-2. Se o alvo é um lab/CTF/ambiente controlado, defina `SCAN_RESPECT_ROBOTS_TXT=false`.
+1. Confirme que `SCAN_RESPECT_ROBOTS=true` (comportamento esperado).
+2. Se o alvo é um lab/CTF/ambiente controlado, defina `SCAN_RESPECT_ROBOTS=false`.
 3. Em produção, **nunca** desative self-imposed restrictions.
 
 **Runbook — scanning ativo muito lento:**
@@ -224,6 +237,78 @@ Scanning ativo é funcionalidade core — roda sempre que o alvo está em
 2. Para labs/CTFs, suba o rate limit com cautela.
 3. Verifique `SCAN_REQUEST_TIMEOUT` — timeouts muito curtos causam falhas em
    páginas lentas.
+
+### 6.6 Local knowledge de falsos positivos (Etapa 6)
+
+O Filtro de Qualidade suprime findings que casam com padrões de falso positivo
+(substring sobre título + descrição). Os padrões vêm de duas fontes, mescladas
+na validação:
+
+- **Seed:** `FP_BLACKLIST` (env) — imutável, para conhecimento local estático.
+- **Aprendidas:** decisões humanas. Marcar um finding como `false_positive`
+  (`PATCH /findings/{id}`) extrai uma assinatura do título (≥ 4 caracteres,
+  para não aprender ruído) e a persiste em `fp_rules` com `source="learned"`,
+  `source_finding_id` e `hit_count`. Candidatos similares passam a ser
+  suprimidos automaticamente; o `validate` incrementa `hit_count`.
+
+Gestão via API (todas sob autenticação de operador):
+
+| Método | Rota | Efeito |
+|---|---|---|
+| GET | `/api/v1/findings/fp-rules` | Listar regras (inclui `hit_count`) |
+| POST | `/api/v1/findings/fp-rules` | Adicionar regra manual (`{"pattern": "..."}`) |
+| PATCH | `/api/v1/findings/fp-rules/{id}` | Ativar/desativar (`{"enabled": bool}`) |
+| DELETE | `/api/v1/findings/fp-rules/{id}` | Remover regra |
+
+**Runbook — falso positivo recorrente:**
+1. Identifique o título do finding que se repete.
+2. Marque-o como `false_positive` (`PATCH /findings/{id}`) — o aprendizado age
+   automaticamente; confirme a regra criada em `GET /findings/fp-rules`.
+3. Se quiser suprimir também sem revalidar, adicione `POST /findings/fp-rules`
+   com um padrão parcial do título.
+4. Para desfazer, `DELETE /findings/fp-rules/{id}` (ou desative com `PATCH`).
+
+**Runbook — regra aprendida agressiva demais:**
+1. Confie no `hit_count`: regra com poucos hits pode ser genérica demais.
+2. Desative a regra (`PATCH {"enabled": false}`) e revalide candidatos similares
+   manualmente antes de removê-la.
+3. Lembre: vereditos do LLM juiz **nunca** criam regra — só decisões humanas.
+
+### 6.7 Sandbox de tools (Etapa 5)
+
+Por padrão, tools `kind: cli` rodam como subprocesso direto (com timeout, rate
+limit e limites de recurso — §6.2/§6.3). Com `TOOL_SANDBOX=true`, cada tool CLI
+roda dentro de um **container Docker descartável** (`docker run --rm` de nome
+`argus-sandbox-<uuid>`) com isolamento por padrão:
+
+- Sem rede (`--network=none`), root filesystem read-only, `--cap-drop ALL`,
+  `no-new-privileges`, `--pids-limit`/`--cpus`/`--memory`/`--memory-swap`
+  limitados, usuário não-root (`nobody`, uid `TOOL_SANDBOX_UID`) e
+  `--ulimit nofile=256:256`.
+- Overrides por tool no `tools.json` (`ToolSpec`):
+  - `sandbox_image` — imagem da tool (ex.: `python:3.12-alpine`);
+  - `sandbox_network: true` — libera rede do container (se a tool precisar);
+  - `sandbox_user` — usuário custom no container.
+- **Fail-closed:** com sandbox habilitada e o Docker indisponível (binário ou
+  daemon), a tool **não roda** e a invocação falha com erro claro — nunca há
+  queda silenciosa para subprocesso sem isolamento.
+- Timeout mata o container (`docker rm -f`) e remove o resíduo.
+
+**Runbook — sandbox indisponível:**
+1. Confira se `TOOL_SANDBOX=true` foi intencional; se não, desligue.
+2. Valide o daemon: `docker version` e permissão do usuário do serviço.
+3. Com sandbox obrigatória e daemon fora do ar, aguarde o serviço voltar — as
+   invocações falharão até lá (por design).
+
+**Runbook — "imagem não encontrada" / primeira execução lenta:**
+1. O `docker run` faz pull automático; o pull conta no timeout da tool.
+   Pré-puxe a imagem para não estourar: `docker pull <imagem>`.
+2. Para tools específicas, defina `sandbox_image` no manifesto em vez de usar a
+   default `TOOL_SANDBOX_IMAGE`.
+
+**Runbook — tool CLI precisa de rede:**
+1. Adicione `"sandbox_network": true` à tool no `tools.json`. Só o necessário —
+   manter `--network=none` por padrão preserva o isolamento.
 
 ## 7. Dados: backup e recuperação
 
@@ -274,6 +359,7 @@ Scanning ativo é funcionalidade core — roda sempre que o alvo está em
 | UI pede login / sessão expira | §10 |
 | Scanning ativo bloqueado por robots.txt | §6.5 |
 | Scanning ativo muito lento ou com timeouts | §6.5 |
+| Falso positivo recorrente / regra aprendida agressiva | §6.6 |
 
 ## 10. Autenticação leve da UI (Etapa 11 — hardening)
 

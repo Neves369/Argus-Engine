@@ -18,6 +18,7 @@ from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.hitl import is_awaiting_review
 from app.orchestration.state import GraphState
+from app.scanning.service import build_scan_service
 from app.schemas.decision import DecisionRead
 from app.schemas.finding import FindingRead
 from app.schemas.review import ReviewCreate
@@ -90,10 +91,18 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         devil_mode=payload.devil_mode,
     )
     state.set_sources_service(build_sources_service())
+    scan_service = build_scan_service()
+    state.set_scan_service(scan_service)
 
     try:
         await execute_run(
-            db, run, payload.target_id, state, archetypes, build_sources_service()
+            db,
+            run,
+            payload.target_id,
+            state,
+            archetypes,
+            build_sources_service(),
+            scan_service,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -201,7 +210,11 @@ async def stream_run(
                 devil_mode=devil_mode,
             )
             state.set_sources_service(build_sources_service())
-            director = Director(archetypes, sources_service=build_sources_service())
+            scan_service = build_scan_service()
+            state.set_scan_service(scan_service)
+            director = Director(
+                archetypes, sources_service=build_sources_service(), scan_service=scan_service
+            )
             final = state.model_dump()
             try:
                 async for chunk in director.stream(state):
@@ -333,7 +346,13 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
         "note": payload.note,
     }
     try:
-        await resume_run(db, run, decision)
+        await resume_run(
+            db,
+            run,
+            decision,
+            sources_service=build_sources_service(),
+            scan_service=build_scan_service(),
+        )
     except ValueError as exc:
         if "mismatch" in str(exc):
             raise HTTPException(

@@ -19,7 +19,7 @@ A plataforma implementa controles que não devem ser desativados:
 |---|---|
 | Validação de escopo | `validate_scope` recusa alvos fora da allowlist (`ALLOWED_SCOPES`). |
 | Kill-switch | `KILL_SWITCH` + flag runtime interrompem qualquer run. |
-| Sandbox | Execução de ferramentas isolada (Docker — Etapa 5). |
+| Sandbox | Execução de tools `kind: cli` isolada (Docker descartável, `--network=none`, read-only, cap-drop ALL, usuário não-root — Etapa 5). Opt-in via `TOOL_SANDBOX=true`; **fail-closed**: sem Docker, a tool não roda. Sem sandbox, tools CLI rodam com timeout, rate limit e limites de recurso. |
 | Auditoria | Logging estruturado e histórico de decisões persistido. |
 | HITL | Aprovação humana obrigatória em ações destrutivas (Modo Diabo). |
 | Auth da UI | Senha única de operador + cookie de sessão assinado (HMAC, HttpOnly, SameSite=Lax). |
@@ -35,7 +35,13 @@ Controles de scanning ativo:
 - `ALLOWED_SCOPES` validado antes de qualquer requisição ao alvo
 - Rate limiting por target (`SCAN_RATE_LIMIT`, configurável)
 - Timeout por requisição (`SCAN_REQUEST_TIMEOUT`, configurável)
-- Self-imposed restrictions: respeitar `robots.txt`, não executar payloads destrutivos
+- Limite de páginas por scan (`SCAN_MAX_PAGES`) e de corpo por resposta (`SCAN_MAX_BODY_BYTES`)
+- Self-imposed restrictions: respeitar `robots.txt` (`SCAN_RESPECT_ROBOTS`), não executar payloads destrutivos
+- User-Agent identificável (`SCAN_USER_AGENT`) em todas as requisições ao alvo
+- Auth **opcional** por env: estática (`SCAN_EXTRA_HEADERS`/`SCAN_COOKIES`) ou login dinâmico de
+  form (`SCAN_LOGIN_URL`/`SCAN_LOGIN_USERNAME`/`SCAN_LOGIN_PASSWORD`). Credenciais ficam no ambiente,
+  não entram em log/relatório (o log do scan registra apenas url/host/status/bytes) e a inspeção
+  visual do relatório marca quando o login falhou (`report.auth`) — nunca assume sessão quando não houve.
 - Logging completo de todas as requisições ao alvo
 - Kill-switch interrompe scanning em andamento
 

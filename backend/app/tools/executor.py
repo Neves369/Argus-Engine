@@ -5,7 +5,9 @@ import contextlib
 import functools
 import json
 import logging
+import shutil
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -149,12 +151,18 @@ class ToolExecutor:
         if not tool.command:
             raise ToolExecutionError(f"CLI tool {tool.name} has no command configured")
 
-        if "args" in params:
-            args = [str(a) for a in params["args"]]
-        else:
-            args = [str(v) for v in params.values()]
-        cmd = [tool.command, *args]
+        if get_settings().tool_sandbox:
+            return await self._execute_cli_sandbox(tool, params)
 
+        return await self._execute_cli_subprocess(tool, params)
+
+    async def _execute_cli_subprocess(
+        self, tool: ToolSpec, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        if not tool.command:
+            raise ToolExecutionError(f"CLI tool {tool.name} has no command configured")
+
+        cmd = self._build_command(tool, params)
         settings = get_settings()
         preexec_fn = (
             functools.partial(
@@ -182,15 +190,118 @@ class ToolExecutor:
                 await process.wait()
             raise ToolExecutionError(f"Tool {tool.name} timed out") from exc
 
-        max_output = settings.tool_subprocess_max_output_bytes
+        return self._format_cli_result(tool, process.returncode, stdout, stderr)
+
+    @staticmethod
+    def _build_command(tool: ToolSpec, params: dict[str, Any]) -> list[str]:
+        if not tool.command:
+            raise ToolExecutionError(f"CLI tool {tool.name} has no command configured")
+        if "args" in params:
+            args = [str(a) for a in params["args"]]
+        else:
+            args = [str(v) for v in params.values()]
+        return [tool.command, *args]
+
+    def _format_cli_result(
+        self, tool: ToolSpec, returncode: int, stdout: bytes, stderr: bytes
+    ) -> dict[str, Any]:
+        max_output = get_settings().tool_subprocess_max_output_bytes
         stdout_text, stdout_truncated = _truncate_output(stdout, max_output)
         stderr_text, stderr_truncated = _truncate_output(stderr, max_output)
 
         return {
             "tool": tool.name,
-            "returncode": process.returncode,
+            "returncode": returncode,
             "stdout": stdout_text,
             "stderr": stderr_text,
             "stdout_truncated": stdout_truncated,
             "stderr_truncated": stderr_truncated,
         }
+
+    def _sandbox_image(self, tool: ToolSpec) -> str:
+        return tool.sandbox_image or get_settings().tool_sandbox_image
+
+    async def _execute_cli_sandbox(
+        self, tool: ToolSpec, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run a CLI tool in a disposable Docker container (fail-closed).
+
+        Sandbox is opt-in (``TOOL_SANDBOX=true``). When enabled, an
+        unavailable Docker binary/daemon raises instead of silently falling
+        back to an unsandboxed subprocess. The container runs with no
+        network, read-only root, dropped capabilities and hard resource
+        limits; per-tool overrides live on the ``ToolSpec``.
+        """
+        if shutil.which("docker") is None:
+            raise ToolExecutionError(
+                f"Cannot sandbox tool {tool.name}: docker binary not found "
+                "(TOOL_SANDBOX is enabled)"
+            )
+
+        name = f"argus-sandbox-{uuid.uuid4().hex[:12]}"
+        settings = get_settings()
+        mem_mb = settings.tool_subprocess_memory_limit_mb
+        user = tool.sandbox_user or str(settings.tool_sandbox_uid)
+
+        run_args = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            name,
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,size=64m",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            str(settings.tool_sandbox_pids_limit),
+            "--cpus",
+            str(settings.tool_sandbox_cpus),
+            "--memory",
+            f"{mem_mb}m",
+            "--memory-swap",
+            f"{mem_mb}m",
+            "--user",
+            user,
+            "--ulimit",
+            "nofile=256:256",
+            "--stop-timeout",
+            str(int(tool.timeout)),
+        ]
+        if not tool.sandbox_network:
+            run_args.extend(["--network", "none"])
+        run_args.extend([self._sandbox_image(tool), *self._build_command(tool, params)])
+
+        process = await asyncio.create_subprocess_exec(
+            *run_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=tool.timeout)
+        except TimeoutError as exc:
+            process.kill()
+            with contextlib.suppress(ProcessLookupError):
+                await process.wait()
+            await self._kill_container(name)
+            raise ToolExecutionError(f"Tool {tool.name} timed out in sandbox") from exc
+
+        if process.returncode == 125:
+            snippet = _truncate_output(stderr, 500)[0]
+            raise ToolExecutionError(
+                f"Sandbox failed to start for tool {tool.name}: {snippet}"
+            )
+
+        return self._format_cli_result(tool, process.returncode, stdout, stderr)
+
+    async def _kill_container(self, name: str) -> None:
+        kill = await asyncio.create_subprocess_exec(
+            "docker", "rm", "-f", name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        with contextlib.suppress(ProcessLookupError):
+            await asyncio.wait_for(kill.wait(), timeout=10.0)

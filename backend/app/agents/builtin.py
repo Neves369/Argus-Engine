@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,8 +13,11 @@ from app.agents.schemas import (
     JusticeOutput,
     MagicianOutput,
 )
+from app.core.config import get_settings
 from app.orchestration.hitl import consume, is_answered, is_approved
 from app.orchestration.state import GraphState
+from app.scanning.service import ScanBlockedError, ScanReport
+from app.services.scan_findings import derive_findings_from_scan
 from app.services.source_findings import derive_findings_from_sources
 
 
@@ -135,9 +139,31 @@ class HermitAgent(BaseArchetype):
 
     async def run(self, state: GraphState) -> dict:
         started_at = _utcnow()
-        result = await self._attempt(state)
+        # Execução paralela básica (Etapa 1): a chamada ao gateway, a coleta de
+        # fontes e o scan ativo são pernas independentes — rodam em concorrência
+        # em vez de uma após a outra. Ambas são self-contained (nunca levantam
+        # para fora) e só-leitura sobre `state`; `asyncio.gather` preserva a
+        # ordem dos resultados, então o state update e a contabilidade de tokens
+        # ficam idênticos ao fluxo sequencial anterior.
+        async def _safe_scan() -> ScanReport | None:
+            if state.scan_service is None:
+                return None
+            try:
+                return await state.scan_service.scan(state.target)
+            except ScanBlockedError:
+                return None
+
+        if get_settings().agent_parallel:
+            result, sources, report = await asyncio.gather(
+                self._attempt(state),
+                self._collect_sources(state),
+                _safe_scan(),
+            )
+        else:
+            result = await self._attempt(state)
+            sources = await self._collect_sources(state)
+            report = await _safe_scan()
         new_confidence = min(1.0, state.confidence + 0.4)
-        sources = await self._collect_sources(state)
         target = state.target.get("name", "unknown")
 
         # The hermit node loops until the confidence threshold is met; dedupe
@@ -152,23 +178,67 @@ class HermitAgent(BaseArchetype):
             finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
             findings.append(finding)
 
+        # Scanning ativo (Etapa 12): quando injetado e o alvo está em escopo
+        # validado, o Eremita também observa o alvo diretamente (headers,
+        # forms, fingerprint) e gera leads evidence-grounded — independente
+        # do Modo Diabo. Um scan bloqueado (kill-switch/fora de escopo) é
+        # silencioso: nunca fabrica finding sem dado real observado.
+        scan_findings_derived = (
+            derive_findings_from_scan(report) if report is not None else []
+        )
+        for finding in scan_findings_derived:
+            if finding["title"] in existing_titles:
+                continue
+            finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(finding)
+
+        # Correlação CVE por fingerprint (Etapa 13): o banner versado do servidor
+        # (ex.: Apache/2.4.49) é correlacionado a CVEs reais via NVD + CISA KEV,
+        # gerando leads candidate com cves/cvss/known_exploits de verdade.
+        correlated = (
+            await self._correlate_cves(state, report) if report is not None else []
+        )
+        for finding in correlated:
+            if finding["title"] in existing_titles:
+                continue
+            finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(finding)
+
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "simulate",
             "findings": len(findings),
             "sources_consulted": len(sources),
+            "scanned": report is not None,
+            "pages_observed": len(report.pages) if report is not None else 0,
+            "cve_correlations": len(correlated),
         }
         update: dict[str, Any] = {
             "findings": [*state.findings, *findings],
             "confidence": new_confidence,
             "sources": [*state.sources, *sources],
         }
+        if report is not None:
+            update["scan"] = [*state.scan, report.to_dict()]
         _apply_llm(entry, update, state, result, fallback_tokens=250)
         entry = self.validate_entry(entry)
         update["history"] = [*state.history, entry]
         update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
 
         return update
+
+    async def _correlate_cves(
+        self, state: GraphState, report: ScanReport
+    ) -> list[dict[str, Any]]:
+        """Best-effort CVE/KEV correlation of a scan report (never raises)."""
+        if state.sources_service is None or not (report.pages or []):
+            return []
+        from app.services.cve_correlate import correlate_scan_report
+
+        try:
+            return await correlate_scan_report(report, state.sources_service)
+        except Exception:  # noqa: BLE001 - correlation must never break the run
+            return []
 
 
 class FoolAgent(BaseArchetype):
@@ -192,8 +262,14 @@ class FoolAgent(BaseArchetype):
 
     async def run(self, state: GraphState) -> dict:
         started_at = _utcnow()
-        result = await self._attempt(state)
-        sources = await self._collect_sources(state)
+        # Pernas independentes rodam em concorrência (Etapa 1, paralelo básico).
+        if get_settings().agent_parallel:
+            result, sources = await asyncio.gather(
+                self._attempt(state), self._collect_sources(state)
+            )
+        else:
+            result = await self._attempt(state)
+            sources = await self._collect_sources(state)
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "explore",

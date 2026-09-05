@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
@@ -5,7 +6,7 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 const config = defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   esbuild: {
     jsx: 'automatic',
   },

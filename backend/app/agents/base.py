@@ -70,7 +70,7 @@ class BaseArchetype(ABC):
         results: list[dict] = []
         for name in service.available_sources():
             spec = service.get_source(name)
-            if spec.target_kind not in ("any", target_kind):
+            if getattr(spec, "skip_sweep", False) or spec.target_kind not in ("any", target_kind):
                 continue
             try:
                 results.append(await service.query(name, {spec.query_param: target_name}))

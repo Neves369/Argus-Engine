@@ -23,3 +23,7 @@ class ToolSpec(BaseModel):
     url: str | None = None
     method: str = "GET"
     command: str | None = None
+    # Sandbox Docker (Etapa 5): overrides opcionais da policy do executor.
+    sandbox_image: str | None = None
+    sandbox_network: bool = False
+    sandbox_user: str | None = None

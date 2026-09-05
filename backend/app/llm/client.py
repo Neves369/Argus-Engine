@@ -49,8 +49,14 @@ class UnifiedClient:
         messages = [ChatMessage(role=m.role, content=redact(m.content)) for m in messages]
 
         url = f"{provider.base_url}/chat/completions"
+        try:
+            api_key = provider.api_key
+        except ValueError as exc:
+            # Chave ausente conta como falha do provider (o router cai no
+            # próximo combo) — não um crash do run inteiro.
+            raise LLMError(f"{provider.name}: missing API key") from exc
         headers = {
-            "Authorization": f"Bearer {provider.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         payload: dict = {

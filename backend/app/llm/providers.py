@@ -92,6 +92,14 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         price_in=0.15,
         price_out=0.60,
     ),
+    "gemini": ProviderSpec(
+        name="gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        models=("gemini-2.5-flash",),
+        price_in=0.30,
+        price_out=2.50,
+    ),
 }
 
 

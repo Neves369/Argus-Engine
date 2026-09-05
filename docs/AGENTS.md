@@ -71,9 +71,9 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
 - **Resultado final (Etapa 11 — relatório de segurança):** findings carregam
   substância de pentest — `severity` (real: critical/high/medium/low/info),
   `category` (CWE/OWASP), `cvss_score`/`cvss_vector`, `cves`, `known_exploits`,
-  `remediation`, `evidence` e `references`. A origem é determinística
-  (`app/services/demo_findings.py`, o "scanner simulado" — seam para as
-  ferramentas/APIs reais), **não** texto livre do LLM. Severidade **não** é mais
+  `remediation`, `evidence` e `references`. A origem é determinística — fontes de
+  intel reais (`app/services/source_findings.py` + `app/services/cve_correlate.py`:
+  NVD/CISA KEV/CVE.report, Etapa 13), **não** texto livre do LLM. Severidade **não** é mais
   derivada da confiança. Relatório canônico em `GET /runs/{id}/report`; export em
   `GET /runs/{id}/export?format=markdown|json|csv|sarif`. Política de conteúdo:
   **relatar ≠ ensinar** (`docs/adr/0005-reporting.md`).

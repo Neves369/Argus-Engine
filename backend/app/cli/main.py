@@ -162,6 +162,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
     from app.db.session import async_session_factory
     from app.orchestration.compose import validate_sequence
     from app.orchestration.state import GraphState
+    from app.scanning.service import build_scan_service
     from app.services.run_executor import execute_run
     from app.sources.service import build_sources_service
 
@@ -196,6 +197,8 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
 
             state = GraphState(target=target, devil_mode=bool(config.get("devil_mode", False)))
             state.set_sources_service(build_sources_service())
+            scan_service = build_scan_service()
+            state.set_scan_service(scan_service)
             run = Run(
                 target_id=target_id,
                 session_id=record.id,
@@ -208,7 +211,13 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
 
             try:
                 await execute_run(
-                    session, run, target_id, state, archetypes, build_sources_service()
+                    session,
+                    run,
+                    target_id,
+                    state,
+                    archetypes,
+                    build_sources_service(),
+                    scan_service,
                 )
             except Exception as exc:  # noqa: BLE001
                 run.status = "failed"
@@ -389,6 +398,7 @@ def _session_review(run_id: int, approved: bool, note: str | None) -> str:
     from app.core.security import is_kill_switch_active
     from app.db.models import Run
     from app.db.session import async_session_factory
+    from app.scanning.service import build_scan_service
     from app.services.run_executor import resume_run
 
     async def _run() -> str:
@@ -400,7 +410,7 @@ def _session_review(run_id: int, approved: bool, note: str | None) -> str:
                 raise ValueError(f"Run #{run_id} not found")
             pending = (run.result or {}).get("pending_review") or {}
             decision = {"id": pending.get("id"), "approved": approved, "note": note}
-            await resume_run(session, run, decision)
+            await resume_run(session, run, decision, scan_service=build_scan_service())
             return run.status
 
     return asyncio.run(_run())

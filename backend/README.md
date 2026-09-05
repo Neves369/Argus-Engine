@@ -108,6 +108,10 @@ ruff check app tests
 | GET    | `/api/v1/runs/{id}/export`    | Exportar findings (JSON/Markdown) |
 | PATCH  | `/api/v1/findings/{id}`       | Atualizar status de finding |
 | POST   | `/api/v1/findings/{id}/validate` | Validar finding (pipeline de qualidade) |
+| GET    | `/api/v1/findings/fp-rules`  | Listar regras de falso positivo (aprendidas + manuais) |
+| POST   | `/api/v1/findings/fp-rules`  | Adicionar regra de falso positivo manual |
+| PATCH  | `/api/v1/findings/fp-rules/{id}` | Ativar/desativar regra |
+| DELETE | `/api/v1/findings/fp-rules/{id}` | Remover regra |
 | POST   | `/api/v1/compositions` | Salvar composição de grafo (`sessions.config` + `validate_sequence`) |
 | GET    | `/api/v1/compositions` | Listar composições                |
 | GET    | `/api/v1/compositions/{id}` | Buscar composição             |

@@ -11,6 +11,7 @@ from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
+from app.scanning.service import build_scan_service
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
 from app.services.run_control import RunLockedError, ensure_no_active_run
 from app.services.run_executor import execute_run
@@ -126,13 +127,23 @@ async def execute_composition(
         devil_mode=bool(config.get("devil_mode", False)),
     )
     state.set_sources_service(build_sources_service())
+    scan_service = build_scan_service()
+    state.set_scan_service(scan_service)
     run = Run(target_id=target_id, session_id=session.id, status="running", started_at=_utcnow())
     db.add(run)
     await db.flush()
     run_id = run.id
 
     try:
-        await execute_run(db, run, target_id, state, archetypes, build_sources_service())
+        await execute_run(
+            db,
+            run,
+            target_id,
+            state,
+            archetypes,
+            build_sources_service(),
+            scan_service,
+        )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error = str(exc)
