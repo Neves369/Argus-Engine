@@ -129,7 +129,7 @@ export interface RunEndSignal {
   status: string;
 }
 
-export type ReportFormat = 'json' | 'markdown' | 'csv' | 'sarif';
+export type ReportFormat = 'json' | 'markdown' | 'csv' | 'sarif' | 'pdf';
 
 export interface ReportSummary {
   total_findings: number;
@@ -348,6 +348,18 @@ export function getReportExport(runId: number, format: ReportFormat): Promise<st
       });
     }
     return res.text();
+  });
+}
+
+export function getReportExportBlob(runId: number, format: ReportFormat): Promise<Blob> {
+  return fetch(`${BASE_URL}/runs/${runId}/export?format=${format}`, {
+    credentials: 'include',
+  }).then(async (res) => {
+    if (!res.ok) {
+      const j = await res.json();
+      throw new Error(j.detail || `Export ${format} falhou: ${res.status}`);
+    }
+    return res.blob();
   });
 }
 

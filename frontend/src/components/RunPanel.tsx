@@ -8,7 +8,7 @@ import type {
   RunMeta,
   TraceStep,
 } from '../api/client';
-import { getReportExport } from '../api/client';
+import { getReportExport, getReportExportBlob } from '../api/client';
 import FindingCard from './FindingCard';
 import './RunPanel.css';
 
@@ -90,14 +90,18 @@ function RunPanel({
     if (runId == null) return;
     setExporting(format);
     try {
-      const text = await getReportExport(runId, format);
       const mime =
-        format === 'markdown'
-          ? 'text/markdown'
-          : format === 'csv'
-            ? 'text/csv'
-            : 'application/json';
-      const blob = new Blob([text], { type: mime });
+        format === 'pdf'
+          ? 'application/pdf'
+          : format === 'markdown'
+            ? 'text/markdown'
+            : format === 'csv'
+              ? 'text/csv'
+              : 'application/json';
+      const blob =
+        format === 'pdf'
+          ? await getReportExportBlob(runId, format)
+          : new Blob([await getReportExport(runId, format)], { type: mime });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -114,7 +118,7 @@ function RunPanel({
   const statusClass = status ?? '';
   const statusLabel = status ? (STATUS_LABELS[status] ?? status) : '';
 
-  const exportFormats: ReportFormat[] = ['markdown', 'json', 'csv', 'sarif'];
+  const exportFormats: ReportFormat[] = ['markdown', 'json', 'csv', 'sarif', 'pdf'];
 
   const severityCounts = useMemo(() => {
     const order = ['critical', 'high', 'medium', 'low', 'info'] as const;

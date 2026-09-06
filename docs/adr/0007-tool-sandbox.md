@@ -36,7 +36,7 @@ caminho sem isolamento.
 - **Fail-closed:** `shutil.which("docker")` ausente → sobe `ToolExecutionError` ("docker binary not found (TOOL_SANDBOX is enabled)"); returncode 125 do docker (falha do daemon) → `ToolExecutionError` com o stderr truncado. Nunca fallback para subprocesso.
 - Timeout: `wait_for` no `communicate`; em estouro, `process.kill()` + `docker rm -f <name>` (best-effort) para não deixar container órfão.
 - Testes: unit determinísticos com mock de `asyncio.create_subprocess_exec` (argv, fail-closed, override por tool, timeout/cleanup, truncation) + integração real com `alpine`+`echo` gated por `ARGUS_TEST_SANDBOX=1`.
-- Fora do escopo desta esta decisão: credenciais/volumes para dentro do container (sobe em ADR futuro se houver necessidade); tools `kind: http` (não passam pelo executor CLI).
+- Fora do escopo desta decisão: credenciais/volumes para dentro do container (sem necessidade atual — expandir via ADR se houver); tools `kind: http` (não passam pelo executor CLI).
 
 ## Consequências
 

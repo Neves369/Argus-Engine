@@ -34,7 +34,7 @@ via §5 para liberar. Runs em execução podem ser cancelados com
 público e remediação; tokens/custo ficam no apêndice "Observabilidade" recolhível).
 Os achados também aparecem **ao vivo** durante a execução: o evento `node` do SSE
 carrega `update.findings`, que a UI ingere direto no painel (não só no fim). O painel
-de run traz ainda botões de **export** (Markdown/JSON/CSV/SARIF) que baixam o
+de run traz ainda botões de **export** (Markdown/JSON/CSV/SARIF/PDF) que baixam o
 relatório. Para runs antigos, use **Ver** no Dashboard ou em Sessões (abre o mesmo
 painel em modo somente-leitura). Quando um run para em `pending_review` (Modo Diabo),
 o painel mostra a **revisão humana** (contexto + proposta) com botões **Aprovar**/**

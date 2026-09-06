@@ -183,9 +183,15 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 1. Lista final de arquétipos e responsabilidades — ✅ fechada (6 arquétipos acima).
 2. ~~Separação entre "raciocínio" (modelos fortes) e "execução controlada"
    (menores/abliterados)~~ — descontinuado (ver nota acima).
-3. Como o orquestrador escolhe combinações automaticamente — ainda em aberto,
-   sem prioridade definida.
-4. Nível de customização do usuário vs hardcoded de segurança — ainda em aberto.
+3. Como o orquestrador escolhe combinações automaticamente — resolvido: hoje
+   o operador define manualmente a composição (drag-and-drop na UI ou CLI
+   `compose create`). Orquestração automática (seleção de arquétipos com
+   base no target) não está no escopo atual; pode vir como etapa futura
+   se houver demanda.
+4. Nível de customização do usuário vs hardcoded de segurança — resolvido:
+   controles de segurança (`ALLOWED_SCOPES`, kill-switch, HITL) são
+   hardcoded e imutáveis por design (ver AGENTS.md §Princípios). O operador
+   customiza: fontes, tools registry, composição de arquétipos, modelos LLM.
 
 ---
 
@@ -231,11 +237,29 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - Wiring dos 6 arquétipos feito com fallback offline determinístico: sem API key (ou falha de provider) os nós degradam à lógica simulada, mantendo o grafo determinístico/offline nos testes (158 testes verdes). Chariot usa o pool de execução quando Modo Diabo ON; os demais usam o pool de julgamento.
 
 **Pontos a discutir**
-1. Do zero vs adaptar OmniRoute ou similar.
-2. Mapear "tarefa → combo ideal" (orquestração vs execução vs validação).
-3. Tratamento de rate limits e quotas free-tier.
-4. Onde aplicar policy gateway antes de modelos abliterados.
-5. Como o Modo Diabo altera o pool de modelos disponíveis para execução.
+1. Do zero vs adaptar OmniRoute ou similar — resolvido: do zero.
+   `LLMRouter` customizado (`app/llm/router.py`) com `UnifiedClient`
+   OpenAI-compatible; sem dependência de biblioteca externa de roteamento.
+2. Mapear "tarefa → combo ideal" (orquestração vs execução vs validação) —
+   resolvido: dois pools separados (`EXECUTION_MODELS`/`JUDGMENT_MODELS`)
+   comutados por `devil_mode`; quatro estratégias de ordenação (`priority`,
+   `fallback`, `cost-optimized`, `auto`).
+3. Tratamento de rate limits e quotas free-tier — resolvido para sources
+   (token-bucket por fonte em `app/sources/service.py`). Para LLM
+   providers, o comportamento atual é degradação silenciosa (HTTP 429
+   tratado como falha do provider; o router pula para o próximo combo).
+   Backoff agregado entre providers distintos é ineficiente; retry com
+   backoff no mesmo provider pode ser adicionado futuramente se preciso.
+4. Onde aplicar policy gateway antes de modelos abliterados — resolvido:
+   três camadas — (1) validação de escopo + kill-switch na entrada do run
+   (`app/core/security.py`), (2) redação de segredos em prompts outbound
+   (`app/core/secrets.py`), (3) gate HITL em ações destrutivas
+   (`app/orchestration/hitl.py`). Modelos abliterados nunca são plugados
+   (expansão do Modo Diabo descontinuada por decisão do operador).
+5. Como o Modo Diabo altera o pool de modelos disponíveis para execução —
+   resolvido: `devil_mode=True` seleciona o pool `EXECUTION_MODELS`;
+   ambos os pools usam modelos convencionais (Groq, OpenRouter, OpenAI)
+   — a infraestrutura permanece, mas funcionalmente inerte.
 
 ---
 
@@ -432,11 +456,25 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Cancelar um run em andamento pela interface
 
 **Pontos a discutir**
-1. CLI-first ou web-first.
-2. Como representar os arquétipos e conexões visualmente.
-3. Arrastar-conectar vs configuração declarativa.
-4. Feedback em tempo real do progresso do grafo.
-5. Como o usuário injeta input humano (HITL) pela interface.
+1. CLI-first ou web-first — resolvido: web-first para uso interativo
+   (composição, execução ao vivo, revisão HITL, resultados); CLI para
+   operações scriptadas (`compose create/execute/export/review`,
+   `sources smoke`, `tools run`).
+2. Como representar os arquétipos e conexões visualmente — resolvido:
+   cartas de tarô (`CardNode`) no canvas React Flow, com imagens por
+   arquétipo e edges animados `smoothstep`. Sequência = posição X
+   (esquerda → direita).
+3. Arrastar-conectar vs configuração declarativa — resolvido: ambos
+   coexistem. Drag-and-drop na UI (posição determina a sequência, sem
+   freeform wiring); CLI/REST para configuração declarativa (JSON/YAML).
+4. Feedback em tempo real do progresso do grafo — resolvido: SSE via
+   `/runs/stream` alimenta o frontend — nó ativo destacado no canvas,
+   log de trace ao vivo, chat de raciocínio do agente e findings em
+   tempo real no RunPanel.
+5. Como o usuário injeta input humano (HITL) pela interface — resolvido:
+   o RunPanel exibe contexto/proposta + campo de notas + botões
+   Aprovar/Rejeitar quando o status é `pending_review`. Mesmo fluxo via
+   CLI (`compose pending` + `compose review`).
 
 ---
 
@@ -469,10 +507,22 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 - Fontes são read-only; minimização restringe os campos retornados ao necessário.
 
 **Pontos a discutir**
-1. Quais fontes priorizar no MVP.
-2. Estratégia de cache e atualização.
-3. Como o orquestrador decide quando consultar uma fonte externa.
-4. Tratamento de dados sensíveis retornados pelas fontes.
+1. Quais fontes priorizar no MVP — resolvido: 8 fontes reais gratuitas
+   (`backend/sources.json`): NVD, CVE.report, crt.sh, AbuseIPDB, urlscan,
+   ip-api, HackerTarget, CISA KEV.
+2. Estratégia de cache e atualização — resolvido: cache TTL em SQLite
+   (`CveCache`/`ExternalDataCache`), TTL declarado por fonte no manifest
+   (30min a 24h). Refresh on-demand, sem background refresh.
+3. Como o orquestrador decide quando consultar uma fonte externa —
+   resolvido: sweep genérico (`_collect_sources`) consulta fontes com
+   `target_kind` compatível e `skip_sweep=False`; fontes com
+   `skip_sweep=True` (KEV) ou `target_kind="cve"` (CVE.report) só são
+   consultadas sob demanda. Correlação CVE roda após o scanning.
+4. Tratamento de dados sensíveis retornados pelas fontes — resolvido:
+   três camadas — (1) minimização via campo `fields` no `sources.json`
+   (só campos declarados são mantidos), (2) redação de segredos em
+   prompts outbound, (3) fontes são read-only por design
+   (`app/sources/spec.py`).
 
 ---
 
@@ -488,7 +538,7 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 - [x] Tracing de decisões do grafo — campo `trace` estruturado no estado (nó, ação, timestamps, duração, tokens, custo, provider, model, strategy) populado pela tabela `agent_runs`; `GET /runs/{id}/trace`
 - [x] Dashboard de runs, custos e findings — agregados `GET /dashboard/summary` e `GET /dashboard/runs` + aba Dashboard no frontend (cards e tabela de runs)
 - [x] Mecanismo robusto de Human-in-the-Loop — `app/orchestration/hitl.py` + API `POST /runs/{id}/review`; chariot exige aprovação p/ ação destrutiva e hermit sinaliza finding p/ revisão; runs em `pending_review` param no nó `human_gate` e são retomados após decisão; verdicts gravados como `decisions`; CLI `argus compose pending` / `review`
-- [x] Relatórios (Markdown, JSON, SARIF) — export `format=sarif` adicionado ao `GET /runs/{id}/export` (SARIF 2.1.0); PDF futuramente
+- [x] Relatórios (Markdown, JSON, CSV, SARIF, PDF) — export `format=sarif` adicionado ao `GET /runs/{id}/export` (SARIF 2.1.0); PDF via `format=pdf` (`run_report_pdf`, reportlab)
 - [x] Hardening (timeouts, resource limits, secret scanning) — ver detalhe abaixo
 - [x] Documentação de operação e runbooks — `docs/RUNBOOK.md`
 
@@ -546,7 +596,7 @@ CVEs/exploits conhecidos e como mitigar** — em vez de apenas tokens/custo/stat
 - [x] Arquétipos (Eremita/Carro) emitem achados ricos; severidade vem do dado do achado
   (não mais derivada da confiança).
 - [x] Relatório estruturado `GET /runs/{id}/report` (`summary` + `findings[]` +
-  `observability`) e `GET /runs/{id}/export` (markdown/JSON/CSV/SARIF) reescritos em
+  `observability`) e `GET /runs/{id}/export` (markdown/JSON/CSV/SARIF/PDF) reescritos em
   torno dos achados; tokens/custo viram apêndice de observabilidade.
 - [x] UI de resultados (`FindingCard` + aba Resultados) com badge de severidade, CVEs,
   flag de exploit público e remediação; observabilidade recolhível.
@@ -641,9 +691,12 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
 - [x] `ruff check app tests` e `pytest -q` verdes
 
 **Observações / pendências**
-- `cve_report` segue sem extractor próprio no sweep — seu papel é o enriquecimento
-  dentro da correlação (`cves`/`references`/EPSS/KEV por CVE)
-- Correlação só dispara com versão no banner (produto sem versão é ruído)
+- `cve_report` não tem extractor próprio no sweep por decisão — seu papel é o
+  enriquecimento dentro da correlação (`_enrich_cve_report`: `cves`/`references`/
+  EPSS/KEV por CVE), testado em `tests/test_real_sources.py`
+- Correlação só dispara com versão no banner — implementado (`product_from_banner`
+  recusa banner sem versão; tech sem versão é pulada), testado em
+  `tests/test_cve_correlate.py`
 - Sources novas para adicionar depois: Censys/Shodan, whois passivo, certstream
 - `whois`/`dig` integrados ponta a ponta como tools operator-invoked: `argus tools run
   <tool> <target>` (CLI) e `POST /tools/{name}/invoke` validam o alvo contra

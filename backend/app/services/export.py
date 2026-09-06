@@ -5,6 +5,7 @@ import io
 import json
 from datetime import datetime
 from typing import Any
+from xml.sax.saxutils import escape
 
 import yaml
 
@@ -320,3 +321,155 @@ def run_findings_sarif(run: Run, findings: list[Finding]) -> str:
         ],
     }
     return json.dumps(doc, indent=2, ensure_ascii=False)
+
+
+def _pdf_escape(value: str | None) -> str:
+    """Escape text for the Platypus MiniML parser.
+
+    Finding descriptions come from scanning (headers, pages) and external
+    feeds (NVD) and may legitimately contain ``<``/``&`` that Paragraph would
+    otherwise interpret as markup.
+    """
+    return escape(value or "")
+
+
+def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
+    """Render the security report as a printable PDF (relatar, não ensinar).
+
+    Content mirrors ``run_report_markdown``: summary, per-finding detail
+    (severity, CVSS, CVEs, exploits, remediation) and an observability
+    appendix — the same report policy as the other formats.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    result = run.result or {}
+    target = (result.get("target") or {}).get("name") or "unknown"
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    h1 = styles["Title"]
+    h2 = styles["Heading2"]
+    body = styles["BodyText"]
+    small = ParagraphStyle("small", parent=body, fontSize=9, textColor=colors.grey)
+
+    def _label_pairs(items: list[tuple[str, str | None]]) -> Paragraph:
+        text = "<br/>".join(
+            f"<b>{_pdf_escape(k)}:</b> {_pdf_escape(v)}" for k, v in items
+        )
+        return Paragraph(text, body)
+
+    story: list[Any] = [
+        Paragraph("Relatório de segurança", h1),
+        Spacer(1, 3 * mm),
+        _label_pairs(
+            [
+                ("Alvo", target),
+                ("Run", f"#{run.id}"),
+                ("Status", run.status),
+                ("Achados", str(len(findings))),
+            ]
+        ),
+        Spacer(1, 4 * mm),
+    ]
+
+    by_severity: dict[str, int] = {}
+    for finding in findings:
+        key = (finding.severity or "unknown").lower()
+        by_severity[key] = by_severity.get(key, 0) + 1
+
+    if by_severity:
+        story.append(Paragraph("Resumo por gravidade", h2))
+        rows = [["Gravidade", "Qtd."]]
+        rows.extend([[s, str(c)] for s, c in sorted(by_severity.items())])
+        table = Table(rows, colWidths=[60 * mm, 30 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.92, 0.92, 0.92)),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 4 * mm))
+
+    if not findings:
+        story.append(Paragraph("Nenhum achado registrado neste run.", body))
+    else:
+        for finding in _ordered(findings):
+            title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
+            story.append(Paragraph(title, h2))
+            pairs: list[tuple[str, str | None]] = [
+                ("Gravidade", finding.severity),
+            ]
+            if finding.category:
+                pairs.append(("Categoria", finding.category))
+            if finding.affected:
+                pairs.append(("Afetado", finding.affected))
+            if finding.cvss_score is not None:
+                vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
+                pairs.append(("CVSS", f"{finding.cvss_score}{vector}"))
+            if finding.cves:
+                pairs.append(("CVEs", ", ".join(finding.cves)))
+            if finding.known_exploits:
+                pairs.append(("Exploits conhecidos", "; ".join(finding.known_exploits)))
+            pairs.append(("Status", finding.status))
+            story.append(_label_pairs(pairs))
+            if finding.description:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph(_pdf_escape(finding.description), body))
+            evidence = (finding.meta or {}).get("evidence")
+            if evidence:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph(f"<b>Evidência:</b> {_pdf_escape(str(evidence))}", body))
+            if finding.remediation:
+                story.append(Spacer(1, 1 * mm))
+                remediation = f"<b>Remediação:</b> {_pdf_escape(finding.remediation)}"
+                story.append(Paragraph(remediation, body))
+            if finding.references:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph("<b>Referências:</b>", body))
+                for ref in finding.references:
+                    story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
+            story.append(Spacer(1, 3 * mm))
+
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("Observabilidade", h2))
+    story.append(
+        Paragraph(
+            f"Tokens: {result.get('tokens_used', 0)}<br/>"
+            f"Custo: ${float(result.get('cost', 0.0)):.4f}<br/>"
+            f"Confiança do grafo: {_pdf_escape(str(result.get('confidence')))}<br/>"
+            f"Motivo de parada: {_pdf_escape(str(result.get('stop_reason')))}",
+            body,
+        )
+    )
+    def _footer(canvas, _docx: Any) -> None:
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawCentredString(A4[0] / 2, 10 * mm, f"Argus Engine — {target}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return buffer.getvalue()

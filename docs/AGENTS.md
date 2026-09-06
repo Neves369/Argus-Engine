@@ -75,12 +75,12 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   intel reais (`app/services/source_findings.py` + `app/services/cve_correlate.py`:
   NVD/CISA KEV/CVE.report, Etapa 13), **não** texto livre do LLM. Severidade **não** é mais
   derivada da confiança. Relatório canônico em `GET /runs/{id}/report`; export em
-  `GET /runs/{id}/export?format=markdown|json|csv|sarif`. Política de conteúdo:
+  `GET /runs/{id}/export?format=markdown|json|csv|sarif|pdf`. Política de conteúdo:
   **relatar ≠ ensinar** (`docs/adr/0005-reporting.md`).
 - **Ver runs antigos:** Dashboard (**Ver**) e Sessões (**Ver**) abrem o RunPanel em
   modo somente-leitura via `getReport(id)` no `App.tsx` (`openReport`/`finishRun`),
   que já traz `findings`/`summary`/`observability`/`trace`/`history`/`pending_review`.
-  O painel também expõe botões de export (Markdown/JSON/CSV/SARIF) via
+  O painel também expõe botões de export (Markdown/JSON/CSV/SARIF/PDF) via
   `GET /runs/{id}/export` e, para runs `pending_review`, a UI de revisão HITL
   (**Aprovar**/**Rejeitar** → `POST /runs/{id}/review`) —   loop HITL fechado na UI.
 - **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`

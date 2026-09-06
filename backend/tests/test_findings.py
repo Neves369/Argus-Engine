@@ -116,3 +116,10 @@ def test_report(client, run_id):
 def test_export_bad_format(client, run_id):
     response = client.get(f"/api/v1/runs/{run_id}/export", params={"format": "xml"})
     assert response.status_code == 400
+
+
+def test_export_pdf(client, run_id):
+    response = client.get(f"/api/v1/runs/{run_id}/export", params={"format": "pdf"})
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-")

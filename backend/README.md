@@ -159,5 +159,5 @@ O entrypoint `argus` está declarado em `[project.scripts]`; a exportação reut
 
 ## Próximas fases
 
-- Etapa 5: Tool Registry — sandbox Docker
-- Etapa 12: Scanning Ativo — módulo `app/scanning/`, HTTP client com rate limiting/timeout, integração com HermitAgent
+As etapas concluídas (0 a 13) e os itens ainda em aberto estão descritos em
+`docs/ROADMAP.md` (fonte de verdade do plano).

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import RunPanel from '../RunPanel'
 import type { ChatMessage, PendingReview, RunFinding } from '../../api/client'
-import { getReportExport } from '../../api/client'
+import { getReportExport, getReportExportBlob } from '../../api/client'
 
 vi.mock('../../api/client')
 
@@ -88,6 +88,24 @@ describe('RunPanel', () => {
     expect(createObjectURL).toHaveBeenCalled()
     // o select volta para o placeholder — permite exportar o mesmo formato de novo
     await waitFor(() => expect(select.value).toBe(''))
+  })
+
+  it('exporta PDF via blob (binário, não texto)', async () => {
+    vi.mocked(getReportExportBlob).mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock')
+    const revokeObjectURL = vi.fn()
+    Object.assign(URL, { createObjectURL, revokeObjectURL })
+
+    render(<RunPanel {...baseProps} />)
+
+    const select = screen.getByLabelText('Exportar') as HTMLSelectElement
+    // PDF deve ser uma opção do select.
+    expect(Array.from(select.options).map((o) => o.value)).toContain('pdf')
+    fireEvent.change(select, { target: { value: 'pdf' } })
+
+    await waitFor(() => expect(getReportExportBlob).toHaveBeenCalledWith(1, 'pdf'))
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(getReportExport).not.toHaveBeenCalled()
   })
 
   it('mostra os metadados do entry (correlações CVE, achados, fontes, scan) no chat', () => {

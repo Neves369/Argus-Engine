@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from sqlalchemy import select
 
 from app.api.deps import DBSession
@@ -410,6 +410,12 @@ async def export_run(run_id: int, db: DBSession, format: str = "json"):
 
         return PlainTextResponse(run_findings_csv(findings))
 
+    if format == "pdf":
+        from app.services.export import run_report_pdf
+
+        return Response(content=run_report_pdf(run, findings), media_type="application/pdf")
+
     raise HTTPException(
-        status_code=400, detail="format must be 'sarif', 'json', 'markdown' or 'csv'"
+        status_code=400,
+        detail="format must be 'sarif', 'json', 'markdown', 'csv' or 'pdf'",
     )
