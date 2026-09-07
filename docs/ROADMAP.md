@@ -521,9 +521,10 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 - Fontes são read-only; minimização restringe os campos retornados ao necessário.
 
 **Pontos a discutir**
-1. Quais fontes priorizar no MVP — resolvido: 8 fontes reais gratuitas
+1. Quais fontes priorizar no MVP — resolvido: 12 fontes reais gratuitas
    (`backend/sources.json`): NVD, CVE.report, crt.sh, AbuseIPDB, urlscan,
-   ip-api, HackerTarget, CISA KEV.
+   ip-api, HackerTarget, CISA KEV + **InternetDB**, **Shodan**, **Censys**,
+   **RDAP/whois passivo** (adicionadas depois, Etapa 13).
 2. Estratégia de cache e atualização — resolvido: cache TTL em SQLite
    (`CveCache`/`ExternalDataCache`), TTL declarado por fonte no manifest
    (30min a 24h). Refresh on-demand, sem background refresh.
@@ -680,7 +681,8 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
 **Entregáveis**
 - [x] Deletado o scanner simulado (`app/services/demo_findings.py`) — nenhum import restante
 - [x] Extractors de findings baseados em respostas reais (`app/services/source_findings.py`):
-  abuseipdb, crtsh, nvd, **urlscan**, **ip_api**; respostas simuladas/irreconhecíveis são
+  abuseipdb, crtsh, nvd, urlscan, ip_api, hackertarget, internetdb,
+  shodan, censys, rdap; respostas simuladas/irreconhecíveis são
   ignoradas (nunca fabrica valor)
 - [x] Correlação CVE por produto+versão do banner (`app/services/cve_correlate.py`):
   NVD keywordSearch (`resultsPerPage`; sem `keywordExactMatch` — a API 2.0 o
@@ -711,7 +713,14 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
 - Correlação só dispara com versão no banner — implementado (`product_from_banner`
   recusa banner sem versão; tech sem versão é pulada), testado em
   `tests/test_cve_correlate.py`
-- Sources novas para adicionar depois: Censys/Shodan, whois passivo, certstream
+- Sources novas adicionadas depois: Censys (lookup de host, Platform API v2, Basic
+  auth com `CENSYS_API_ID`/`CENSYS_API_SECRET`), Shodan (`SHODAN_API_KEY` via query
+  param) + InternetDB (Shodan grátis, sem chave) e RDAP/whois passivo (sem chave,
+  `follow_redirects`). `DataSourceSpec` ganhou `auth_basic` e `follow_redirects`, e
+  `${ENV_VAR}` agora resolve também em `params_template` (chave como query param).
+  **Decisão:** certstream ficou **fora de escopo** — é um feed WebSocket de streaming,
+  não uma fonte HTTP de consulta (padrão ADR-0003), e crt.sh já cobre certificate
+  transparency; registrado aqui para não ser reaberto por engano.
 - `whois`/`dig` integrados ponta a ponta como tools operator-invoked: `argus tools run
   <tool> <target>` (CLI) e `POST /tools/{name}/invoke` validam o alvo contra
   `ALLOWED_SCOPES` e degradam de forma determinística quando o binário não está

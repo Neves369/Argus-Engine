@@ -43,8 +43,9 @@ direto ao Eremita.
 
 2. **OSINT passivo:** consulta de APIs externas — NVD (CVE), crt.sh
    (certificado/subdomínio), AbuseIPDB (reputação de IP), cve.report,
-   urlscan.io e ip-api.com — dependendo do tipo do alvo (domínio vs IP; ver
-   `docs/RUNBOOK.md` sobre chaves de API opcionais).
+   urlscan.io, ip-api.com, Shodan/InternetDB e Censys (superfície de IP),
+   RDAP/whois passivo (registro de domínio) — dependendo do tipo do alvo
+   (domínio vs IP; ver `docs/RUNBOOK.md` sobre chaves de API opcionais).
 
 Todo achado que aparece no relatório final **nasce aqui** (ou não aparece).
 Se nenhuma fonte real tiver dado significativo pro alvo, o Eremita não

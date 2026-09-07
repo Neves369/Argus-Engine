@@ -292,6 +292,206 @@ def _hackertarget_finding(target: str, data: dict[str, Any]) -> dict[str, Any] |
     }
 
 
+def _rdap_registrar(entities: Any) -> str | None:
+    """Extract the registrar's organization name from an RDAP ``entities`` list."""
+    if not isinstance(entities, list):
+        return None
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        roles = entity.get("roles")
+        if not (isinstance(roles, list) and "registrar" in roles):
+            continue
+        vcard = entity.get("vcardArray")
+        if not (isinstance(vcard, list) and len(vcard) > 1 and isinstance(vcard[1], list)):
+            continue
+        for props in vcard[1]:
+            if isinstance(props, list) and len(props) >= 4 and props[0] == "fn":
+                return str(props[3])
+    return None
+
+
+def _shodan_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Servers both the keyed Shodan host lookup and the keyless InternetDB.
+
+    Both share the same passive shape: ports seen for the IP and a list of
+    CVEs Shodan mapped to the exposed services. That list is derived from
+    historical banners and may be stale — a lead for review, never a
+    confirmation of a live vulnerability.
+    """
+    ports = data.get("ports")
+    ports_list = [p for p in ports if isinstance(p, int)] if isinstance(ports, list) else []
+    vulns = data.get("vulns")
+    vuln_list = [v for v in vulns if isinstance(v, str)] if isinstance(vulns, list) else []
+    hostnames = data.get("hostnames")
+    host_list = [h for h in hostnames if isinstance(h, str)] if isinstance(hostnames, list) else []
+    if not ports_list and not vuln_list:
+        return None
+    severity = "low" if vuln_list else "info"
+    org = str(data.get("org") or "").strip()
+    asn = str(data.get("asn") or "").strip()
+    detail = []
+    if host_list:
+        detail.append("hostnames: " + ", ".join(host_list[:5]))
+    if org:
+        detail.append(f"org: {org}")
+    if asn:
+        detail.append(f"asn: {asn}")
+    return {
+        "id": None,
+        "title": (
+            f"{len(ports_list)} porta(s) exposta(s) no IP {target}"
+            + (f" e {len(vuln_list)} CVE(s) mapeado(s) pelo Shodan" if vuln_list else "")
+        ),
+        "description": (
+            "A base passiva do Shodan registra as portas e os CVEs relatados "
+            "para os banners deste IP. Os dados são derivados de varreduras "
+            "históricas: portas podem ter mudado desde a última varredura e "
+            "uma listagem de CVE NÃO confirma que o alvo está vulnerável hoje "
+            "— requer validação manual contra a versão real dos serviços."
+        ),
+        "severity": severity,
+        "category": "Superfície de ataque",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": vuln_list[:20],
+        "known_exploits": [],
+        "remediation": (
+            "Valide cada porta exposta e cada CVE listado contra a versão real "
+            "do serviço em execução antes de qualquer remediação; portas sem "
+            "uso devem ser protegidas ou fechadas."
+        ),
+        "references": [f"https://www.shodan.io/host/{target}"],
+        "evidence": (
+            f"Shodan: porta(s)={sorted(ports_list)}; "
+            f"CVE(s)={len(vuln_list)}" + "; " + "; ".join(detail) if detail else ""
+        ),
+        "confidence": 0.5,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
+def _censys_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    # Platform API v2 wraps the host record under `result`; accept both the
+    # nested live shape and a flat shape for robustness.
+    payload = data.get("result") if isinstance(data.get("result"), dict) else data
+    services = payload.get("services")
+    if not isinstance(services, list) or not services:
+        return None
+    entries: list[str] = []
+    for svc in services:
+        if not isinstance(svc, dict):
+            continue
+        name = svc.get("service_name")
+        port = svc.get("port")
+        proto = svc.get("transport_protocol")
+        if port is None and not name:
+            continue
+        label = f"{name or 'unknown'} @ {port}"
+        if proto:
+            label += f"/{proto}"
+        entries.append(label)
+    if not entries:
+        return None
+    return {
+        "id": None,
+        "title": f"{len(entries)} serviço(s) exposto(s) no IP {target} segundo o Censys",
+        "description": (
+            "O lookup de host do Censys (Platform API v2) lista os serviços "
+            "que ele observou neste IP. É uma observação passiva e "
+            "potencialmente defasada: serviços podem ter mudado desde a última "
+            "varredura — confirmar antes de agir."
+        ),
+        "severity": "info",
+        "category": "Superfície de ataque",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": [],
+        "known_exploits": [],
+        "remediation": (
+            "Confirme cada serviço exposto contra a configuração real do host; "
+            "desative ou restrinja serviços que não precisam estar acessíveis."
+        ),
+        "references": [f"https://search.censys.io/hosts/{target}"],
+        "evidence": "Censys: " + ", ".join(entries[:20]),
+        "confidence": 0.5,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
+def _rdap_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Passive WHOIS over RDAP: registrar, nameservers and key lifecycle events."""
+    registrar = _rdap_registrar(data.get("entities"))
+    nameservers = data.get("nameservers")
+    ns_list: list[str] = []
+    if isinstance(nameservers, list):
+        for ns in nameservers:
+            if not isinstance(ns, dict):
+                continue
+            ldh = ns.get("ldhName")
+            if isinstance(ldh, list):
+                ns_list.extend(str(name) for name in ldh if isinstance(name, str))
+            elif isinstance(ldh, str):
+                ns_list.append(ldh)
+    events = data.get("events")
+    expired = registered = None
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            action = event.get("eventAction")
+            date = event.get("eventDate")
+            if action == "expiration" and expired is None:
+                expired = date
+            elif action == "registration" and registered is None:
+                registered = date
+    if not registrar and not ns_list and not expired and not registered:
+        return None
+    label = []
+    if registrar:
+        label.append(f"registrar={registrar}")
+    if ns_list:
+        label.append(f"{len(ns_list)} nameserver(s)")
+    if registered:
+        label.append(f"registrado em {registered}")
+    if expired:
+        label.append(f"expira em {expired}")
+    return {
+        "id": None,
+        "title": f"Registro RDAP de {target}: " + ", ".join(label),
+        "description": (
+            "Consultas WHOIS passivas (RDAP, RFC 9083) revelam o registrar, os "
+            "nameservers e as datas de registro/expiração do domínio. Os "
+            "nameservers ampliam a superfície de ataque e datas próximas da "
+            "expiração sinalizam risco de captura/seizure — nada disso é "
+            "vulnerabilidade em si."
+        ),
+        "severity": "info",
+        "category": "Gestão de domínio",
+        "affected": target,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cves": [],
+        "known_exploits": [],
+        "remediation": (
+            "Revise registrar, nameservers e datas de expiração: renove antes "
+            "do vencimento, monitore mudanças de quem publica o DNS do domínio "
+            "e remova nameservers não autorizados."
+        ),
+        "references": [f"https://rdap.org/domain/{target}"],
+        "evidence": "RDAP: " + "; ".join(label) + (
+            f"; nameservers: {', '.join(ns_list[:10])}" if ns_list else ""
+        ),
+        "confidence": 0.7,
+        "status": "candidate",
+        "requires_human_review": True,
+    }
+
+
 #: Only sources with a verified, stable response shape get a finding
 #: extractor. Every other configured source (cve_report, and any
 #: future/operator-added source) still gets queried and its raw result
@@ -305,6 +505,10 @@ _EXTRACTORS = {
     "urlscan": _urlscan_finding,
     "ip_api": _ip_api_finding,
     "hackertarget": _hackertarget_finding,
+    "internetdb": _shodan_finding,
+    "shodan": _shodan_finding,
+    "censys": _censys_finding,
+    "rdap": _rdap_finding,
 }
 
 

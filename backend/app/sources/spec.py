@@ -40,6 +40,15 @@ class DataSourceSpec(BaseModel):
     #: the variable is unset, that header is simply omitted rather than sent
     #: as the literal placeholder string.
     headers_template: dict[str, str] = Field(default_factory=dict)
+    #: HTTP Basic credentials as a two-element list of ``"${ENV_VAR}"``
+    #: templates: ``["${API_ID}", "${API_SECRET}"]``. Resolved at request time
+    #: into ``Authorization: Basic base64(id:secret)``; if either variable is
+    #: unset the header is omitted (the source degrades like any unconfigured
+    #: key) rather than failing or leaking the placeholder.
+    auth_basic: list[str] = Field(default_factory=list)
+    #: Follow HTTP redirects (e.g. rdap.org), which bootstrap to the registrar's
+    #: registry before answering. httpx does not follow redirects by default.
+    follow_redirects: bool = False
     timeout: float = 10.0
     rate_limit: float = 0.0
     #: Token-bucket burst capacity for ``rate_limit``: how many calls may be

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
@@ -26,6 +27,29 @@ _ENV_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 _URL_FORMATTER = string.Formatter()
 
 
+def _resolve_env_placeholders(template: dict[str, Any]) -> dict[str, Any]:
+    """Resolve ``${ENV_VAR}`` values from the environment.
+
+    A value that is exactly ``${ENV_VAR}`` and the variable is unset is
+    dropped entirely — never sent as the literal placeholder string. This
+    keeps API keys out of the checked-in sources manifest; operators set the
+    real key via the environment (see `.env.example`). Applied to both request
+    headers and query parameters, so a source that authenticates via a query
+    parameter (e.g. Shodan's ``key=``) uses the same mechanism as a header-key
+    source.
+    """
+    resolved: dict[str, Any] = {}
+    for key, value in template.items():
+        match = _ENV_PLACEHOLDER.match(value) if isinstance(value, str) else None
+        if match:
+            env_value = os.environ.get(match.group(1))
+            if env_value:
+                resolved[key] = env_value
+        else:
+            resolved[key] = value
+    return resolved
+
+
 def _resolve_headers(template: dict[str, str]) -> dict[str, str]:
     """Resolve ``${ENV_VAR}`` header values from the environment.
 
@@ -34,16 +58,29 @@ def _resolve_headers(template: dict[str, str]) -> dict[str, str]:
     keeps API keys out of the checked-in sources manifest; operators set the
     real key via the environment (see `.env.example`).
     """
-    resolved: dict[str, str] = {}
-    for key, value in template.items():
-        match = _ENV_PLACEHOLDER.match(value)
-        if match:
-            env_value = os.environ.get(match.group(1))
-            if env_value:
-                resolved[key] = env_value
-        else:
-            resolved[key] = value
-    return resolved
+    return {k: v for k, v in _resolve_env_placeholders(template).items() if isinstance(v, str)}
+
+
+def _resolve_basic_auth(templates: list[str]) -> str | None:
+    """Build an ``Authorization: Basic`` header from two ``${ENV_VAR}`` templates.
+
+    Returns ``None`` when either credential variable is unset (or the list
+    isn't exactly two entries), so the source degrades like any unconfigured
+    key instead of sending a placeholder or failing the request.
+    """
+    if len(templates) != 2:
+        return None
+    parts: list[str] = []
+    for template in templates:
+        match = _ENV_PLACEHOLDER.match(template)
+        if not match:
+            return None
+        env_value = os.environ.get(match.group(1))
+        if not env_value:
+            return None
+        parts.append(env_value)
+    token = base64.b64encode(f"{parts[0]}:{parts[1]}".encode()).decode("ascii")
+    return f"Basic {token}"
 
 
 def _split_path_and_query_params(
@@ -174,11 +211,17 @@ class DataSourceService:
     async def _fetch(self, source: DataSourceSpec, params: dict[str, Any]) -> Any:
         if not source.url:
             raise DataSourceError(f"Source {source.name} has no URL configured")
-        merged = {**source.params_template, **params}
+        merged = {**_resolve_env_placeholders(source.params_template), **params}
         url, merged = _split_path_and_query_params(source.url, merged)
         headers = _resolve_headers(source.headers_template) if source.headers_template else {}
+        if source.auth_basic:
+            auth = _resolve_basic_auth(source.auth_basic)
+            if auth is not None:
+                headers["Authorization"] = auth
         try:
-            async with httpx.AsyncClient(timeout=source.timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=source.timeout, follow_redirects=source.follow_redirects
+            ) as client:
                 if source.method.upper() == "POST":
                     response = await client.post(url, json=merged, headers=headers)
                 else:

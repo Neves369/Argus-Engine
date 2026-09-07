@@ -25,6 +25,12 @@ necessário"), caching, e comportamento determinístico offline para os testes.
 - Expor via API: `GET /sources` e `POST /sources/{name}/query` (valida escopo).
 - **Fallback determinístico**: fonte não configurada ou falha de rede retorna dados
   simulados estáveis (`status: "simulated"`), mantendo testes offline.
+- **Segredos configuráveis**: valores exatos `"${ENV_VAR}"` em `headers_template` e
+  `params_template` são resolvidos do ambiente em tempo de request (chave como query
+  param, ex. Shodan); `auth_basic` (lista de dois templates para HTTP Basic) e
+  `follow_redirects` completam o suporte a provedores como Censys e rdap.org. Se a
+  variável estiver ausente, o header/param/credencial é omitido e a fonte degrada
+  para simulado — nunca envia placeholder nem falha.
 
 ## Consequências
 

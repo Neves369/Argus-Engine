@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,12 @@ from app.agents import get_archetype
 from app.orchestration.state import GraphState
 from app.services.source_findings import derive_findings_from_sources
 from app.sources.registry import DataSourceRegistry
-from app.sources.service import DataSourceError, DataSourceService, _resolve_headers
+from app.sources.service import (
+    DataSourceError,
+    DataSourceService,
+    _resolve_basic_auth,
+    _resolve_headers,
+)
 from app.sources.spec import DataSourceSpec, SourceKind, looks_like_ip
 
 
@@ -163,9 +169,167 @@ def test_fetch_omits_header_without_configured_key(client):
     )
     svc = DataSourceService(_registry(spec))
     _run(svc.query("abuse-test2", {"ipAddress": "1.2.3.4"}))
-
     assert route.called
     assert "Key" not in route.calls[0].request.headers
+
+
+# --- env-var placeholders in query params (key-as-query-param sources) -------
+
+
+@respx.mock
+def test_fetch_substitutes_env_var_in_params(client, monkeypatch):
+    monkeypatch.setenv("SHODAN_TEST_KEY", "secret123")
+    spec = DataSourceSpec(
+        name="shodan-like",
+        kind=SourceKind.HTTP,
+        url="http://shodan-like.local/host/{query}",
+        params_template={"key": "${SHODAN_TEST_KEY}"},
+        query_param="query",
+        fields=[],
+    )
+    route = respx.get("http://shodan-like.local/host/8.8.8.8").mock(
+        return_value=Response(200, json={"ports": []})
+    )
+    svc = DataSourceService(_registry(spec))
+    _run(svc.query("shodan-like", {"query": "8.8.8.8"}))
+    assert route.called
+    assert route.calls[0].request.url.params.get("key") == "secret123"
+
+
+@respx.mock
+def test_fetch_omits_unset_env_param(client, monkeypatch):
+    monkeypatch.delenv("SHODAN_TEST_KEY_UNSET", raising=False)
+    spec = DataSourceSpec(
+        name="shodan-like2",
+        kind=SourceKind.HTTP,
+        url="http://shodan-like2.local/host/{query}",
+        params_template={"key": "${SHODAN_TEST_KEY_UNSET}", "minify": "true"},
+        query_param="query",
+        fields=[],
+    )
+    route = respx.get("http://shodan-like2.local/host/1.2.3.4").mock(
+        return_value=Response(200, json={"ports": []})
+    )
+    svc = DataSourceService(_registry(spec))
+    _run(svc.query("shodan-like2", {"query": "1.2.3.4"}))
+    assert route.called
+    assert "key" not in route.calls[0].request.url.params
+    assert route.calls[0].request.url.params.get("minify") == "true"
+
+
+# --- HTTP Basic auth (auth_basic) -------------------------------------------
+
+
+def test_resolve_basic_auth_builds_header(monkeypatch):
+    monkeypatch.setenv("API_TEST_ID", "acme")
+    monkeypatch.setenv("API_TEST_SECRET", "swordfish")
+    expected = "Basic " + base64.b64encode(b"acme:swordfish").decode()
+    assert _resolve_basic_auth(["${API_TEST_ID}", "${API_TEST_SECRET}"]) == expected
+
+
+def test_resolve_basic_auth_returns_none_when_credential_unset(monkeypatch):
+    monkeypatch.delenv("API_TEST_ID_UNSET", raising=False)
+    monkeypatch.setenv("API_TEST_SECRET_SET", "x")
+    assert _resolve_basic_auth(["${API_TEST_ID_UNSET}", "${API_TEST_SECRET_SET}"]) is None
+
+
+def test_resolve_basic_auth_requires_two_templates():
+    assert _resolve_basic_auth(["${ONLY_ONE}"]) is None
+    assert _resolve_basic_auth(["literal", "${B}"]) is None
+    assert _resolve_basic_auth([]) is None
+
+
+@respx.mock
+def test_fetch_sends_basic_auth_header(client, monkeypatch):
+    monkeypatch.setenv("CENSYS_TEST_ID", "acme")
+    monkeypatch.setenv("CENSYS_TEST_SECRET", "swordfish")
+    spec = DataSourceSpec(
+        name="censys-like",
+        kind=SourceKind.HTTP,
+        url="http://censys-like.local/hosts/{query}",
+        auth_basic=["${CENSYS_TEST_ID}", "${CENSYS_TEST_SECRET}"],
+        query_param="query",
+        fields=[],
+    )
+    route = respx.get("http://censys-like.local/hosts/8.8.8.8").mock(
+        return_value=Response(200, json={"result": {}})
+    )
+    svc = DataSourceService(_registry(spec))
+    _run(svc.query("censys-like", {"query": "8.8.8.8"}))
+    assert route.called
+    expected = "Basic " + base64.b64encode(b"acme:swordfish").decode()
+    assert route.calls[0].request.headers["Authorization"] == expected
+
+
+@respx.mock
+def test_fetch_omits_basic_auth_without_configured_credentials(client):
+    spec = DataSourceSpec(
+        name="censys-like2",
+        kind=SourceKind.HTTP,
+        url="http://censys-like2.local/hosts/{query}",
+        auth_basic=["${CENSYS_TEST_ID_UNSET}", "${CENSYS_TEST_SECRET_UNSET}"],
+        query_param="query",
+        fields=[],
+    )
+    route = respx.get("http://censys-like2.local/hosts/8.8.8.8").mock(
+        return_value=Response(200, json={"result": {}})
+    )
+    svc = DataSourceService(_registry(spec))
+    _run(svc.query("censys-like2", {"query": "8.8.8.8"}))
+    assert route.called
+    assert "Authorization" not in route.calls[0].request.headers
+
+
+# --- redirect following (RDAP bootstrap) -------------------------------------
+
+
+@respx.mock
+def test_fetch_follows_redirects_when_enabled(client):
+    spec = DataSourceSpec(
+        name="rdap-like",
+        kind=SourceKind.HTTP,
+        url="http://rdap-like.local/domain/{query}",
+        query_param="query",
+        follow_redirects=True,
+        fields=[],
+    )
+    initial = respx.get("http://rdap-like.local/domain/example.com").mock(
+        return_value=Response(
+            302, headers={"Location": "http://registry-like.local/domain/example.com"}
+        )
+    )
+    final = respx.get("http://registry-like.local/domain/example.com").mock(
+        return_value=Response(200, json={"objectClassName": "domain", "ldhName": "example.com"})
+    )
+    svc = DataSourceService(_registry(spec))
+    result = _run(svc.query("rdap-like", {"query": "example.com"}))
+    assert initial.called
+    assert final.called  # the bootstrap redirect was followed
+    assert result["status"] == "ok"
+
+
+@respx.mock
+def test_fetch_does_not_follow_redirects_by_default(client):
+    spec = DataSourceSpec(
+        name="rdap-like2",
+        kind=SourceKind.HTTP,
+        url="http://rdap-like2.local/domain/{query}",
+        query_param="query",
+        fields=[],
+    )
+    initial = respx.get("http://rdap-like2.local/domain/example.com").mock(
+        return_value=Response(
+            302, headers={"Location": "http://registry-like2.local/domain/example.com"}
+        )
+    )
+    final = respx.get("http://registry-like2.local/domain/example.com").mock(
+        return_value=Response(200, json={"objectClassName": "domain"})
+    )
+    svc = DataSourceService(_registry(spec))
+    result = _run(svc.query("rdap-like2", {"query": "example.com"}))
+    assert initial.called
+    assert not final.called
+    assert result["status"] != "ok" or "domain" not in str(result["data"])
 
 
 # --- target_kind filtering in the generic collector -----------------------
@@ -266,6 +430,10 @@ def test_real_sources_manifest_loads_all_expected_sources():
         "ip_api",
         "hackertarget",
         "kev",
+        "internetdb",
+        "shodan",
+        "censys",
+        "rdap",
     }
     assert expected <= set(reg.available_sources())
 
@@ -281,6 +449,10 @@ def test_real_sources_manifest_loads_all_expected_sources():
         ("ip_api", "ip"),
         ("hackertarget", "domain"),
         ("kev", "any"),
+        ("internetdb", "ip"),
+        ("shodan", "ip"),
+        ("censys", "ip"),
+        ("rdap", "domain"),
     ],
 )
 def test_real_source_declares_expected_target_kind(name: str, expected_target_kind: str):
@@ -296,11 +468,27 @@ def test_ip_api_and_cve_report_use_path_templated_urls():
     assert "{query}" in reg.get_source("cve_report").url
 
 
+def test_new_ip_sources_use_path_templated_urls():
+    path = Path(__file__).resolve().parents[1] / "sources.json"
+    reg = DataSourceRegistry(path)
+    for name in ("internetdb", "shodan", "censys", "rdap"):
+        assert "{query}" in reg.get_source(name).url
+
+
 def test_abuseipdb_and_nvd_reference_env_var_headers():
     path = Path(__file__).resolve().parents[1] / "sources.json"
     reg = DataSourceRegistry(path)
     assert reg.get_source("abuseipdb").headers_template["Key"] == "${ABUSEIPDB_API_KEY}"
     assert reg.get_source("nvd").headers_template["apiKey"] == "${NVD_API_KEY}"
+
+
+def test_shodan_censys_and_rdap_declare_secret_and_redirect_styles():
+    path = Path(__file__).resolve().parents[1] / "sources.json"
+    reg = DataSourceRegistry(path)
+    shodan = reg.get_source("shodan")
+    assert shodan.params_template["key"] == "${SHODAN_API_KEY}"
+    assert reg.get_source("censys").auth_basic == ["${CENSYS_API_ID}", "${CENSYS_API_SECRET}"]
+    assert reg.get_source("rdap").follow_redirects is True
 
 
 def test_kev_is_declared_as_full_feed_collected_manually():
@@ -433,3 +621,144 @@ def test_extractors_ignore_simulated_results():
         )
     ]
     assert derive_findings_from_sources("example.com", results) == []
+
+
+# --- new IP-surface extractors (Shodan/InternetDB, Censys) -------------------
+
+
+def test_shodan_extractor_surfaces_ports_and_cves():
+    findings = _derived(
+        "shodan",
+        {
+            "org": "ACME Hosting",
+            "asn": "AS12345",
+            "ports": [80, 443, 22],
+            "hostnames": ["server1.acme.com"],
+            "vulns": ["CVE-2020-0001", "CVE-2021-0002"],
+        },
+    )
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["title"].startswith("3 porta(s) exposta(s)")
+    assert finding["severity"] == "low"  # CVEs listed -> low lead
+    assert finding["cves"] == ["CVE-2020-0001", "CVE-2021-0002"]
+    assert "org: ACME Hosting" in finding["evidence"]
+    assert finding["status"] == "candidate"
+    assert finding["requires_human_review"] is True
+
+
+def test_internetdb_extractor_info_when_only_ports():
+    findings = _derived(
+        "internetdb",
+        {
+            "ip": "1.2.3.4",
+            "ports": [443],
+            "cpes": ["cpe:/a:nginx:nginx"],
+            "hostnames": ["www.example.com"],
+            "vulns": [],
+            "tags": ["cloud"],
+        },
+    )
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "info"  # no CVEs -> informational surface
+    assert findings[0]["cves"] == []
+    assert "porta(s)=[443]" in findings[0]["evidence"]
+
+
+def test_shodan_extractor_skips_empty_shape():
+    assert _derived("internetdb", {"ip": "1.2.3.4", "hostnames": []}) == []
+    assert _derived("shodan", {}) == []
+
+
+def test_censys_extractor_lists_services():
+    data = {
+        "code": 200,
+        "status": "OK",
+        "result": {
+            "ip": "1.2.3.4",
+            "services": [
+                {"service_name": "HTTP", "port": 80, "transport_protocol": "TCP"},
+                {"service_name": None, "port": 2222},
+            ],
+        },
+    }
+    findings = _derived("censys", data)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["severity"] == "info"
+    assert "HTTP @ 80/TCP" in finding["evidence"]
+    assert "unknown @ 2222" in finding["evidence"]
+    assert finding["status"] == "candidate"
+
+
+def test_censys_extractor_accepts_flat_payload_too():
+    findings = _derived("censys", {"services": [{"service_name": "SSH", "port": 22}]})
+    assert len(findings) == 1
+    assert "SSH @ 22" in findings[0]["evidence"]
+
+
+def test_censys_extractor_skips_no_services():
+    assert _derived("censys", {"ip": "1.2.3.4", "services": []}) == []
+    assert _derived("censys", {}) == []
+
+
+def test_new_extractors_ignore_simulated_results():
+    results = [
+        _source_result(
+            "internetdb", {"ports": [80], "vulns": ["CVE-2020-0001"]}, status="simulated"
+        ),
+        _source_result(
+            "censys", {"services": [{"service_name": "HTTP", "port": 80}]}, status="simulated"
+        ),
+        _source_result("rdap", {"entities": [{"roles": ["registrar"]}]}, status="simulated"),
+    ]
+    assert derive_findings_from_sources("example.com", results) == []
+
+
+# --- RDAP passive-WHOIS extractor --------------------------------------------
+
+
+def test_rdap_extractor_surfaces_registrar_nameservers_and_dates():
+    data = {
+        "ldhName": "example.com",
+        "entities": [
+            {
+                "objectClassName": "entity",
+                "roles": ["registrar"],
+                "vcardArray": [
+                    "vcard",
+                    [["fn", {}, "text", "Charleston Road Registry Inc"]],
+                ],
+            }
+        ],
+        "nameservers": [
+            {"ldhName": ["ns1.example.com", "ns2.example.com"]},
+            {"ldhName": "ns3.example.com"},
+        ],
+        "events": [
+            {"eventAction": "registration", "eventDate": "2020-01-01T00:00:00Z"},
+            {"eventAction": "expiration", "eventDate": "2026-01-01T00:00:00Z"},
+        ],
+        "status": ["client transfer prohibited"],
+    }
+    findings = _derived("rdap", data)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["category"] == "Gestão de domínio"
+    assert finding["severity"] == "info"
+    assert "registrar=Charleston Road Registry Inc" in finding["title"]
+    assert "3 nameserver(s)" in finding["title"]
+    assert "expira em 2026-01-01T00:00:00Z" in finding["title"]
+    assert "ns1.example.com" in finding["evidence"]
+    assert finding["status"] == "candidate"
+    assert finding["requires_human_review"] is True
+
+
+def test_rdap_extractor_skips_empty_shape():
+    assert _derived("rdap", {}) == []
+    assert _derived("rdap", {"ldhName": "example.com", "status": []}) == []
+
+
+def test_rdap_extractor_ignores_entities_without_registrar_role():
+    data = {"entities": [{"objectClassName": "entity", "roles": ["abuse"], "vcardArray": []}]}
+    assert _derived("rdap", data) == []
