@@ -47,9 +47,11 @@ class ArchetypeOutputBase(BaseModel):
 
 
 class EmperorOutput(ArchetypeOutputBase):
-    """Director node: plans the run."""
+    """Director node: plans the run and supervises the team."""
 
-    action: Literal["plan"]
+    action: Literal["plan", "direct", "close"]
+    next_agent: str | None = None
+    objective: str | None = None
     target: str
     scope: str
     mode: Literal["execute", "simulate"]

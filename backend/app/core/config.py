@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     default_budget_cost: float = 1.0
     confidence_threshold: float = 0.6
 
+    # Supervisor (modo padrão, sem cartas): número máximo de rodadas em que o
+    # Imperador pode delegar a um membro do time antes de fechar o run. Protege
+    # contra loops infinitos quando o time não acumula confiança suficiente.
+    supervisor_max_rounds: int = 8
+
     # Execução paralela básica (Etapa 1): executa em concorrência as pernas
     # independentes de um nó (gateway LLM + coleta de fontes + scan ativo no
     # Eremita; gateway + fontes no Louco) — `asyncio.gather` preserva a ordem,

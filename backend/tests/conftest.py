@@ -11,6 +11,13 @@ os.environ["EVIDENCE_DIR"] = "./data/test_evidence"
 # a despeito do .env do desenvolvedor agora mapear ARGUS_ENCRYPTION_KEY.
 os.environ["ARGUS_ENCRYPTION_KEY"] = ""
 os.environ["ENCRYPTION_KEY"] = ""
+# Levers de economia de tokens (Etapa 7) desligados nos testes — ver
+# docs/AGENTS.md: ligados, quebrariam a determinância do grafo simulado.
+os.environ["CAVEMAN_PROMPTS"] = "false"
+os.environ["HISTORY_COMPRESSION"] = "false"
+os.environ["TOOL_OUTPUT_COMPRESSION"] = "false"
+os.environ["BUDGET_TOKENS_PER_AGENT"] = "0"
+os.environ["BUDGET_COST_PER_AGENT"] = "0.0"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

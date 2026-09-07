@@ -50,6 +50,14 @@ class GraphState(BaseModel):
     # Runtime-only injectable (not serialized): active scanning (Etapa 12).
     _scan_service: Any = PrivateAttr(default=None)
 
+    # Time de agentes disponíveis para este run (cartas ou time padrão).
+    team: list[str] = Field(default_factory=list)
+    # Agente que o Imperador escolheu para o próximo passo (reserva next_agent
+    # para HITL; usado pelo router supervisor).
+    delegate_to: str | None = None
+    # Contador de rodadas de supervisão (proteção contra loops infinitos).
+    supervisor_rounds: int = Field(default_factory=int)
+
     @property
     def sources_service(self) -> Any:
         return self._sources_service

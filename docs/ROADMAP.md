@@ -128,6 +128,18 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
       fontes + scan ativo) rodam em concorrência via `asyncio.gather`, preservando ordem
       e estado (`AGENT_PARALLEL`, default on; desligar => sequencial). Cobertura:
       `tests/test_execution_parallelism.py` (sobreposição de wall-clock + semântica).
+- [x] Supervisor Imperador no modo padrão (sem cartas) — o Imperador deixa de ser um
+      único nó de abertura e passa a **supervisionar o time**: planeja (`plan`), delega
+      dinamicamente um membro do time a cada rodada (`direct`) e fecha o run (`close`)
+      por confiança ou esgotamento de `supervisor_max_rounds` (default 8). O time é
+      resolvido na provision do `Director` (`state.team`; `["hermit"]`, ou
+      `["hermit","chariot"]` em `devil_mode`) e nunca sobrescreve um time persistido
+      (resume de HITL). Roteadores: `route_from_emperor` (delegação válida → membro,
+      inválida/ausente → justice) e `route_after_worker` (worker sempre devolve ao
+      supervisor; paradas inadiáveis — HITL, kill-switch, orçamento, `stop_reason`
+      — desviam à Justiça). Composições (cartas) continuam num pipeline linear — cada
+      carta roda exatamente uma vez — e o Imperador segue fora do deck
+      (ver `docs/GUIA_CARTAS.md` e Etapa 2). Cobertura: `tests/test_supervisor.py`.
 
 **Critérios de aceite**
 - [x] É possível definir um grafo de 3 nós, executar e receber estado final tipado.
@@ -135,7 +147,9 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 **Observações / pendências**
 - Paralelismo de nós em DAG (fan-out: vários nós após um diretor) ainda não existe — os grafos
-  atuais são cadeias lineares; o paralelismo entregue é o intra-nó (pernas de I/O independentes).
+  atuais são cadeias (pipeline linear de cartas) **ou** o loop supervisor/worker do modo
+  padrão (um membro do time por vez, decidido pelo Imperador); o paralelismo entregue é o
+  intra-nó (pernas de I/O independentes).
 - Persistência/retomada de runs usa JSON no estado (retomada real ainda pendente).
 
 ---

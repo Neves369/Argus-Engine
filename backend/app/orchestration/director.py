@@ -31,8 +31,27 @@ class Director:
                 state.set_sources_service(sources_service)
             if scan_service is not None:
                 state.set_scan_service(scan_service)
+            # O time do supervisor (quem o Imperador pode delegar) é resolvido
+            # na primeira passada do modo padrão (sem cartas). Nunca sobrescreve
+            # um team já persistido (resume de run HITL mantém o time original).
+            # Composições não usam o supervisor — o grafo linear entre as cartas.
+            if not state.team:
+                state.team = self._resolve_team(state)
 
         self._provision = provision
+
+    @classmethod
+    def _resolve_team(cls, state: GraphState) -> list[str]:
+        """Time padrão do supervisor (modo sem cartas).
+
+        Sensível ao `devil_mode` do run: num run de execução o Carro entra no
+        time para poder ser delegado (e parar no HITL exigido); caso contrário
+        só o Eremita coleta. Composições não passam por aqui — usam o grafo
+        linear (carta a carta), não o supervisor.
+        """
+        if state.devil_mode:
+            return ["hermit", "chariot"]
+        return ["hermit"]
 
     def _compile(self, entry: str | None = None):
         return compile_graph(self._archetypes, entry=entry, provision=self._provision)

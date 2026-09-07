@@ -102,9 +102,17 @@ só resume o estado final pro registro.
 | **Carro → Justiça** (sem Eremita) | **Não recomendado.** Sem scanning ativo antes, não há nada para basear uma ação, e não há backend real por trás mesmo assim — a sessão fecha sem achado nenhum. |
 | **Justiça sozinha** | Válido pelas regras, mas inútil — fecha uma sessão vazia, sem nenhum scan. |
 
-## O que NÃO está nas cartas (ainda)
+## O que NÃO está nas cartas (design definido)
 
-O arquétipo "O Imperador" (planejador/diretor) existe no motor mas **não é
-uma carta jogável** na interface atual — ele só participa do modo padrão
-interno do sistema, não das sessões montadas por você. Se isso mudar, este
-guia será atualizado.
+O arquétipo "O Imperador" (planejador/diretor) existe no motor e **não é
+uma carta jogável** na interface de sessões — ele só participa do modo
+padrão interno do sistema, não das sessões montadas por operadores. Isso
+é uma decisão de design permanente.
+
+O visual do Imperador já está pronto no `CharacterPanel` (retrato do lado
+aliado, `emperror.jpg`) e permanece ali como elemento fixo da interface,
+não como carta no deck. O EmperorAgent registra-se como o nó de entrada
+do grafo no modo padrão (não cartas), planejando e orquestrando o run.
+
+Se o operador vier a desejar o Imperador como carta jogável, este guia
+será atualizado.

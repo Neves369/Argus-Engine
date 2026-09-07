@@ -76,7 +76,7 @@ def _apply_llm(
 
 
 class EmperorAgent(BaseArchetype):
-    """Root node: plans the run and records the initial decision."""
+    """Root node: plans the run and supervises the team sequentially."""
 
     key = "emperor"
     name = "O Imperador"
@@ -90,28 +90,164 @@ class EmperorAgent(BaseArchetype):
             "You open the run: state the authorized target and scope, then set a "
             "short, high-level plan for what the other archetypes should establish "
             "(what to investigate, in what order). "
+            "On later calls you decide the next agent to run and may close the run. "
             "Operate only within the authorized scope declared for this run. "
             "Never propose or describe reconnaissance techniques, exploitation "
             "steps, payloads, or tool chaining — that is out of your role. "
-            "Be concise and factual; a few sentences is enough."
-        )
+            "Be concise and factual; a few sentences is enough. "
+            "When you decide the next agent, output a JSON object at the end of "
+            "your response with two fields: {\"next_agent\": \"<agent_key>\" "
+            "(must be one of the available agents: {team_list}), \"objective\": \"<short>\"}. "
+            "If you want to close the run, output {\"next_agent\": null}. "
+            "If the API is unavailable, degrade deterministically: pick the first "
+            "available agent or close after one full round."
+        ).replace("{team_list}", ", ".join(("hermit", "fool", "magician", "chariot")))
 
     async def run(self, state: GraphState) -> dict:
         started_at = _utcnow()
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        max_rounds = settings.supervisor_max_rounds
+
+        # Determine if this is the first emperor call (no prior emperor entries).
+        emperor_entries = [
+            e for e in state.history if e.get("agent") == self.key
+        ]
+        first_call = len(emperor_entries) == 0
+
         result = await self._attempt(state)
+
+        # Base entry fields common to all actions.
         entry: dict[str, Any] = {
             "agent": self.key,
-            "action": "plan",
             "target": state.target.get("name", "unknown"),
             "scope": "authorized",
             "mode": "execute" if state.devil_mode else "simulate",
         }
+
+        if first_call:
+            # --- PLAN phase: first Emperor call. Delegate to first team member.
+            entry["action"] = "plan"
+            # Set deterministic fallback for delegation.
+            if state.team:
+                chosen = state.team[0]
+            else:
+                chosen = None
+            state.delegate_to = chosen
+            entry["next_agent"] = chosen
+            entry["objective"] = "Iniciar investigação com o agente escolhido."
+            # LLM may suggest a different agent or objective; try to parse.
+            if result is not None and result.content:
+                parsed = self._parse_next_agent(result.content)
+                if parsed and parsed.get("next_agent") and parsed["next_agent"] in state.team:
+                    chosen = parsed["next_agent"]
+                    state.delegate_to = chosen
+                    entry["next_agent"] = chosen
+                if parsed and parsed.get("objective"):
+                    entry["objective"] = parsed["objective"]
+            # If offline or parse failed, keep deterministic choice.
+            # Register the plan entry.
+        else:
+            # --- DIRECT or CLOSE phase: subsequent Emperor calls.
+            # Check stop conditions first — confiança suficiente é decisão do
+            # supervisor: quando o time já produziu o suficiente, fecha em vez
+            # de delegar mais uma vez.
+            confident = state.confidence >= settings.confidence_threshold
+            over_rounds = state.supervisor_rounds >= max_rounds
+            team_empty = len(state.team) == 0
+            all_delegated = (
+                state.delegate_to is not None and state.delegate_to not in state.team
+            )
+
+            if confident or over_rounds or all_delegated or team_empty:
+                # Close the run → route to Justice.
+                entry["action"] = "close"
+                state.delegate_to = None
+                entry["next_agent"] = None
+                entry["objective"] = "Fechamento solicitado pelo Imperador."
+            else:
+                # Direct: choose next agent.
+                parsed = None
+                if result is not None and result.content:
+                    parsed = self._parse_next_agent(result.content)
+
+                # O LLM pode fechar explicitamente ({next_agent: null}).
+                if parsed is not None and parsed.get("next_agent") is None:
+                    entry["action"] = "close"
+                    state.delegate_to = None
+                    entry["next_agent"] = None
+                    entry["objective"] = "Fechamento solicitado pelo Imperador."
+                else:
+                    # Try parsed choice; validate it belongs to the team.
+                    chosen = None
+                    if parsed and parsed.get("next_agent") in state.team:
+                        chosen = parsed["next_agent"]
+                    else:
+                        # Deterministic fallback: advance to next unused member.
+                        if state.delegate_to is None:
+                            # First direct after plan: start with team[0].
+                            chosen = state.team[0] if state.team else None
+                        else:
+                            # Rotate: find next member after the current delegate.
+                            try:
+                                idx = state.team.index(state.delegate_to)
+                                next_idx = (idx + 1) % len(state.team)
+                                chosen = state.team[next_idx]
+                            except ValueError:
+                                chosen = state.team[0] if state.team else None
+
+                    if chosen is not None:
+                        state.delegate_to = chosen
+                        entry["action"] = "direct"
+                        entry["next_agent"] = chosen
+                        # Advance round counter only when we actually delegate.
+                        state.supervisor_rounds += 1
+                    else:
+                        # No team members left (should not happen if checks above pass);
+                        # close instead.
+                        entry["action"] = "close"
+                        state.delegate_to = None
+                        entry["next_agent"] = None
+
+        # --- Apply LLM result into entry (tokens, cost, etc.) ---
         update: dict[str, Any] = {}
         _apply_llm(entry, update, state, result, fallback_tokens=0)
+
+        # Validate the entry against EmperorOutput schema.
         entry = self.validate_entry(entry)
         update["history"] = [*state.history, entry]
+        # Campos do supervisor precisam persistir no estado (mutações in-place
+        # de Pydantic não propagam entre nós do LangGraph — só o update dict).
+        update["team"] = state.team
+        update["delegate_to"] = state.delegate_to
+        update["supervisor_rounds"] = state.supervisor_rounds
         update.update(self._trace_update(state, entry, started_at))
         return update
+
+    # -----------------------------------------------------------------
+    # Helper: tolerant JSON extraction from the LLM content.
+    # -----------------------------------------------------------------
+    @staticmethod
+    def _parse_next_agent(content: str) -> dict | None:
+        """Search for a JSON object {@@...@@} at the end of the content."""
+        import json
+        import re
+
+        # Try to find a JSON object {...} possibly on the last line.
+        # Heuristic: look for the last {...} block.
+        match = re.search(r"(\{[^}]+\})", content)
+        if not match:
+            return None
+        try:
+            obj = json.loads(match.group(1))
+            if "next_agent" in obj and (
+                isinstance(obj["next_agent"], str) or obj["next_agent"] is None
+            ):
+                return obj
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return None
 
 
 class HermitAgent(BaseArchetype):
