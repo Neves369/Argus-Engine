@@ -22,6 +22,8 @@ frontend React (Vite + React Flow) com arquétipos visuais estilo tarô.
 - `ROADMAP.md` — plano vivo; fonte de verdade das etapas (0 a 10).
 - `SECURITY.md` — política de segurança e controles.
 - `CONTRIBUTING.md` — convenções e fluxo.
+- `MANUAL_DO_USUARIO.md` — como o usuário usa a plataforma (UI, cartas, relatório).
+- `RUNBOOK.md` — operação: subir o serviço, config, incidentes.
 
 ## Estrutura
 

@@ -1,7 +1,9 @@
 # Runbook de Operação — Argus Engine
 
 > Este documento é para quem **opera** a plataforma (sobe o serviço, monitora runs,
-> responde a incidentes) — não para quem desenvolve nela. Para arquitetura e
+> responde a incidentes) — não para quem desenvolve nela. Para quem **usa** a
+> plataforma (rodar investigações, ler relatórios, aprovar/rejeitar), ver
+> `docs/MANUAL_DO_USUARIO.md`. Para arquitetura e
 > decisões de design, ver `docs/adr/`. Para a política de uso autorizado, ver
 > `docs/SECURITY.md`.
 
