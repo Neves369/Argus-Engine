@@ -89,6 +89,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         budget_tokens=settings.default_budget_tokens,
         budget_cost=settings.default_budget_cost,
         devil_mode=payload.devil_mode,
+        composition=archetypes or [],
     )
     state.set_sources_service(build_sources_service())
     scan_service = build_scan_service()
@@ -208,6 +209,7 @@ async def stream_run(
                 budget_tokens=settings.default_budget_tokens,
                 budget_cost=settings.default_budget_cost,
                 devil_mode=devil_mode,
+                composition=archetypes or [],
             )
             state.set_sources_service(build_sources_service())
             scan_service = build_scan_service()

@@ -23,10 +23,12 @@ class GraphState(BaseModel):
     cost: float = 0.0
 
     #: Per-agent totals, keyed by archetype key (e.g. "hermit"). Only
-    #: meaningful for archetypes that can loop (hermit/chariot in the default
-    #: pipeline) — a custom pipeline runs each archetype once, so its own
+    #: meaningful for archetypes that can loop (hermit/chariot via the
+    #: supervisor) — a custom pipeline runs each archetype once, so its own
     #: total is just that single call's usage. See `budget_tokens_per_agent`
-    #: in settings and `should_continue` in `app.orchestration.graph`.
+    #: in settings; o teto per-agente é respeitado pelo Imperador ao delegar
+    #: (`EmperorAgent`), e o teto do run é aplicado em `route_after_worker` e
+    #: no router do pipeline em `app.orchestration.graph`.
     tokens_by_agent: dict[str, int] = Field(default_factory=dict)
     cost_by_agent: dict[str, float] = Field(default_factory=dict)
 
@@ -52,6 +54,10 @@ class GraphState(BaseModel):
 
     # Time de agentes disponíveis para este run (cartas ou time padrão).
     team: list[str] = Field(default_factory=list)
+    # Sequência de cartas de um run de composição (vazio = modo padrão, com o
+    # supervisor). É persistida junto ao estado para que a retomada (resume)
+    # reconstrua o grafo linear correto em vez de recair no supervisor.
+    composition: list[str] = Field(default_factory=list)
     # Agente que o Imperador escolheu para o próximo passo (reserva next_agent
     # para HITL; usado pelo router supervisor).
     delegate_to: str | None = None

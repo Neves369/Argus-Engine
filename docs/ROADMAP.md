@@ -150,7 +150,10 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
   atuais são cadeias (pipeline linear de cartas) **ou** o loop supervisor/worker do modo
   padrão (um membro do time por vez, decidido pelo Imperador); o paralelismo entregue é o
   intra-nó (pernas de I/O independentes).
-- Persistência/retomada de runs usa JSON no estado (retomada real ainda pendente).
+- Persistência/retomada de runs usa JSON no estado; a retomada de um run de
+  composição parado em HITL segue o pipeline linear correto porque a sequência
+  de cartas é persistida em `GraphState.composition` (resume reconstrói o grafo
+  de cartas em vez do supervisor). Retomada geral via UI ainda pendente.
 
 ---
 
@@ -403,10 +406,14 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Estilo Caveman nas mensagens de saída (`app/llm/compress.py::caveman_compress`, aplicado em `app/llm/client.py` quando `CAVEMAN_PROMPTS=true`) — remove palavras de enchimento das mensagens enviadas aos providers
 - [x] Cache agressivo de resultados de APIs e contexto (Etapa 3 — `app/llm/cache.py`, `LLM_CACHE_ENABLED`/`LLM_CACHE_TTL_SECONDS`)
 - [x] Compressão de histórico entre nós do grafo (`app/llm/compress.py::compress_history`, aplicada no wrapper de nó em `app/orchestration/graph.py` quando `HISTORY_COMPRESSION=true`; mantém o primeiro + últimos `HISTORY_KEEP_LAST` registros, deterministicamente, sem chamada de LLM)
-- [x] Orçamento hard por run (já existia em `should_continue`: `tokens_used >= budget_tokens` ou `cost >= budget_cost` → para); agora registra `stop_reason="budget"` (e `"confidence"` no fim por confiança) para observabilidade — `app/orchestration/graph.py` + `app/agents/builtin.py`
+- [x] Orçamento hard por run — o wrapper de nó em `app/orchestration/graph.py` marca
+      `stop_reason="budget"` quando `tokens_used >= budget_tokens` ou `cost >= budget_cost`;
+      os routers (`route_after_worker` do supervisor e o router do pipeline de cartas)
+      desviam para a Justiça validar e fechar.
 - [x] Orçamento hard por agente — `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT` (desligado por
-      padrão), checado em `should_continue` contra o PRÓXIMO agente que executaria (relevante só
-      para Eremita/Carro no modo padrão, que podem repetir); motivo de parada `stop_reason="agent_budget"`.
+      padrão), respeitado pelo Imperador ao delegar: não delega um membro que já está no
+      próprio teto (rotaciona para outro) e fecha por `stop_reason="agent_budget"` quando
+      ninguém tem folga.
       Contadores acumulados por agente em `GraphState.tokens_by_agent`/`cost_by_agent` (via `_apply_llm`).
 - [~] Compressão de histórico por resumo de LLM — permanece deliberadamente adiada (ver observações)
 

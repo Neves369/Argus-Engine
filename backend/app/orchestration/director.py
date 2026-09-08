@@ -79,7 +79,11 @@ class Director:
         """Resume from the state's ``next_agent`` (used after /review)."""
         entry = state.next_agent
         if not entry:
-            entry = (self._archetypes[0] if self._archetypes else "emperor")
+            entry = (
+                state.composition[0]
+                if state.composition
+                else (self._archetypes[0] if self._archetypes else "emperor")
+            )
         return await self.run_from(state, entry)
 
     async def inject_human_input(self, state: GraphState, decision: dict[str, Any]) -> GraphState:

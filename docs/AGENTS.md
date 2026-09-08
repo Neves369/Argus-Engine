@@ -89,8 +89,10 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo
   (mantém primeiro + últimos `HISTORY_KEEP_LAST`, determinístico, sem LLM) no wrapper de
-  nó em `app/orchestration/graph.py`. Orçamento hard por run já existe em
-  `should_continue` e agora registra `stop_reason="budget"`/`"confidence"`. Nunca ligue
+  nó em `app/orchestration/graph.py`. Orçamento hard por run é marcado no wrapper
+  de nó e desviado nos routers (`route_after_worker`/pipeline) com
+  `stop_reason="budget"`; por agente, o Imperador respeita `BUDGET_TOKENS_PER_AGENT`.
+  Nunca ligue
   esses levers em testes (quebrariam a determinância do grafo simulado) nem os deixe
   ativos sem querer em produção sem medir o impacto nas decisões.
 

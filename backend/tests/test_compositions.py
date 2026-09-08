@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+
+from sqlalchemy import select
+
 
 def _create(client, name="grafo-a", archetypes=None, target=None, devil_mode=False):
     return client.post(
@@ -80,3 +84,28 @@ def test_execute_rejects_out_of_scope_target(client):
 def test_composition_not_found(client):
     assert client.get("/api/v1/compositions/9999").status_code == 404
     assert client.post("/api/v1/compositions/9999/execute", json={}).status_code == 404
+
+
+def test_execute_composition_sets_run_wide_budget_and_composition(client):
+    from app.core.config import get_settings
+    from app.db.models import Run
+    from app.db.session import async_session_factory
+
+    settings = get_settings()
+    created = _create(client, name="grafo-budget", archetypes=["hermit", "justice"]).json()
+    resp = client.post(f"/api/v1/compositions/{created['id']}/execute", json={})
+    assert resp.status_code == 200
+    run_id = resp.json()["run_id"]
+
+    async def _get_result() -> dict:
+        async with async_session_factory() as session:
+            row = (
+                await session.execute(select(Run).where(Run.id == run_id))
+            ).scalar_one()
+            return row.result or {}
+
+    result = asyncio.run(_get_result())
+    assert result["budget_tokens"] == settings.default_budget_tokens
+    assert result["budget_cost"] == settings.default_budget_cost
+    # A sequência de cartas fica persistida no estado p/ a retomada (resume).
+    assert result["composition"] == ["hermit", "justice"]

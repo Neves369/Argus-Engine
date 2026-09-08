@@ -72,12 +72,14 @@ async def resume_run(
         state.set_scan_service(scan_service)
     state.human_decision = decision
 
+    composition = state.composition or None
     director = Director(
-        archetypes=None,
+        archetypes=composition,
         sources_service=sources_service or build_sources_service(),
         scan_service=scan_service,
     )
-    final = await director.run_from(state, state.next_agent or "emperor")
+    entry = state.next_agent or (composition[0] if composition else "emperor")
+    final = await director.run_from(state, entry)
     if is_awaiting_review(final):
         run.status = "pending_review"
     else:

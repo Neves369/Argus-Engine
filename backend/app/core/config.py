@@ -99,8 +99,9 @@ class Settings(BaseSettings):
     # inteiro (`default_budget_tokens`/`default_budget_cost`), limita quanto
     # UM arquétipo específico pode consumir sozinho. Só tem efeito prático em
     # arquétipos que repetem (Eremita/Carro no modo padrão) — numa composição
-    # customizada cada carta roda uma vez só. Ver `should_continue` em
-    # app/orchestration/graph.py.
+    # # Arquétipo(s) que repetem (Eremita/Carro no modo padrão) — numa composição
+    # customizada cada carta roda uma vez só. Ver `budget_tokens_per_agent` em
+    # `app.agents.builtin` (Imperador respeita o teto ao delegar).
     budget_tokens_per_agent: int = 0
     budget_cost_per_agent: float = 0.0
 

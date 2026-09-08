@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.deps import DBSession
+from app.core.config import get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
@@ -122,9 +123,13 @@ async def execute_composition(
         target_id = new_target.id
         session.target_id = target_id
 
+    settings = get_settings()
     state = GraphState(
         target=target,
         devil_mode=bool(config.get("devil_mode", False)),
+        budget_tokens=settings.default_budget_tokens,
+        budget_cost=settings.default_budget_cost,
+        composition=archetypes,
     )
     state.set_sources_service(build_sources_service())
     scan_service = build_scan_service()

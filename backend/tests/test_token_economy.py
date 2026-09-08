@@ -61,22 +61,15 @@ def test_compress_messages_applies_caveman():
     assert "analyze" in out[0].content
 
 
-def test_should_continue_sets_budget_stop_reason():
+def test_route_after_worker_sets_budget_stop_reason():
     state = GraphState(budget_tokens=10, tokens_used=10)
-    assert graph_mod.should_continue(state) == "stop"
+    assert graph_mod.route_after_worker(state) == "justice"
     assert state.stop_reason == "budget"
 
 
-def test_should_continue_sets_confidence_stop_reason():
-    state = GraphState(confidence=0.99)
-    assert graph_mod.should_continue(state) == "stop"
-    assert state.stop_reason == "confidence"
-
-
-def test_should_continue_routes_when_within_budget():
+def test_route_after_worker_routes_when_within_budget():
     state = GraphState()
-    decision = graph_mod.should_continue(state)
-    assert decision != "stop"
+    assert graph_mod.route_after_worker(state) == "emperor"
     assert state.stop_reason is None
 
 
@@ -147,43 +140,71 @@ def test_apply_llm_keeps_agents_separate():
     assert update["tokens_by_agent"] == {"hermit": 250, "chariot": 500}
 
 
-def test_should_continue_ignores_per_agent_budget_when_disabled(monkeypatch):
+def _emperor_direct_state(**overrides) -> GraphState:
+    """Estado em fase DIRECT: histórico já tem um entry do Imperador."""
+    return GraphState(
+        target={"name": "example.com"},
+        history=[{"agent": "emperor", "action": "plan", "next_agent": "hermit"}],
+        team=["hermit", "chariot"],
+        delegate_to="hermit",
+        **overrides,
+    )
+
+
+def _emperor(state: GraphState) -> dict:
+    from app.agents.builtin import EmperorAgent
+
+    return asyncio.run(EmperorAgent().run(state))
+
+
+def test_emperor_ignores_per_agent_budget_when_disabled(monkeypatch):
     _set_settings(monkeypatch, budget_tokens_per_agent=0)
-    state = GraphState(tokens_by_agent={"hermit": 999_999})
-    decision = graph_mod.should_continue(state)
-    assert decision != "stop"
+    state = _emperor_direct_state(tokens_by_agent={"hermit": 999_999, "chariot": 999_999})
+    update = _emperor(state)
+    assert update["history"][-1]["next_agent"] == "chariot"
     assert state.stop_reason is None
 
 
-def test_should_continue_stops_when_next_agent_over_its_own_budget(monkeypatch):
+def test_emperor_skips_agent_over_its_own_budget(monkeypatch):
     _set_settings(monkeypatch, budget_tokens_per_agent=1000)
-    # route_after_director() picks "hermit" when devil_mode is off.
-    state = GraphState(devil_mode=False, tokens_by_agent={"hermit": 1000})
-    decision = graph_mod.should_continue(state)
-    assert decision == "stop"
+    # DIRECT: o próximo membro seria chariot (já no teto) -> rota para hermit.
+    state = _emperor_direct_state(tokens_by_agent={"chariot": 1000})
+    update = _emperor(state)
+    assert update["history"][-1]["next_agent"] == "hermit"
+    assert update["delegate_to"] == "hermit"
+    assert state.stop_reason is None
+
+
+def test_emperor_per_agent_budget_does_not_affect_other_agents(monkeypatch):
+    _set_settings(monkeypatch, budget_tokens_per_agent=1000)
+    # chariot estourado, mas hermit (próximo no giro) está sob o teto.
+    state = _emperor_direct_state(tokens_by_agent={"chariot": 5000})
+    update = _emperor(state)
+    assert update["history"][-1]["next_agent"] == "hermit"
+    assert state.stop_reason is None
+
+
+def test_emperor_closes_when_all_team_agents_over_budget(monkeypatch):
+    _set_settings(monkeypatch, budget_tokens_per_agent=1000)
+    state = _emperor_direct_state(tokens_by_agent={"hermit": 1000, "chariot": 2000})
+    update = _emperor(state)
+    assert update["history"][-1].get("next_agent") is None
+    assert update["delegate_to"] is None
     assert state.stop_reason == "agent_budget"
+    assert update["stop_reason"] == "agent_budget"
 
 
-def test_should_continue_per_agent_budget_does_not_affect_other_agents(monkeypatch):
-    _set_settings(monkeypatch, budget_tokens_per_agent=1000)
-    # chariot is way over, but the NEXT agent (hermit, devil_mode off) is fine.
-    state = GraphState(devil_mode=False, tokens_by_agent={"chariot": 5000})
-    decision = graph_mod.should_continue(state)
-    assert decision != "stop"
-    assert state.stop_reason is None
-
-
-def test_should_continue_per_agent_cost_budget():
+def test_emperor_per_agent_cost_budget():
     from app.core import config as cfg_mod
 
     settings = cfg_mod.get_settings()
     original = settings.budget_cost_per_agent
     settings.budget_cost_per_agent = 0.05
     try:
-        state = GraphState(devil_mode=False, cost_by_agent={"hermit": 0.05})
-        decision = graph_mod.should_continue(state)
-        assert decision == "stop"
-        assert state.stop_reason == "agent_budget"
+        state = _emperor_direct_state(cost_by_agent={"chariot": 0.05})
+        update = _emperor(state)
+        assert update["history"][-1]["next_agent"] == "hermit"
+        assert state.stop_reason is None
     finally:
         settings.budget_cost_per_agent = original
 

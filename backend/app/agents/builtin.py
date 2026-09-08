@@ -25,6 +25,21 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _agent_over_budget(settings: Any, agent: str, state: GraphState) -> bool:
+    """True quando o agente igualou/ultrapassou o orçamento per-agente.
+
+    Ambos os tetos desligados (0) significam "sem limite". Usado pelo
+    Imperador para nunca delegar um membro que já esgotou o próprio teto.
+    """
+    if settings.budget_tokens_per_agent > 0:
+        if state.tokens_by_agent.get(agent, 0) >= settings.budget_tokens_per_agent:
+            return True
+    if settings.budget_cost_per_agent > 0:
+        if state.cost_by_agent.get(agent, 0.0) >= settings.budget_cost_per_agent:
+            return True
+    return False
+
+
 def _apply_llm(
     entry: dict[str, Any],
     update: dict[str, Any],
@@ -40,7 +55,8 @@ def _apply_llm(
     Also accumulates per-agent totals (``tokens_by_agent``/``cost_by_agent``,
     keyed by ``entry["agent"]``) alongside the run-wide totals, so a
     per-agent budget cap (``settings.budget_tokens_per_agent``) can be
-    enforced independently of the run-wide one — see `should_continue`.
+    enforced independently of the run-wide one — o Imperador respeita o teto
+    ao delegar (`EmperorAgent`).
     """
     agent_key = entry["agent"]
     if result is not None:
@@ -198,13 +214,29 @@ class EmperorAgent(BaseArchetype):
                                 chosen = state.team[0] if state.team else None
 
                     if chosen is not None:
+                        # Orçamento por agente: nunca delega um membro que já
+                        # igualou/ultrapassou o próprio teto (`budget_tokens_
+                        # per_agent`/`budget_cost_per_agent`, 0 = desligado).
+                        # Rotaciona para o próximo sob o teto; se ninguém tiver
+                        # folga, fecha por "agent_budget".
+                        if _agent_over_budget(settings, chosen, state):
+                            alternates = [
+                                m
+                                for m in state.team
+                                if not _agent_over_budget(settings, m, state)
+                            ]
+                            chosen = alternates[0] if alternates else None
+                            if chosen is None:
+                                state.stop_reason = "agent_budget"
+
+                    if chosen is not None:
                         state.delegate_to = chosen
                         entry["action"] = "direct"
                         entry["next_agent"] = chosen
                         # Advance round counter only when we actually delegate.
                         state.supervisor_rounds += 1
                     else:
-                        # No team members left (should not happen if checks above pass);
+                        # No team members left, or all over their per-agent cap;
                         # close instead.
                         entry["action"] = "close"
                         state.delegate_to = None
@@ -222,6 +254,8 @@ class EmperorAgent(BaseArchetype):
         update["team"] = state.team
         update["delegate_to"] = state.delegate_to
         update["supervisor_rounds"] = state.supervisor_rounds
+        if state.stop_reason is not None:
+            update["stop_reason"] = state.stop_reason
         update.update(self._trace_update(state, entry, started_at))
         return update
 
@@ -615,10 +649,15 @@ class JusticeAgent(BaseArchetype):
             "sources": len(state.sources),
         }
         # Preserva uma razão de parada final já definida (ex.: estouro de
-        # orçamento em should_continue); não herda "pending_review" de uma
+        # orçamento do run ou per-agente); não herda "pending_review" de uma
         # parada HITL anterior — o nó final sempre encerra como "completed".
         if state.stop_reason in ("budget", "agent_budget", "confidence", "declined", "no_backend"):
             final_reason = state.stop_reason
+        elif state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
+            # Segurança do audit trail para o caso de o orçamento estourar e a
+            # marcação não chegar até aqui (ex.: router desviou para a Justiça
+            # sem `stop_reason` persistido) — a parada é reportada como budget.
+            final_reason = "budget"
         else:
             final_reason = "completed"
         update: dict[str, Any] = {

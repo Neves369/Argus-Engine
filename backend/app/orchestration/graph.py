@@ -7,7 +7,7 @@ from langgraph.graph import END, StateGraph
 
 from app.agents import get_archetype
 from app.core.config import get_settings
-from app.core.security import is_devil_mode_enabled, is_kill_switch_active
+from app.core.security import is_kill_switch_active
 from app.llm.compress import compress_history
 from app.orchestration.hitl import is_answered, resolve
 from app.orchestration.state import GraphState
@@ -18,6 +18,16 @@ def _is_awaiting_review(state: GraphState) -> bool:
 
 
 def _noop_provision(state: GraphState) -> None:
+    return None
+
+
+def _budgeted_out(state: GraphState) -> str | None:
+    """Orçamento run-wide esgotado: retorna ``"budget"`` (e marca o
+    ``stop_reason`` do estado local); senão ``None``."""
+    if state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
+        if state.stop_reason is None:
+            state.stop_reason = "budget"
+        return "budget"
     return None
 
 
@@ -38,6 +48,13 @@ def _provisioned(
                 keep_last=settings.history_keep_last,
             )
         result = await fn(state)
+        # Orçamento do run esgotado: marca ``stop_reason="budget"`` no update
+        # do nó (só o dict de retorno persiste no grafo — mutar o estado
+        # dentro de um router condicional se perde). Não sobrescreve paradas
+        # mais específicas do nó nem interfere num HITL pendente.
+        if isinstance(result, dict) and not _is_awaiting_review(state):
+            if result.get("stop_reason") is None and _budgeted_out(state) is not None:
+                result["stop_reason"] = "budget"
         return result
 
     return node
@@ -47,31 +64,11 @@ async def _emperor(state: GraphState) -> dict:
     return await get_archetype("emperor").run(state)
 
 
-async def _hermit(state: GraphState) -> dict:
-    return await get_archetype("hermit").run(state)
-
-
-async def _chariot(state: GraphState) -> dict:
-    return await get_archetype("chariot").run(state)
-
-
-async def _justice(state: GraphState) -> dict:
-    return await get_archetype("justice").run(state)
-
-
 async def _human_gate(state: GraphState) -> dict:
     """Consume an answered human decision; no-op while still awaiting."""
     if not state.pending_review or _is_awaiting_review(state):
         return {}
     return resolve(state)
-
-
-def route_after_director(state: GraphState) -> str:
-    if _is_awaiting_review(state):
-        return "gate"
-    if is_devil_mode_enabled(state.devil_mode):
-        return "chariot"
-    return "hermit"
 
 
 def route_from_emperor(state: GraphState) -> str:
@@ -82,51 +79,6 @@ def route_from_emperor(state: GraphState) -> str:
         return state.delegate_to
     # Se não houver delegação válida, encerra para a Justiça.
     return "justice"
-
-
-def should_continue(state: GraphState) -> str:
-    settings = get_settings()
-
-    if _is_awaiting_review(state):
-        return "gate"
-    if is_kill_switch_active():
-        return "stop"
-    # A node that already set a definitive stop_reason (e.g. Chariot's
-    # "declined"/"no_backend" outcomes) must end the run immediately —
-    # without this, the graph fell through to route_after_director() and
-    # looped back into the same node repeatedly (re-declining, re-reporting
-    # no backend) until the token/cost budget ran out, burning real LLM
-    # spend on a foregone conclusion.
-    if state.stop_reason is not None:
-        return "stop"
-    if state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
-        if state.stop_reason is None:
-            state.stop_reason = "budget"
-        return "stop"
-    # Per-agent budget: only checked against the archetype about to run NEXT
-    # (route_after_director's choice) — an agent already over its own cap
-    # must not be allowed to loop again, even if the run-wide budget still
-    # has headroom. Off by default (both settings 0).
-    next_node = route_after_director(state)
-    if next_node in ("hermit", "chariot"):
-        over_tokens = (
-            settings.budget_tokens_per_agent > 0
-            and state.tokens_by_agent.get(next_node, 0) >= settings.budget_tokens_per_agent
-        )
-        over_cost = (
-            settings.budget_cost_per_agent > 0
-            and state.cost_by_agent.get(next_node, 0.0) >= settings.budget_cost_per_agent
-        )
-        if over_tokens or over_cost:
-            if state.stop_reason is None:
-                state.stop_reason = "agent_budget"
-            return "stop"
-    if state.confidence >= settings.confidence_threshold:
-        if state.stop_reason is None:
-            state.stop_reason = "confidence"
-        return "stop"
-
-    return next_node
 
 
 def route_after_worker(state: GraphState) -> str:
@@ -150,9 +102,7 @@ def route_after_worker(state: GraphState) -> str:
         return "justice"
     if state.stop_reason is not None:
         return "justice"
-    if state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
-        if state.stop_reason is None:
-            state.stop_reason = "budget"
+    if _budgeted_out(state) is not None:
         return "justice"
     return "emperor"
 
@@ -175,49 +125,6 @@ def _collect_edges(state: GraphState, known: frozenset[str]) -> str:
     return after_gate(state, known)
 
 
-def _build_default(
-    entry: str | None, provision: Callable[[GraphState], None]
-) -> StateGraph:
-    graph = StateGraph(GraphState)
-
-    graph.add_node("emperor", _provisioned(_emperor, provision))
-    graph.add_node("hermit", _provisioned(_hermit, provision))
-    graph.add_node("chariot", _provisioned(_chariot, provision))
-    graph.add_node("justice", _provisioned(_justice, provision))
-    graph.add_node("human_gate", _provisioned(_human_gate, provision))
-
-    graph.set_entry_point(entry or "emperor")
-
-    default_edges: dict[str, str] = {
-        "hermit": "hermit",
-        "chariot": "chariot",
-        "gate": "human_gate",
-        "stop": "justice",
-    }
-    graph.add_conditional_edges(
-        "emperor",
-        route_after_director,
-        {"hermit": "hermit", "chariot": "chariot", "gate": "human_gate"},
-    )
-    graph.add_conditional_edges("hermit", should_continue, default_edges)
-    graph.add_conditional_edges("chariot", should_continue, default_edges)
-
-    gate_map = {
-        "hermit": "hermit",
-        "chariot": "chariot",
-        "justice": "justice",
-        "end": END,
-    }
-    graph.add_conditional_edges(
-        "human_gate",
-        lambda s: _collect_edges(s, frozenset({"hermit", "chariot", "justice"})),
-        gate_map,
-    )
-    graph.add_edge("justice", END)
-
-    return graph
-
-
 def _build_pipeline(
     archetypes: list[str], entry: str | None, provision: Callable[[GraphState], None]
 ) -> StateGraph:
@@ -235,9 +142,16 @@ def _build_pipeline(
         def _route(state: GraphState) -> str:
             if _is_awaiting_review(state):
                 return "gate"
+            if is_kill_switch_active():
+                return "justice"
+            if state.stop_reason is not None:
+                return "justice"
+            if _budgeted_out(state) is not None:
+                return "justice"
             return "next"
 
         edge_map: dict[str, Any] = {"gate": "human_gate"}
+        edge_map["justice"] = following if following is not None else END
         edge_map["next"] = following if following is not None else END
         graph.add_conditional_edges(current, _route, edge_map)
 
