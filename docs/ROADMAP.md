@@ -395,7 +395,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 
 ## Etapa 7 — Economia de Tokens (RTK + Caveman)
 
-**Status:** `[x]` Concluída (compressão de histórico por resumo de LLM permanece deliberadamente adiada — ver observações)
+**Status:** `[x]` Concluída
 
 **Objetivo:** reduzir o consumo de tokens sem perder qualidade de decisão.
 
@@ -418,7 +418,12 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
       próprio teto (rotaciona para outro) e fecha por `stop_reason="agent_budget"` quando
       ninguém tem folga.
       Contadores acumulados por agente em `GraphState.tokens_by_agent`/`cost_by_agent` (via `_apply_llm`).
-- [~] Compressão de histórico por resumo de LLM — permanece deliberadamente adiada (ver observações)
+- [x] Compressão de histórico por resumo de LLM — `app/llm/compress.py::llm_summarize_middle`,
+      aplicada no wrapper de nó em `app/orchestration/graph.py` quando `HISTORY_COMPRESSION=true` e
+      `HISTORY_LLM_SUMMARY=true` (default): **uma vez por run** (campo serializado
+      `GraphState.history_summary_done`), o trecho intermediário vira um único resumo factual em vez
+      de ser descartado; meio offline (sem provider/chave) degrada para `compress_history`
+      determinístico. Decisão registrada em `docs/adr/0010-history-llm-summary.md`.
 
 **Critérios de aceite**
 - [x] Redução de tokens mensurável quando os levers estão ligados — números reais medidos e
@@ -436,17 +441,18 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Qualidade das decisões não degrada no modo padrão (levers DESLIGADOS por padrão; suíte de 262 testes verde).
 
 **Observações / pendências**
-- **Compressão de histórico por resumo de LLM** fica de fora por decisão: usar uma chamada de LLM
-  pra resumir e economizar tokens é uma troca (custo/latência da chamada de resumo vs. economia
-  no prompt seguinte; risco do resumo perder nuance) que não deveria ser ligada silenciosamente —
-  é uma decisão de produto, não uma implementação técnica pendente. A alternativa determinística
-  (`compress_history`, mantém primeiro + últimos N) já está implementada e cobre o caso de uso
-  sem esse risco.
-- Os levers são **opt-in** (`CAVEMAN_PROMPTS`, `HISTORY_COMPRESSION`, `TOOL_OUTPUT_COMPRESSION`,
-  `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT`) e offline-determinísticos, então não afetam
-  runs existentes nem os testes a menos que habilitados.
+- **Compressão de histórico por resumo de LLM** agora é um **lever opt-in** (default ligado apenas
+  quando a compressão está ativa): `HISTORY_LLM_SUMMARY=true` resume o trecho intermediário via LLM
+  **uma vez por run** em vez de descartá-lo. A troca (custo/latência da chamada de resumo × economia
+  no prompt seguinte) continua sendo decisão de produto — por isso segue desligada quando
+  `HISTORY_COMPRESSION` está off, e offline/testes degradam para a alternativa determinística
+  (`compress_history`). Ver `docs/adr/0010-history-llm-summary.md`.
+- Os levers são **opt-in** (`CAVEMAN_PROMPTS`, `HISTORY_COMPRESSION`, `HISTORY_LLM_SUMMARY`,
+  `TOOL_OUTPUT_COMPRESSION`, `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT`) e
+  offline-determinísticos, então não afetam runs existentes nem os testes a menos que habilitados.
 - Cobertura: `tests/test_token_economy.py` (caveman, compress_history, orçamento por run/agente,
-  compactação de tool output, wrapper de nó) e `tests/test_token_savings_measurement.py`
+  compactação de tool output, wrapper de nó), `tests/test_history_summary.py` (resumo de LLM:
+  fallback offline, meio resumido, noop, 1-por-run) e `tests/test_token_savings_measurement.py`
   (números reais de redução, travados por asserção).
 
 ---
@@ -894,15 +900,17 @@ sem backend destrutivo).
   injetados em todos os pontos de criação do Director (`app/api/v1/runs.py`,
   `app/api/v1/compositions.py`).
 
-## Próximos passos sugeridos
+# Próximos passos sugeridos
 
 > Lista revisada — todos os itens de Etapas 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12,
-> 13 e 14 listados aqui foram entregues (ver status de cada etapa acima). Etapa 7 consta
-> como parcial apenas por um item deliberadamente adiado:
+> 13 e 14 listados aqui foram entregues (ver status de cada etapa acima).
 
-- **Etapa 7 — compressão de histórico por resumo de LLM**: decisão de produto
-  adiada (custo/latência da chamada de resumo × economia no prompt seguinte e
-  risco de perder nuance), não uma pendência técnica. Ver seção da Etapa 7.
+Sem pendências de Etapa em aberto: a compressão de histórico por resumo de LLM
+(Etapa 7) foi implementada como lever opt-in (`HISTORY_LLM_SUMMARY`, default
+ligado com a compressão; degrada para determinístico) — ver
+`docs/adr/0010-history-llm-summary.md`. Itens futuros (Modo Diabo com backend
+destrutivo, animações Rive, shadcn/ui) seguem adiados por decisão de produto,
+não por pendência técnica.
 
 ## Como manter este documento
 

@@ -91,6 +91,61 @@ def compress_history(history: list[dict], *, keep_first: int = 1, keep_last: int
     return head + tail
 
 
+#: Instrução do resumo intermediário (Etapa 7). Fração de contexto para um
+#: resumo factual — nunca ensina técnica ofensiva (relatar ≠ ensinar).
+_SUMMARY_SYSTEM = (
+    "Você compacta fragmentos de histórico de uma equipe de agentes de "
+    "pentest autorizado, para reuso em contexto do mesmo run. Produza um "
+    "resumo factual, econômico e preservando decisões, achados, evidências e "
+    "números relevantes já descobertos. Não acrescente análise nem plano."
+)
+#: Cap de caracteres do trecho a resumir (head+tail, reutiliza `cap_length`).
+_SUMMARY_MAX_CHARS = 12_000
+
+
+async def llm_summarize_middle(
+    history: list[dict],
+    *,
+    keep_first: int = 1,
+    keep_last: int = 8,
+) -> tuple[list[dict], bool]:
+    """Replace the middle of `history` with a single LLM-produced summary.
+
+    Keeps head/tail untouched; when the provider is unavailable (offline
+    tests, no API key, gateway error) falls back to the deterministic
+    ``compress_history`` drop and reports ``summarized=False`` so callers can
+    mark the run as handled and avoid retrying every node.
+    """
+    if len(history) <= keep_first + keep_last:
+        return list(history), False
+    from app.llm.router import attempt_completion
+
+    head = history[:keep_first]
+    tail = history[-keep_last:] if keep_last else []
+    middle = history[keep_first : len(history) - keep_last]
+
+    fragment = "\n".join(
+        f"[{i}] {entry.get('role', '?')}: {entry.get('content', '')}"
+        for i, entry in enumerate(middle)
+    )
+    fragment = cap_length(fragment, _SUMMARY_MAX_CHARS)
+
+    result = await attempt_completion(
+        _SUMMARY_SYSTEM,
+        "Resuma o fragmento de histórico abaixo, preservando fatos já "
+        f"estabelecidos.\n\n{fragment}",
+    )
+    if result is None:
+        return compress_history(history, keep_first=keep_first, keep_last=keep_last), False
+
+    summary = result.content.strip()
+    if not summary:
+        return compress_history(history, keep_first=keep_first, keep_last=keep_last), False
+
+    marker = "\n...[contexto intermediário resumido]...\n"
+    return head + [{"role": "user", "content": marker + summary}] + tail, True
+
+
 def compress_messages(
     messages: list[ChatMessage],
     *,

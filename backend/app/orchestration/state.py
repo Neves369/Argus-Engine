@@ -38,6 +38,10 @@ class GraphState(BaseModel):
     confidence: float = 0.0
     stop_reason: str | None = None
     next_agent: str | None = None
+    #: Etapa 7 (resumo): marca que o trecho intermediário do histórico já foi
+    #: resumido via LLM — a partir daí a compressão segue determinística, para
+    #: limitar a 1 chamada de resumo por run. Serializado (persiste em resume).
+    history_summary_done: bool = False
 
     devil_mode: bool = False
 

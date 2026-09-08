@@ -123,8 +123,12 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
 - **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`
   remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo
-  (mantém primeiro + últimos `HISTORY_KEEP_LAST`, determinístico, sem LLM) no wrapper de
-  nó em `app/orchestration/graph.py`. Orçamento hard por run é marcado no wrapper
+  (mantém primeiro + últimos `HISTORY_KEEP_LAST` no wrapper de nó em
+  `app/orchestration/graph.py`). Com a compressão ligada, `HISTORY_LLM_SUMMARY`
+  (default **true**) resume o trecho intermediário via LLM **uma vez por run**
+  (`llm_summarize_middle`; flag serializada `GraphState.history_summary_done`),
+  degradando para o corte determinístico quando não há provider/chave — ver
+  `docs/adr/0010-history-llm-summary.md`. Orçamento hard por run é marcado no wrapper
   de nó e desviado nos routers do grafo supervisionado (`route_after_worker`/`route_from_emperor`) com
   `stop_reason="budget"`; por agente, o Imperador respeita `BUDGET_TOKENS_PER_AGENT`.
   Nunca ligue

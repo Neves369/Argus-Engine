@@ -8,7 +8,7 @@ from langgraph.graph import END, StateGraph
 from app.agents import get_archetype
 from app.core.config import get_settings
 from app.core.security import is_kill_switch_active
-from app.llm.compress import compress_history
+from app.llm.compress import compress_history, llm_summarize_middle
 from app.orchestration.hitl import is_answered, resolve
 from app.orchestration.state import GraphState
 
@@ -42,19 +42,30 @@ def _provisioned(
             settings.history_compression
             and len(state.history) > settings.history_keep_last + 1
         ):
-            state.history = compress_history(
-                state.history,
-                keep_first=1,
-                keep_last=settings.history_keep_last,
-            )
+            if settings.history_llm_summary and not state.history_summary_done:
+                state.history, _ = await llm_summarize_middle(
+                    state.history,
+                    keep_first=1,
+                    keep_last=settings.history_keep_last,
+                )
+                state.history_summary_done = True
+            else:
+                state.history = compress_history(
+                    state.history,
+                    keep_first=1,
+                    keep_last=settings.history_keep_last,
+                )
         result = await fn(state)
         # Orçamento do run esgotado: marca ``stop_reason="budget"`` no update
         # do nó (só o dict de retorno persiste no grafo — mutar o estado
         # dentro de um router condicional se perde). Não sobrescreve paradas
         # mais específicas do nó nem interfere num HITL pendente.
-        if isinstance(result, dict) and not _is_awaiting_review(state):
-            if result.get("stop_reason") is None and _budgeted_out(state) is not None:
-                result["stop_reason"] = "budget"
+        if isinstance(result, dict):
+            if state.history_summary_done and result.get("history_summary_done") is None:
+                result["history_summary_done"] = True
+            if not _is_awaiting_review(state):
+                if result.get("stop_reason") is None and _budgeted_out(state) is not None:
+                    result["stop_reason"] = "budget"
         return result
 
     return node

@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     # registros e descarta o meio, reduzindo o contexto passado a cada agente.
     history_compression: bool = False
     history_keep_last: int = 8
+    # Etapa 7 (resumo): quando a compressão está ligada, em vez de descartar o
+    # meio, resume uma vez por run o trecho intermediário via LLM (degrade
+    # determinístico quando o provider não responde). Ver app/llm/compress.py.
+    history_llm_summary: bool = True
     # Orçamento hard por agente (0 = desligado): além do orçamento do run
     # inteiro (`default_budget_tokens`/`default_budget_cost`), limita quanto
     # UM arquétipo específico pode consumir sozinho. Só tem efeito prático em
