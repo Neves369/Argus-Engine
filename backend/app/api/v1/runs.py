@@ -71,7 +71,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     archetypes = payload.archetypes
-    if archetypes is not None:
+    if archetypes:
         try:
             validate_sequence(archetypes)
         except ValueError as exc:
@@ -161,7 +161,7 @@ async def stream_run(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    if archetypes is not None:
+    if archetypes:
         try:
             validate_sequence(archetypes)
         except ValueError as exc:

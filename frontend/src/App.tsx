@@ -422,10 +422,6 @@ function App() {
 
   async function handleRun() {
     const archetypes = currentArchetypes();
-    if (archetypes.length === 0) {
-      setRunResult('Adicione cartas ao grafo antes de executar.');
-      return;
-    }
     if (activeRun.active) {
       setRunResult(
         `Aguarde o run #${activeRun.run_id} (${activeRun.status}) concluir antes de iniciar outro.`,
@@ -434,20 +430,28 @@ function App() {
     }
     beginRun();
     try {
-      await createComposition({
-        name: `Composição ${new Date().toLocaleTimeString('pt-BR')}`,
-        archetypes,
-        target: enemyInfo.name
-          ? { name: enemyInfo.name, url: enemyInfo.url, notes: enemyInfo.notes }
-          : null,
-        devil_mode: deathMode,
-      });
+      // Supervisor universal: sem cartas o Imperador usa o time completo;
+      // com cartas ele escala apenas as escolhidas (a composição é salva).
+      if (archetypes.length === 0) {
+        setRunResult('Sem cartas — o Imperador usará todas as disponíveis.');
+      } else {
+        await createComposition({
+          name: `Composição ${new Date().toLocaleTimeString('pt-BR')}`,
+          archetypes,
+          target: enemyInfo.name
+            ? { name: enemyInfo.name, url: enemyInfo.url, notes: enemyInfo.notes }
+            : null,
+          devil_mode: deathMode,
+        });
+      }
 
       const params = new URLSearchParams({
         target: enemyInfo.name,
         devil_mode: String(deathMode),
       });
-      params.set('archetypes', archetypes.join(','));
+      if (archetypes.length > 0) {
+        params.set('archetypes', archetypes.join(','));
+      }
 
       const signal = await runStream(`/runs/stream?${params.toString()}`, ingestEvent, {
         onStart: setRunId,

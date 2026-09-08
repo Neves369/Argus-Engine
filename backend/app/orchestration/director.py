@@ -32,26 +32,36 @@ class Director:
             if scan_service is not None:
                 state.set_scan_service(scan_service)
             # O time do supervisor (quem o Imperador pode delegar) é resolvido
-            # na primeira passada do modo padrão (sem cartas). Nunca sobrescreve
-            # um team já persistido (resume de run HITL mantém o time original).
-            # Composições não usam o supervisor — o grafo linear entre as cartas.
+            # na primeira passada. Nunca sobrescreve um team já persistido
+            # (resume de run HITL mantém o time original). O estado persistido
+            # (composition) tem precedência; `self._archetypes` cobre chamadas
+            # diretas ao Director sem composition no estado.
             if not state.team:
-                state.team = self._resolve_team(state)
+                state.team = self._resolve_team(state, self._archetypes)
 
         self._provision = provision
 
     @classmethod
-    def _resolve_team(cls, state: GraphState) -> list[str]:
-        """Time padrão do supervisor (modo sem cartas).
+    def _resolve_team(cls, state: GraphState, archetypes: list[str] | None = None) -> list[str]:
+        """Time do supervisor (que o Imperador pode escalar).
 
-        Sensível ao `devil_mode` do run: num run de execução o Carro entra no
-        time para poder ser delegado (e parar no HITL exigido); caso contrário
-        só o Eremita coleta. Composições não passam por aqui — usam o grafo
-        linear (carta a carta), não o supervisor.
+        O Imperador rege todo run: sem cartas ele tem o time completo
+        disponível; com composição ele escala apenas as cartas escolhidas
+        (menos a Justiça, que é sempre o fechador fixo). A ordem das cartas
+        não importa — vira só o conjunto liberado. Sensível ao `devil_mode`:
+        num run de execução o Carro entra no time (e para no HITL exigido);
+        caso contrário o Carro fica de fora e não é delegado.
         """
-        if state.devil_mode:
-            return ["hermit", "chariot"]
-        return ["hermit"]
+        base = state.composition or archetypes or []
+        if base:
+            # A Justiça é sempre o fechador fixo (não é "delegável"); o
+            # Imperador não é carta sob o modelo universal (rege todo run).
+            team = [a for a in base if a not in ("justice", "emperor")]
+        else:
+            team = ["fool", "hermit", "magician"]
+        if state.devil_mode and "chariot" not in team:
+            team.append("chariot")
+        return team
 
     def _compile(self, entry: str | None = None):
         return compile_graph(self._archetypes, entry=entry, provision=self._provision)

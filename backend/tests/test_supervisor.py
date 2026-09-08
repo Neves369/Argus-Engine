@@ -190,3 +190,80 @@ def test_supervisor_devil_mode_reaches_human_approval():
         if e["agent"] == "emperor" and e.get("next_agent") == "chariot"
     ]
     assert delegated, "o supervisor deve ter delegado chariot no modo de execução"
+
+
+# ---------------------------------------------------------------------------
+# Supervisor universal (parte 4): time completo sem cartas, restrito com cartas
+# ---------------------------------------------------------------------------
+
+
+def test_no_cards_uses_full_team():
+    from app.orchestration.director import Director
+
+    team = Director._resolve_team(GraphState(target={"name": "example.com"}))
+    assert team == ["fool", "hermit", "magician"]
+
+
+def test_no_cards_full_team_adds_chariot_in_devil_mode():
+    from app.orchestration.director import Director
+
+    team = Director._resolve_team(
+        GraphState(target={"name": "example.com"}, devil_mode=True)
+    )
+    assert set(team) == {"fool", "hermit", "magician", "chariot"}
+
+
+def test_composition_restricts_team_and_keeps_order_free():
+    from app.orchestration.director import Director
+
+    state = GraphState(
+        target={"name": "example.com"}, composition=["magician", "fool", "justice"]
+    )
+    team = Director._resolve_team(state)
+    # A Justiça nunca é "delegável" (fechador fixo); a ordem não importa.
+    assert team == ["magician", "fool"]
+
+
+def test_composition_with_chariot_keeps_it_out_unless_devil_mode():
+    from app.orchestration.director import Director
+
+    state = GraphState(
+        target={"name": "example.com"}, composition=["chariot", "justice"]
+    )
+    assert Director._resolve_team(state) == ["chariot"]
+
+
+def test_full_team_run_can_repeat_agents():
+    """Sem cartas, o Imperador usa o time completo e pode repetir um agente
+    até confiança suficiente — a ordem das cartas não limita rodadas."""
+    final = _run(GraphState(target={"name": "example.com"}))
+
+    agents = [e["agent"] for e in final.history if e["agent"] != "emperor"]
+    assert final.history[-1]["agent"] == "justice"
+    assert set(agents) <= {"fool", "hermit", "magician", "justice"}
+    assert final.supervisor_rounds >= 1
+
+
+def test_chariot_safety_check_flags_candidates_without_hitl():
+    """Carro em modo normal (sem Modo Diabo): safety check observa sinais
+    não invasivos e marca indícios como candidatos — sem aprovação humana."""
+    from app.orchestration.director import Director
+
+    async def _run() -> GraphState:
+        director = Director(sources_service=_FakeSourcesService())
+        return await director.run(
+            GraphState(
+                target={"name": "example.com"},
+                composition=["chariot", "hermit", "justice"],
+            )
+        )
+
+    final = asyncio.run(_run())
+
+    assert final.stop_reason == "completed"
+    assert final.pending_review is None
+    safety = [e for e in final.history if e.get("action") == "safety"]
+    assert safety, "o Carro deve ter rodado safety check no modo normal"
+    assert any(
+        f.get("requires_human_review") for f in final.findings
+    ) or not final.findings

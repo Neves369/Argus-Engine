@@ -40,6 +40,20 @@ def _agent_over_budget(settings: Any, agent: str, state: GraphState) -> bool:
     return False
 
 
+async def _correlate_cves(
+    state: GraphState, report: ScanReport
+) -> list[dict[str, Any]]:
+    """Best-effort CVE/KEV correlation of a scan report (never raises)."""
+    if state.sources_service is None or not (report.pages or []):
+        return []
+    from app.services.cve_correlate import correlate_scan_report
+
+    try:
+        return await correlate_scan_report(report, state.sources_service)
+    except Exception:  # noqa: BLE001 - correlation must never break the run
+        return []
+
+
 def _apply_llm(
     entry: dict[str, Any],
     update: dict[str, Any],
@@ -365,9 +379,7 @@ class HermitAgent(BaseArchetype):
         # Correlação CVE por fingerprint (Etapa 13): o banner versado do servidor
         # (ex.: Apache/2.4.49) é correlacionado a CVEs reais via NVD + CISA KEV,
         # gerando leads candidate com cves/cvss/known_exploits de verdade.
-        correlated = (
-            await self._correlate_cves(state, report) if report is not None else []
-        )
+        correlated = await _correlate_cves(state, report) if report is not None else []
         for finding in correlated:
             if finding["title"] in existing_titles:
                 continue
@@ -396,19 +408,6 @@ class HermitAgent(BaseArchetype):
         update.update(self._trace_update(state, entry, started_at, confidence_after=new_confidence))
 
         return update
-
-    async def _correlate_cves(
-        self, state: GraphState, report: ScanReport
-    ) -> list[dict[str, Any]]:
-        """Best-effort CVE/KEV correlation of a scan report (never raises)."""
-        if state.sources_service is None or not (report.pages or []):
-            return []
-        from app.services.cve_correlate import correlate_scan_report
-
-        try:
-            return await correlate_scan_report(report, state.sources_service)
-        except Exception:  # noqa: BLE001 - correlation must never break the run
-            return []
 
 
 class FoolAgent(BaseArchetype):
@@ -457,7 +456,7 @@ class FoolAgent(BaseArchetype):
 
 
 class ChariotAgent(BaseArchetype):
-    """Execution node: reachable only when devil_mode is enabled."""
+    """Execution node: safety checks (modo normal) ou execução controlada (devil)."""
 
     key = "chariot"
     name = "O Carro"
@@ -468,34 +467,103 @@ class ChariotAgent(BaseArchetype):
     def system_prompt(self) -> str:
         return (
             "You are O Carro, the controlled-execution archetype. "
-            "You only act when the run is explicitly in execution mode AND a "
-            "human operator has approved this specific action against the "
-            "authorized target — never on your own initiative. "
-            "Your response is a short factual record of the action taken and its "
-            "outcome, for the audit log — not a description of how it was done. "
-            "Never include technique detail, payload content, or step-by-step "
+            "In normal mode you perform non-invasive safety checks over signals "
+            "already observed (passive scan, configured sources, CVE "
+            "correlation): you FLAG risk signals as candidate findings for a "
+            "human operator — you never run anything against the target on your "
+            "own. "
+            "In execution (devil) mode you only act when the run is explicitly "
+            "in execution mode AND a human operator has approved this specific "
+            "action against the authorized target — never on your own "
+            "initiative. Your response is a short factual record of the action "
+            "taken and its outcome, for the audit log. "
+            "Never describe technique detail, payload content, or step-by-step "
             "instructions of any kind."
         )
 
     async def run(self, state: GraphState) -> dict:
         from app.core.security import is_devil_mode_enabled
 
+        if not is_devil_mode_enabled(state.devil_mode):
+            return await self._safety_check(state)
+        return await self._controlled_execution(state)
+
+    async def _safety_check(self, state: GraphState) -> dict:
+        """Safety check (modo normal — sem aprovação humana).
+
+        Observa sinais não invasivos já disponíveis (scan passivo + fontes
+        configuradas + correlação CVE por banner) e marca indícios de risco
+        como achados candidatos (`requires_human_review=True`), sujeitos à
+        revisão do operador. Nada é executado contra o alvo; um scan
+        bloqueado (kill-switch/fora de escopo) é silencioso — nunca fabrica
+        achado sem dado real observado.
+        """
+        started_at = _utcnow()
+
+        async def _safe_scan() -> ScanReport | None:
+            if state.scan_service is None:
+                return None
+            try:
+                return await state.scan_service.scan(state.target)
+            except ScanBlockedError:
+                return None
+
+        if get_settings().agent_parallel:
+            result, sources, report = await asyncio.gather(
+                self._attempt(state),
+                self._collect_sources(state),
+                _safe_scan(),
+            )
+        else:
+            result = await self._attempt(state)
+            sources = await self._collect_sources(state)
+            report = await _safe_scan()
+
+        existing_titles = {f.get("title") for f in state.findings}
+        derived_sources = derive_findings_from_sources(
+            state.target.get("name", "unknown"), sources
+        )
+        derived_scan = derive_findings_from_scan(report) if report is not None else []
+        correlated = await _correlate_cves(state, report) if report is not None else []
+        findings: list[dict[str, Any]] = []
+        for finding in [*derived_sources, *derived_scan, *correlated]:
+            if finding["title"] in existing_titles:
+                continue
+            finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(finding)
+
+        new_confidence = min(1.0, state.confidence + 0.2)
+        entry: dict[str, Any] = {
+            "agent": self.key,
+            "action": "safety",
+            "mode": "simulate",
+            "findings": len(findings),
+            "sources_consulted": len(sources),
+            "scanned": report is not None,
+            "pages_observed": len(report.pages) if report is not None else 0,
+            "cve_correlations": len(correlated),
+        }
+        update: dict[str, Any] = {
+            "findings": [*state.findings, *findings],
+            "confidence": new_confidence,
+            "sources": [*state.sources, *sources],
+        }
+        if report is not None:
+            update["scan"] = [*state.scan, report.to_dict()]
+        _apply_llm(entry, update, state, result, fallback_tokens=200)
+        entry = self.validate_entry(entry)
+        update["history"] = [*state.history, entry]
+        update.update(
+            self._trace_update(state, entry, started_at, confidence_after=new_confidence)
+        )
+        return update
+
+    async def _controlled_execution(self, state: GraphState) -> dict:
+        """Execução controlada (devil mode): ação destrutiva exige aprovação
+        humana por ação e, mesmo aprovada, não há backend de execução real
+        plugado nesta instância — registra honestamente que nada rodou."""
         started_at = _utcnow()
         target = state.target.get("name", "unknown")
-
-        # No destructive work when devil mode is not active (e.g. a pipeline
-        # node reached out of scope) — just record a no-op.
-        if not is_devil_mode_enabled(state.devil_mode):
-            entry: dict[str, Any] = self.validate_entry(
-                {
-                    "agent": self.key,
-                    "action": "noop",
-                    "mode": "simulate",
-                }
-            )
-            update = {"history": [*state.history, entry]}
-            update.update(self._trace_update(state, entry, started_at))
-            return update
 
         # Human-in-the-Loop: destructive execution requires operator approval.
         # State machine over ``pending_review`` and the ``review_log``:

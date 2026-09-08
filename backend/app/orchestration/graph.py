@@ -125,46 +125,6 @@ def _collect_edges(state: GraphState, known: frozenset[str]) -> str:
     return after_gate(state, known)
 
 
-def _build_pipeline(
-    archetypes: list[str], entry: str | None, provision: Callable[[GraphState], None]
-) -> StateGraph:
-    graph = StateGraph(GraphState)
-
-    for key in archetypes:
-        graph.add_node(key, _make_node(key, provision))
-    graph.add_node("human_gate", _provisioned(_human_gate, provision))
-
-    graph.set_entry_point(entry or archetypes[0])
-
-    for i, current in enumerate(archetypes):
-        following = archetypes[i + 1] if i + 1 < len(archetypes) else None
-
-        def _route(state: GraphState) -> str:
-            if _is_awaiting_review(state):
-                return "gate"
-            if is_kill_switch_active():
-                return "justice"
-            if state.stop_reason is not None:
-                return "justice"
-            if _budgeted_out(state) is not None:
-                return "justice"
-            return "next"
-
-        edge_map: dict[str, Any] = {"gate": "human_gate"}
-        edge_map["justice"] = following if following is not None else END
-        edge_map["next"] = following if following is not None else END
-        graph.add_conditional_edges(current, _route, edge_map)
-
-    gate_map: dict[str, Any] = {n: n for n in archetypes}
-    gate_map["end"] = END
-    known = frozenset(archetypes)
-    graph.add_conditional_edges(
-        "human_gate", lambda s: _collect_edges(s, known), gate_map
-    )
-
-    return graph
-
-
 def _build_supervised(entry: str | None, provision: Callable[[GraphState], None]) -> StateGraph:
     graph = StateGraph(GraphState)
 
@@ -236,17 +196,14 @@ def build_graph(
     provision: Callable[[GraphState], None] | None = None,
 ) -> StateGraph:
     provision = provision or _noop_provision
-    if archetypes is None:
-        # Modo padrão (sem cartas): grafo supervisionado — o Imperador decide
-        # dinamicamente qual membro do time padrão roda a cada passo. O time
-        # em si é resolvido em runtime (provision do Director), que conhece o
-        # `devil_mode` do run; aqui as arestas cobrem todos os arquétipos.
-        return _build_supervised(entry, provision)
-    # Modo composição (cartas): pipeline linear — cada arquétipo declarado roda
-    # exatamente uma vez na ordem, e o último (justice) fecha o run. O Imperador
-    # não é uma carta jogável (ver GUIA_CARTAS), mas quando presente na lista é
-    # executado como plano de abertura antes do primeiro integrante.
-    return _build_pipeline(archetypes, entry, provision)
+    # Supervisor universal: o Imperador rege todo run (com ou sem cartas).
+    # O `team` (quem ele pode escalar) é resolvido em runtime na provision do
+    # Director — completo quando `archetypes` está vazio, restrito às cartas
+    # escolhidas quando há composição. A ordem das cartas não importa: o grafo
+    # supervisionado deixa o Imperador decidir e repetir agentes conforme
+    # necessário. O pipeline linear (carta uma única vez na ordem) foi
+    # substituído por esse modelo.
+    return _build_supervised(entry, provision)
 
 
 def compile_graph(

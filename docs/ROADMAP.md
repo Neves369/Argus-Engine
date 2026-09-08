@@ -83,6 +83,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 11 | Relatório de Segurança | Achados com substância (severidade/CVE/exploit/remediação) | ✅ Concluída |
 | 12 | Scanning Ativo (OWASP Top 10) | Download de página, crawl, análise de headers/forms, detecção de vulnerabilidades | ✅ Concluída |
 | 13 | Integração de Ferramentas Reais | NVD/CISA KEV/CVE.report no pipeline, extractors de OSINT, tools reais | ✅ Concluída |
+| 14 | Supervisor Universal | Imperador rege todo run; cartas = time disponível; Carro safety check | ✅ Concluída |
 
 ---
 
@@ -128,32 +129,31 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
       fontes + scan ativo) rodam em concorrência via `asyncio.gather`, preservando ordem
       e estado (`AGENT_PARALLEL`, default on; desligar => sequencial). Cobertura:
       `tests/test_execution_parallelism.py` (sobreposição de wall-clock + semântica).
-- [x] Supervisor Imperador no modo padrão (sem cartas) — o Imperador deixa de ser um
-      único nó de abertura e passa a **supervisionar o time**: planeja (`plan`), delega
-      dinamicamente um membro do time a cada rodada (`direct`) e fecha o run (`close`)
-      por confiança ou esgotamento de `supervisor_max_rounds` (default 8). O time é
-      resolvido na provision do `Director` (`state.team`; `["hermit"]`, ou
-      `["hermit","chariot"]` em `devil_mode`) e nunca sobrescreve um time persistido
-      (resume de HITL). Roteadores: `route_from_emperor` (delegação válida → membro,
-      inválida/ausente → justice) e `route_after_worker` (worker sempre devolve ao
-      supervisor; paradas inadiáveis — HITL, kill-switch, orçamento, `stop_reason`
-      — desviam à Justiça). Composições (cartas) continuam num pipeline linear — cada
-      carta roda exatamente uma vez — e o Imperador segue fora do deck
-      (ver `docs/GUIA_CARTAS.md` e Etapa 2). Cobertura: `tests/test_supervisor.py`.
+- [x] Supervisor Imperador — o Imperador deixa de ser um único nó de abertura e passa a
+      **supervisionar o time**: planeja (`plan`), delega dinamicamente um membro do time
+      a cada rodada (`direct`) e fecha o run (`close`) por confiança ou esgotamento de
+      `supervisor_max_rounds` (default 8). O time é resolvido na provision do `Director`
+      (`state.team`; antes `["hermit"]`/+`["chariot"]` em `devil_mode`). Nunca sobrescreve
+      um time persistido (resume de HITL). Roteadores: `route_from_emperor` (delegação
+      válida → membro, inválida/ausente → justice) e `route_after_worker` (worker sempre
+      devolve ao supervisor; paradas inadiáveis — HITL, kill-switch, orçamento,
+      `stop_reason` — desviam à Justiça). **Desde a Parte 4 o grafo é sempre
+      supervisionado** — composições também rodam supervisionadas (o time é restrito às
+      cartas escolhidas), e o Imperador segue fora do deck
+      (ver `docs/GUIA_CARTAS.md`). Cobertura: `tests/test_supervisor.py`.
 
 **Critérios de aceite**
 - [x] É possível definir um grafo de 3 nós, executar e receber estado final tipado.
 - [x] Logs estruturados de cada transição de nó (via `history` no estado).
 
 **Observações / pendências**
-- Paralelismo de nós em DAG (fan-out: vários nós após um diretor) ainda não existe — os grafos
-  atuais são cadeias (pipeline linear de cartas) **ou** o loop supervisor/worker do modo
-  padrão (um membro do time por vez, decidido pelo Imperador); o paralelismo entregue é o
-  intra-nó (pernas de I/O independentes).
+- Paralelismo de nós em DAG (fan-out: vários nós após o diretor) ainda não existe — os grafos
+  são o loop supervisor/worker (um membro do time por vez, decidido pelo Imperador); o
+  paralelismo entregue é o intra-nó (pernas de I/O independentes).
 - Persistência/retomada de runs usa JSON no estado; a retomada de um run de
-  composição parado em HITL segue o pipeline linear correto porque a sequência
-  de cartas é persistida em `GraphState.composition` (resume reconstrói o grafo
-  de cartas em vez do supervisor). Retomada geral via UI ainda pendente.
+  composição parado em HITL mantém a composição (`GraphState.composition`) e,
+  portanto, o time restrito — o resume reconstrói o mesmo grafo supervisionado.
+  Retomada geral via UI ainda pendente.
 
 ---
 
@@ -408,7 +408,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Compressão de histórico entre nós do grafo (`app/llm/compress.py::compress_history`, aplicada no wrapper de nó em `app/orchestration/graph.py` quando `HISTORY_COMPRESSION=true`; mantém o primeiro + últimos `HISTORY_KEEP_LAST` registros, deterministicamente, sem chamada de LLM)
 - [x] Orçamento hard por run — o wrapper de nó em `app/orchestration/graph.py` marca
       `stop_reason="budget"` quando `tokens_used >= budget_tokens` ou `cost >= budget_cost`;
-      os routers (`route_after_worker` do supervisor e o router do pipeline de cartas)
+      os routers do grafo supervisionado (`route_after_worker`/`route_from_emperor`)
       desviam para a Justiça validar e fechar.
 - [x] Orçamento hard por agente — `BUDGET_TOKENS_PER_AGENT`/`BUDGET_COST_PER_AGENT` (desligado por
       padrão), respeitado pelo Imperador ao delegar: não delega um membro que já está no
@@ -458,7 +458,7 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
 - [x] Frontend Vite + React + React Flow scaffoldado (`frontend/`)
 - [x] Componentes visuais iniciais (Card, CardNode, canvas, mock de agents/sessions)
 - [x] CLI completa (Typer/Rich)
-- [x] Canvas funcional de arquétipos (drag-and-drop + conexões) — mão virou paleta; pasta nós no canvas; sequência = posição X (esquerda→direita), `justice` obrigatório à direita
+- [x] Canvas funcional de arquétipos (drag-and-drop + conexões) — mão virou paleta; pasta nós no canvas; posição X (esquerda→direita) é apenas organização visual (desde a Parte 4 a ordem não define execução), `justice` obrigatório na mesa
 - [x] Visualização do grafo em execução e do estado — `streamRun` (SSE `/runs/stream`) destaca o nó ativo (`is-active`) e marca o nó final como concluído (`is-ended`); arquétipos do grafo passados como `?archetypes=...`
 - [x] Exportação de configuração de grafo (YAML/JSON) — `argus compose export` + REST (`/runs/{id}/export` JSON/Markdown, findings CSV)
 - [x] Integração com backend (SSE + dados reais) — composição real: `POST /compositions`, `POST /compositions/{id}/execute`, persistência em `sessions.config`, reuso de `validate_sequence`/`Director`; `createRun`/`createTarget` ativados no client
@@ -483,10 +483,10 @@ registry com permissões e isolamento. A plataforma orquestra; as ferramentas e 
    `sources smoke`, `tools run`).
 2. Como representar os arquétipos e conexões visualmente — resolvido:
    cartas de tarô (`CardNode`) no canvas React Flow, com imagens por
-   arquétipo e edges animados `smoothstep`. Sequência = posição X
-   (esquerda → direita).
+   arquétipo e edges animados `smoothstep`. Posição X (esquerda → direita)
+   organiza o conjunto na mesa (desde a Parte 4 a ordem não define execução).
 3. Arrastar-conectar vs configuração declarativa — resolvido: ambos
-   coexistem. Drag-and-drop na UI (posição determina a sequência, sem
+   coexistem. Drag-and-drop na UI (conjunto de cartas soltas na mesa, sem
    freeform wiring); CLI/REST para configuração declarativa (JSON/YAML).
 4. Feedback em tempo real do progresso do grafo — resolvido: SSE via
    `/runs/stream` alimenta o frontend — nó ativo destacado no canvas,
@@ -775,10 +775,58 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
   re-consulta do mesmo run) cai em `429 Too Many Requests` — sintoma real
   reproduzido em teste antes de dar burst ao hackertarget.
 
+## Etapa 14 — Supervisor Universal (Parte 4)
+
+**Status:** `[x]` Concluída
+
+**Objetivo:** unificar o modelo de orquestração — o Imperador rege **todo** run,
+com ou sem cartas. Cartas deixam de definir "ordem de execução" e passam a definir
+o **time disponível** ao supervisor; mesa vazia = time completo. O Carro ganha um
+modo normal de safety check (indícios não invasivos) separado do fluxo de execução
+controlada do Modo Diabo.
+
+**Entregáveis**
+- [x] `Director._resolve_team` (`app/orchestration/director.py`) — mesa vazia →
+      `[fool, hermit, magician]` (+`chariot` no Modo Diabo); composição → só as
+      cartas escolhidas (filtra `justice`/`emperor`); fallback para `self._archetypes`.
+- [x] Grafo sempre supervisionado — `build_graph` retorna `_build_supervised`;
+      `_build_pipeline` (cadeia linear de cartas) removido como código morto
+      (`app/orchestration/graph.py`).
+- [x] `validate_sequence` rejeita `"emperor"` (não é carta); mantém `justice` por
+      último, sem duplicatas, não vazio (`app/orchestration/compose.py`).
+- [x] API trata `archetypes=[]` como ausente (time completo) via `if archetypes:`
+      em `app/api/v1/runs.py`; CLI injeta `composition=archetypes` no `GraphState`.
+- [x] Carro modo normal = **safety check** (`ChariotAgent._safety_check`): indícios
+      de risco candidatos a partir de scan/fontes/correlação CVE, ação `"safety"`,
+      sem HITL; `_controlled_execution` (Modo Diabo, HITL + `no_backend`) mantido;
+      `_correlate_cves` virou função de módulo (`app/agents/builtin.py`).
+- [x] `ChariotOutput.action` — Literal `["safety","declined","no_backend","execute"]`
+      (`app/agents/schemas.py`).
+- [x] Frontend: mesa vazia permitida — `handleRun` pula `createComposition` e chama
+      `/runs/stream` sem archetypes, com hint "Sem cartas — o Imperador usará todas
+      as disponíveis." (`frontend/src/App.tsx`).
+- [x] Testes: `test_compose.py` reescrito (8), `test_supervisor.py` (time completo/
+      restrito/carro safety), `test_cve_correlate.py` (função de módulo),
+      `test_dashboard.py` (trace começa em `emperor`).
+- [x] Docs atualizados: `docs/GUIA_CARTAS.md`, `docs/MANUAL_DO_USUARIO.md`,
+      `docs/AGENTS.md` (seção Supervisor universal).
+
+**Critérios de aceite**
+- [x] Run sem cartas executa com o time completo do Imperador e fecha na Justiça.
+- [x] Run com composição restringe o time; ordem das cartas não altera o run.
+- [x] `ruff check app tests` e `pytest -q` verdes (405 passed, 2 skipped); frontend
+      `npm run lint`/`build` verdes.
+
+**Observações / pendências**
+- Backend de **execução real** para o Carro (testes ativos não destrutivos no modo
+  normal; exploits/atividades evasivas no Modo Diabo) permanece adiado — é uma das
+  últimas coisas do projeto (ver `docs/GUIA_CARTAS.md`, seção do Carro). Hoje o
+  Carro só sinaliza (safety) ou registra `no_backend` após aprovação HITL.
+
 ## Próximos passos sugeridos
 
-> Lista revisada — todos os itens de Etapas 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 e 12
-> listados aqui foram entregues (ver status de cada etapa acima). Etapa 7 consta
+> Lista revisada — todos os itens de Etapas 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12,
+> 13 e 14 listados aqui foram entregues (ver status de cada etapa acima). Etapa 7 consta
 > como parcial apenas por um item deliberadamente adiado:
 
 - **Etapa 7 — compressão de histórico por resumo de LLM**: decisão de produto

@@ -24,7 +24,8 @@ def test_trace_endpoint_returns_steps(client):
     assert body["run_id"] == run_id
     steps = body["trace"]
     assert len(steps) >= 2
-    assert steps[0]["node"] == "hermit"
+    # Supervisor universal: o Imperador abre o grafo (plano) antes dos workers.
+    assert steps[0]["node"] == "emperor"
     assert "duration_ms" in steps[0]
     assert "started_at" in steps[0]
     assert steps[-1]["node"] == "justice"

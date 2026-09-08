@@ -332,15 +332,16 @@ def test_hermit_integrates_correlated_cves_into_findings():
 
 
 def test_hermit_correlation_is_best_effort():
+    from app.agents.builtin import _correlate_cves
+
     report = ScanReport(
         target="example.com",
         pages=[_page(headers={"server": "Apache/2.4.49 (Ubuntu)"})],
     )
     state = GraphState(target={"name": "example.com"})
     state.set_sources_service(_BoomSourcesService())
-    agent = get_archetype("hermit")
 
-    assert _run(agent._correlate_cves(state, report)) == []
+    assert _run(_correlate_cves(state, report)) == []
 
 
 class _BoomSourcesService:

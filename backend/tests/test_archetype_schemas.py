@@ -42,7 +42,7 @@ def test_archetype_history_entry_matches_its_schema(key: str):
 
 
 def test_chariot_declined_entry_matches_schema(monkeypatch):
-    """Chariot's non-execute branches (noop/declined) have a narrower shape."""
+    """Chariot's non-execute branches (safety/declined) have a narrower shape."""
     from app.core.config import get_settings
 
     get_settings().devil_mode = True

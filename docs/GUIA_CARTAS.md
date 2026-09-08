@@ -6,16 +6,29 @@
 
 ## Regra de composição
 
-- Uma sessão pode ter de 1 a 5 cartas na mesa, em qualquer ordem da esquerda
-  pra direita — essa ordem **é** a ordem de execução.
-- **A última carta jogada precisa ser "A Justiça"** — é ela quem fecha o run.
-  Sem isso, o botão de executar retorna erro.
-- Não dá pra repetir a mesma carta duas vezes na mesma sessão.
-- Diferente do "modo padrão" do motor (usado internamente, sem cartas), uma
-  composição feita com cartas roda **cada carta exatamente uma vez**, na
-  ordem escolhida — não existe repetição automática do Eremita até atingir
-  confiança alta. Se você quer mais uma rodada de coleta, jogue a carta do
-  Eremita de novo numa próxima sessão, depois de revisar o que já veio.
+O modelo é **supervisor universal**: em todo run, quem decide quem trabalha é o
+arquétipo **O Imperador**. As cartas que você coloca na mesa não definem uma
+ordem de execução — elas definem **qual time o Imperador tem disponível**:
+
+- **Mesa vazia** → o Imperador tem **todas as cartas** disponíveis para trabalhar
+  (Louco, Eremita, Mago; e o Carro quando o Modo Diabo está ligado).
+- **Composição montada** → o Imperador escala **apenas** as cartas escolhidas.
+  Deixar uma carta fora da mesa é uma escolha: ela é **ignorada** pelo Imperador.
+
+Por isso:
+
+- **A ordem das cartas na mesa NÃO importa.** Elas formam um conjunto, não uma
+  sequência. A posição esquerda → direita é apenas organização visual.
+- **O Imperador pode repetir a mesma carta** quantas vezes julgar necessário
+  (ex.: pedir mais uma rodada de coleta ao Eremita até atingir confiança),
+  inclusive em composições — não existe "cada carta roda exatamente uma vez".
+- **A última carta precisa continuar sendo "A Justiça"** — ela é o fechador
+  fixo de todo run (valida o estado final e encerra). Você pode jogá-la junto
+  com as cartas de trabalho, mas ela nunca é "delegada" como uma worker.
+- Não dá pra repetir a mesma carta duas vezes na mesa (uma carta só pode ser
+  liberada uma vez por sessão).
+- **Clique em Finalizar Turno sem nenhuma carta na mesa** para rodar o modo
+  supervisionado com o time completo do Imperador.
 
 ## As cartas, uma por uma
 
@@ -32,8 +45,8 @@ por onde começar, antes de gastar chamadas reais de API em fontes externas.
 direto ao Eremita.
 
 ### 🔍 O Eremita (`hermit`) — coleta real
-É a **única carta que consulta as fontes de pesquisa de verdade** e realiza
-**scanning ativo** do alvo. Duas camadas de coleta:
+É a **carta principal de coleta**: consulta as fontes de pesquisa de verdade e
+realiza **scanning ativo** do alvo. Duas camadas de coleta:
 
 1. **Scanning ativo:** download de página, crawl de links, análise de headers
    HTTP, extração de forms/parâmetros, fingerprinting de tecnologias, detecção
@@ -47,10 +60,11 @@ direto ao Eremita.
    RDAP/whois passivo (registro de domínio) — dependendo do tipo do alvo
    (domínio vs IP; ver `docs/RUNBOOK.md` sobre chaves de API opcionais).
 
-Todo achado que aparece no relatório final **nasce aqui** (ou não aparece).
-Se nenhuma fonte real tiver dado significativo pro alvo, o Eremita não
-inventa nada — o relatório fica com zero achados, e isso é o comportamento
-certo, não um bug.
+Todo achado que aparece no relatório final **nasce de dado observado** (fontes
+ou scanning) — a coleta principal é o Eremita; o Carro (modo normal) também
+sinaliza indícios a partir do mesmo material observado. Se nenhuma fonte real
+tiver dado significativo pro alvo, ninguém inventa nada — o relatório fica com
+zero achados, e isso é o comportamento certo, não um bug.
 
 Achados vêm sempre marcados como **candidatos** que precisam de revisão
 humana (`requires_human_review`) — o Eremita nunca confirma uma
@@ -59,22 +73,37 @@ vulnerabilidade sozinho, só levanta indícios com a evidência anexada.
 **Por que jogar:** é a carta essencial. Sem ela, não existe dado real na
 sessão.
 
-### ⚔️ O Carro (`chariot`) — execução controlada
-Só faz alguma coisa quando o **Modo Diabo** está ligado (o toggle de morte
-no topo da tela). Quando ligado, qualquer ação dessa carta **exige
-aprovação humana explícita** antes de prosseguir — o run para e espera você
-aprovar ou rejeitar na tela.
+### ⚔️ O Carro (`chariot`) — execução controlada / safety check
+
+Duas caras, dependendo do **Modo Diabo**:
+
+1. **Modo normal (Modo Diabo desligado): safety check.** O Carro observa sinais
+   **não invasivos** já disponíveis — resultado do scanning ativo (headers,
+   cookies, forms, fingerprint) + fontes consultadas + correlação CVE por
+   banner — e **sinaliza indícios de risco** (ex.: header de segurança ausente,
+   cookie sem flag, form sem proteção de CSRF, casa servidora com CVE-exploit
+   público conhecido) como **achados candidatos** (`requires_human_review`).
+   **Não executa nada contra o alvo** e **não pede aprovação humana**: é um
+   papel passivo que adiciona lead ao relatório, sujeito à sua revisão manual.
+
+2. **Modo Diabo ligado: execução controlada.** Cada ação destrutiva/invasiva
+   **exige sua aprovação humana individual** antes de prosseguir — o run para e
+   espera você aprovar ou rejeitar na tela.
 
 **Estado atual, honestamente:** o Argus Engine **não vem com nenhum backend
 de execução real** plugado nesta carta — nem por padrão, nem opcionalmente.
-Mesmo aprovando a ação, a resposta é sempre um registro honesto de que
-"nenhum backend de execução real está configurado" — nada é de fato
-executado contra o alvo. A carta existe hoje para demonstrar/testar o fluxo
-de aprovação humana (human-in-the-loop), não para realizar ações reais.
+Mesmo aprovando a ação no Modo Diabo, a resposta é sempre um registro honesto
+de que "nenhum backend de execução real está configurado" — nada é de fato
+executado contra o alvo. O caminho do Modo Diabo existe hoje para
+demonstrar/testar o fluxo de aprovação humana, não para realizar ações reais;
+a construção de um backend de execução (testes ativos não destrutivos em modo
+normal e exploits/atividades evasivas em Modo Diabo) é uma das últimas etapas
+previstas no projeto.
 
-**Por que jogar:** só se você quer ver/testar o fluxo de aprovação em ação.
-**Por que não jogar:** se seu objetivo é reconhecimento de verdade — ela não
-adiciona achado nenhum ao relatório hoje.
+**Por que jogar (modo normal):** para adicionar um escrutínio de riscos a partir
+do que já foi observado, sem gastar nada além do que o Eremita vê.
+**Por que não jogar:** se o Eremita já cobre a coleta e você não quer um agente
+extra na mesa.
 
 ### 🌀 O Mago (`magician`) — síntese
 Não consulta nada novo. Pega tudo que **já foi acumulado** até aquele ponto
@@ -94,26 +123,29 @@ só resume o estado final pro registro.
 
 ## Combinações recomendadas
 
-| Combinação | Quando usar |
+Lembrete: as cartas são um **conjunto liberado** ao Imperador, não uma ordem.
+As sugestões abaixo são de *quais cartas liberar* (a Justiça sempre junto para fechar):
+
+| Cartas na mesa | Quando usar |
 |---|---|
-| **Eremita → Justiça** | O mínimo útil. Scanning ativo + OSINT passivo + fechamento. Use quando já sabe o alvo e quer um scan completo. |
-| **Louco → Eremita → Justiça** | Quando quer que o sistema pense no que procurar antes de escanear e consultar as fontes. |
-| **Eremita → Mago → Justiça** | Quando o resultado vai para alguém não-técnico — adiciona um resumo em linguagem natural. |
-| **Louco → Eremita → Mago → Justiça** | A sessão "completa": hipótese → scanning ativo + coleta real → síntese → fechamento. |
-| **Carro → Justiça** (sem Eremita) | **Não recomendado.** Sem scanning ativo antes, não há nada para basear uma ação, e não há backend real por trás mesmo assim — a sessão fecha sem achado nenhum. |
-| **Justiça sozinha** | Válido pelas regras, mas inútil — fecha uma sessão vazia, sem nenhum scan. |
+| **Justiça sozinha (ou mesa vazia)** | Deixa o Imperador com o time completo: ele decide quem e quantas rodadas. A opção mais "automática". |
+| **Eremita → Justiça** | Time restrito só à coleta: o Imperador só pode escalar o Eremita (quantas rodadas ele achar necessário). |
+| **Louco → Eremita → Justiça** | Libera hipóteses + coleta: o Imperador pode alternar entre pensar e escanear. |
+| **Eremita → Mago → Justiça** | Coleta + síntese para um leitor não-técnico. |
+| **Carro → Justiça** (sem Eremita) | Libera apenas o safety check do Carro (modo normal): indícios de risco a partir do scan, sem coleta ampla de fontes. **Não recomendado** como única carta de coleta. |
+| **Sessão completa (Louco + Eremita + Carro + Mago + Justiça)** | Todas as cartas disponíveis ao Imperador — ele monta a investigação com o deck todo. |
 
-## O que NÃO está nas cartas (design definido)
+## O que você NÃO joga (design definido)
 
-O arquétipo "O Imperador" (planejador/diretor) existe no motor e **não é
-uma carta jogável** na interface de sessões — ele só participa do modo
-padrão interno do sistema, não das sessões montadas por operadores. Isso
-é uma decisão de design permanente.
+- **O Imperador não é uma carta.** Sob o modelo **supervisor universal**, ele
+  **rege todo run** — com ou sem cartas na mesa. As cartas definem apenas o
+  time que ele pode escalar:
+  - mesa vazia → todas as cartas disponíveis;
+  - composição → apenas as cartas escolhidas (as demais são ignoradas);
+  - ele pode repetir a mesma carta e decide quando parar (a Justiça valida e
+    fecha).
+- O visual do Imperador permanece no `CharacterPanel` (retrato do lado aliado,
+  `emperror.jpg`) como o rosto permanente da orquestração, não como carta no deck.
 
-O visual do Imperador já está pronto no `CharacterPanel` (retrato do lado
-aliado, `emperror.jpg`) e permanece ali como elemento fixo da interface,
-não como carta no deck. O EmperorAgent registra-se como o nó de entrada
-do grafo no modo padrão (não cartas), planejando e orquestrando o run.
-
-Se o operador vier a desejar o Imperador como carta jogável, este guia
-será atualizado.
+Se no futuro o operador quiser limitar o número de rodadas ou o orçamento do
+Imperador por sessão, isso é config de supervisor, não uma carta nova.

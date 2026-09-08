@@ -90,11 +90,23 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo
   (mantém primeiro + últimos `HISTORY_KEEP_LAST`, determinístico, sem LLM) no wrapper de
   nó em `app/orchestration/graph.py`. Orçamento hard por run é marcado no wrapper
-  de nó e desviado nos routers (`route_after_worker`/pipeline) com
+  de nó e desviado nos routers do grafo supervisionado (`route_after_worker`/`route_from_emperor`) com
   `stop_reason="budget"`; por agente, o Imperador respeita `BUDGET_TOKENS_PER_AGENT`.
   Nunca ligue
   esses levers em testes (quebrariam a determinância do grafo simulado) nem os deixe
   ativos sem querer em produção sem medir o impacto nas decisões.
+- **Supervisor universal (Parte 4):** o Imperador rege **todo** run. O grafo é
+  sempre supervisionado (`_build_supervised` em `app/orchestration/graph.py` — não
+  existe mais "pipeline linear" de cartas). Quem o Imperador escala é definido por
+  `Director._resolve_team` (`app/orchestration/director.py`): mesa vazia → time
+  completo `[fool, hermit, magician]` (+`chariot` no Modo Diabo); composição →
+  apenas as cartas escolhidas (menos `justice`, o fechador fixo, e `emperor`, que
+  não é carta). A **ordem das cartas não importa** (é um conjunto, não uma
+  sequência) e o Imperador pode **repetir** agentes. Composição vazia = time
+  completo (a API trata `archetypes=[]` como ausente). O Carro, em modo normal,
+  faz **safety check** (indícios candidatos a partir de scan/fontes, sem HITL);
+  em Modo Diabo mantém o fluxo de aprovação humana + `no_backend` (sem backend de
+  execução real — ver GUIA_CARTAS).
 
 ## Comandos
 

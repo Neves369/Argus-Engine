@@ -205,7 +205,11 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                 target_id = new_target.id
                 record.target_id = target_id
 
-            state = GraphState(target=target, devil_mode=bool(config.get("devil_mode", False)))
+            state = GraphState(
+                target=target,
+                devil_mode=bool(config.get("devil_mode", False)),
+                composition=archetypes,
+            )
             state.set_sources_service(build_sources_service())
             scan_service = build_scan_service()
             state.set_scan_service(scan_service)

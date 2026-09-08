@@ -45,22 +45,40 @@ Duas regras valem para tudo:
 - **Alvo:** o botão que abre *Informações do Alvo* deixa você preencher o **Nome**
   (domínio ou IP), a **URL** (se quiser) e **Informações Adicionais**.
 - **A mesa de cartas:** no centro, você arrasta as cartas (os "papeis") para
-  montar a investigação. A **posição** na mesa define a ordem de execução.
+  montar a investigação. A **posição na mesa não define ordem de execução** —
+  as cartas formam o conjunto de agentes que o Imperador pode usar.
 - **Menu** (para abrir mais opções): **Sessões** (composições salvas),
   **Dashboard** (histórico de runs), **Modo Death / Modo Normal** (liga/desliga o
   Modo Diabo), **Configurações** e **Sair**.
 - **Nova Sessão:** limpa alvo, cartas e relatório atual para começar do zero.
 
-## 5. Os dois jeitos de rodar uma investigação
+## 5. Como rodar uma investigação
 
-### 5.1 Sessão montada por cartas (o jeito comum na interface)
+O Argus Engine usa um **supervisor universal**: quem decide quem trabalha em um
+run é o arquétipo **O Imperador**. As cartas que você coloca na mesa definem
+**o time que o Imperador pode escalar** — nada além disso.
+
+### 5.1 Mesa vazia — o Imperador decide tudo
 
 1. Defina o **alvo** (Informações do Alvo).
-2. **Arraste as cartas** para a mesa, de 1 a 5, qualquer ordem — a ordem na mesa
-   (esquerda → direita) **é** a ordem de execução.
-3. **A última carta precisa ser A Justiça** — é ela quem fecha o run.
-4. Você **não pode** repetir a mesma carta duas vezes na mesma sessão.
-5. Clique em **Finalizar Turno** para executar.
+2. **Não jogue nenhuma carta.**
+3. Clique em **Finalizar Turno**.
+
+O Imperador usa o **time completo** (Louco, Eremita, Mago — e o Carro com o
+Modo Death ligado), decide quem roda a cada rodada, pode **repetir** a mesma
+carta se achar necessário e fecha quando a investigação estiver suficiente
+(a Justiça valida e encerra).
+
+### 5.2 Sessão montada por cartas — você limita o time
+
+1. Defina o **alvo** (Informações do Alvo).
+2. **Jogue as cartas** que quer liberar (de 1 a 5; sem repetir a mesma carta).
+3. **A última carta precisa ser A Justiça** — ela fecha o run.
+4. Clique em **Finalizar Turno**.
+
+Aqui o Imperador escala **apenas** as cartas escolhidas; as que você deixou de
+fora da mesa são ignoradas. **A ordem das cartas na mesa não importa** — é só o
+conjunto disponível que vale.
 
 Cada carta faz uma coisa específica — o resumo prático:
 
@@ -70,21 +88,9 @@ Cada carta faz uma coisa específica — o resumo prático:
 | **O Eremita** | Coleta real: fontes públicas + visita o site | Sim |
 | **O Mago** | Escreve um resumo "para humano" do que já foi coletado | Não |
 | **A Justiça** | Fecha o run (obrigatória por último) | Avaliação final |
-| **O Carro** | Ações controladas (vê seção 10 — Modo Death) | Não (hoje) |
+| **O Carro** | Safety check no modo normal (indícios de risco); execução controlada no Modo Death (vê seção 10) | Sim (indícios candidatos) |
 
 Combinações sugeridas e o detalhe de cada carta: `docs/GUIA_CARTAS.md`.
-
-### 5.2 Modo padrão do motor (supervisor automático, sem cartas)
-
-Fora da montagem por cartas, o motor tem um **modo padrão**: quando um run é
-iniciado **sem composição** (via API ou CLI), um supervisor — o arquétipo **O
-Imperador** — decide sozinho quem vai trabalhar, em que ordem e quando parar, e
-a **Justiça** fecha o run. É o comportamento automático do sistema, sem cartas na
-mesa.
-
-> Na interface hoje, o botão **Finalizar Turno** pede cartas na mesa antes de
-> rodar. O modo padrão (sem cartas) é acionado quando um run é criado sem
-> arquétipos — por exemplo pela API ou CLI.
 
 ## 6. Rodando e acompanhando ao vivo
 
@@ -158,11 +164,18 @@ As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte
 
 - O toggle **Modo Death** no menu habilita o modo de execução destrutiva/invasiva
   (o arquétipo **O Carro**).
+- **Sem o Modo Death**, o Carro roda um **safety check**: observa sinais não
+  invasivos já disponíveis (scan passivo, fontes, correlação CVE) e sinaliza
+  **indícios de risco** como achados candidatos — sem executar nada contra o
+  alvo e sem exigir aprovação.
+- **Com o Modo Death**, cada ação do Carro para e espera seu **Aprovar /
+  Rejeitar** individual.
 - **Importante, honestamente:** o Argus Engine **não vem com nenhum backend de
-  execução real** plugado nesta carta. Mesmo aprovando uma ação, a resposta é um
-  registro honesto de que "nenhum backend de execução real está configurado" —
-  **nada é de fato executado contra o alvo**. A carta existe para demonstrar e
-  testar o fluxo de aprovação humana.
+  execução real** plugado nesta carta. Mesmo aprovando uma ação no Modo Death, a
+  resposta é um registro honesto de que "nenhum backend de execução real está
+  configurado" — **nada é de fato executado contra o alvo**. O Modo Death existe
+  para demonstrar e testar o fluxo de aprovação humana; a construção do backend
+  de execução é uma das últimas etapas previstas do projeto.
 - Nada destrutivo acontece **sozinho**: cada ação do Modo Death para e espera
   seu **Aprovar/Rejeitar**.
 - **Scanning ativo não é Modo Death.** Visitar o site, identificar tecnologias e
@@ -173,11 +186,11 @@ As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte
 
 | Situação | O que acontece |
 |---|---|
-| **Sessão por cartas** | Segue a ordem das cartas na mesa; cada carta roda uma vez; Justiça fecha. |
-| **Modo padrão (supervisor)** | O Imperador escolhe quem trabalha e quando parar; Justiça fecha. |
+| **Mesa vazia** | O Imperador usa o time completo (Louco, Eremita, Mago, +Carro no Death), decide quem roda e quando parar; Justiça fecha. |
+| **Sessão por cartas** | O Imperador escala apenas as cartas escolhidas (ordem na mesa não importa); Justiça fecha. |
 | **Sem chave de API** | Fontes dependentes de chave degradam para simulado → podem não gerar achados (correto). |
 | **Alvo fora do escopo permitido** | Sem visita ao site e sem consultas; o sistema não trabalha lá. |
-| **Modo Death ligado** | Ações controladas ficam possíveis, mas cada uma exige sua aprovação (e hoje não têm backend de execução). |
+| **Modo Death ligado** | O Carro vira execução controlada; cada ação exige sua aprovação (e hoje não têm backend de execução). |
 | **Interruptor de emergência** (`KILL_SWITCH`) | Interrompe o run em andamento e bloqueia novos (ação do operador — ver `RUNBOOK.md` §4). |
 
 ## 12. Problemas comuns

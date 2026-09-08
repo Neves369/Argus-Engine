@@ -19,51 +19,58 @@ def test_validate_sequence_rejects_invalid():
     with pytest.raises(ValueError):
         validate_sequence(["emperor", "emperor", "justice"])
     with pytest.raises(ValueError):
-        validate_sequence(["emperor", "nope", "justice"])
+        validate_sequence(["hermit", "nope", "justice"])
     with pytest.raises(ValueError):
-        validate_sequence(["emperor", "hermit"])
+        validate_sequence(["hermit", "justice", "chariot"])
+    with pytest.raises(ValueError):
+        validate_sequence(["hermit"])
+    # O Imperador não é carta no modelo universal — rege todo run.
+    with pytest.raises(ValueError):
+        validate_sequence(["emperor", "hermit", "justice"])
 
 
 def test_validate_sequence_accepts_valid():
-    assert validate_sequence(["emperor", "hermit", "justice"]) == [
-        "emperor",
-        "hermit",
-        "justice",
-    ]
+    assert validate_sequence(["hermit", "justice"]) == ["hermit", "justice"]
 
 
-def test_director_runs_custom_pipeline():
+def test_director_runs_composition_supervised():
+    """Composição roda supervisionada: o Imperador decide e pode repetir a
+    carta até confiança suficiente, quando fecha pela Justiça."""
     async def _run() -> GraphState:
-        director = Director(["emperor", "hermit", "justice"])
+        director = Director(["hermit", "justice"])
         return await director.run(GraphState(target={"name": "example.com"}))
 
     final = asyncio.run(_run())
 
     assert final.stop_reason == "completed"
-    assert len(final.history) == 3
-    # No sources_service configured in this test -> no real signal -> no
-    # findings fabricated. This is the correct, honest behavior: findings
-    # only appear when a real, successfully-queried source justifies one
-    # (see app.services.source_findings).
+    assert final.history[-1]["agent"] == "justice"
+    agents = [e["agent"] for e in final.history if e["agent"] != "emperor"]
+    assert agents[0] == "hermit"
+    assert set(agents) <= {"hermit", "justice"}
+    # Repetição é permitida: o Eremita roda até a confiança fechar o run.
+    assert agents.count("hermit") >= 1
+    # Sem sources_service configurado -> nenhum finding fabricado.
     assert final.findings == []
 
 
-def test_director_runs_six_archetypes():
-    archetypes = ["emperor", "fool", "hermit", "chariot", "magician", "justice"]
-
+def test_composition_restricts_team():
+    """As cartas jogadas restringem o time: o Imperador escala apenas as
+    cartas escolhidas (nunca as que ficaram de fora da mesa)."""
     async def _run() -> GraphState:
-        director = Director(archetypes)
+        director = Director(["fool", "justice"])
         return await director.run(GraphState(target={"name": "example.com"}))
 
     final = asyncio.run(_run())
 
-    assert final.stop_reason == "completed"
-    assert len(final.history) == 6
+    workers = [e["agent"] for e in final.history if e["agent"] != "emperor"]
+    assert {"fool", "justice"} <= set(workers)
+    assert not {"hermit", "magician", "chariot"} & set(workers)
+    assert final.history[-1]["agent"] == "justice"
 
 
 def test_composition_run_stops_on_budget():
-    """Composição respeita o orçamento do run: estourou, o pipeline desvia
-    para a Justiça validar e fechar em vez de seguir a próxima carta."""
+    """Composição respeita o orçamento do run: estourou, desvia para a
+    Justiça validar e fechar em vez de seguir delegando."""
     async def _run() -> GraphState:
         state = GraphState(
             target={"name": "example.com"},
@@ -78,13 +85,11 @@ def test_composition_run_stops_on_budget():
     assert final.history[-1]["agent"] == "justice"
 
 
-def test_resume_after_hitl_continues_composition_pipeline(client):
-    """Retomada de um run de composição parado no HITL NÃO deve recair no
-    supervisor (Imperador/time padrão): segue a sequência linear exata,
-    da carta parada até a Justiça. É o bug do `resume_run` com
-    `archetypes=None` (perdia a composição) sendo coberto de ponta a ponta.
-    O fixture `client` garante que o startup do app criou as tabelas do banco.
-    """
+def test_resume_after_hitl_continues_composition_supervised(client):
+    """Retomada de um run de composição parado no HITL mantém o time
+    restrito às cartas jogadas (aquele com o Carro em Modo Diabo) e fecha
+    pela Justiça. O fixture `client` garante que o startup do app criou as
+    tabelas do banco."""
     get_settings().devil_mode = True
 
     async def _scenario():
@@ -110,8 +115,10 @@ def test_resume_after_hitl_continues_composition_pipeline(client):
 
     final = asyncio.run(_scenario())
 
-    agents = [entry["agent"] for entry in final.history]
-    assert agents == ["chariot", "justice"]
+    workers = [e["agent"] for e in final.history if e["agent"] != "emperor"]
+    assert "chariot" in workers
+    assert not {"hermit", "fool", "magician"} & set(workers)
+    assert final.history[-1]["agent"] == "justice"
     assert final.pending_review is None
     assert final.stop_reason == "no_backend"
 
@@ -121,7 +128,7 @@ def test_create_run_with_archetypes(client):
         "/api/v1/runs",
         json={
             "target": {"name": "example.com"},
-            "archetypes": ["emperor", "hermit", "justice"],
+            "archetypes": ["hermit", "justice"],
         },
     )
     assert response.status_code == 201
@@ -130,6 +137,12 @@ def test_create_run_with_archetypes(client):
 def test_create_run_invalid_archetypes(client):
     response = client.post(
         "/api/v1/runs",
-        json={"target": {"name": "example.com"}, "archetypes": ["emperor", "hermit"]},
+        json={"target": {"name": "example.com"}, "archetypes": ["hermit", "hermit", "justice"]},
     )
     assert response.status_code == 422
+
+    emperor_response = client.post(
+        "/api/v1/runs",
+        json={"target": {"name": "example.com"}, "archetypes": ["emperor", "hermit", "justice"]},
+    )
+    assert emperor_response.status_code == 422
