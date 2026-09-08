@@ -24,5 +24,8 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
             if finding["title"] in seen:
                 continue
             seen.add(finding["title"])
+            # The page that produced the finding, so the Carro can re-probe it
+            # live later (verification probes — Etapa 15).
+            finding["probe_url"] = page.url
             findings.append(finding)
     return findings

@@ -157,6 +157,16 @@ class Settings(BaseSettings):
     scan_login_username: str = ""
     scan_login_password: str = ""
 
+    # Execução real do Carro (Etapa 15) — verificação ativa NÃO destrutiva.
+    # O Carro re-prova ao vivo os achados candidatos (sondas GET dentro dos
+    # controles do scanning ativo) e pode invocar tools NÃO destrutivas do
+    # operador (TOOLS_MANIFEST, gating `destructive` da Etapa 5 mantido).
+    # Master switch das sondas (`CHARIOT_VERIFY_ENABLED`) e teto de sondas por
+    # run (`CHARIOT_VERIFY_MAX_PROBES`). Kill-switch/escopo/robots/rate-limit
+    # do scan continuam valendo para cada sonda.
+    chariot_verify_enabled: bool = True
+    chariot_verify_max_probes: int = 10
+
     # Correlação CVE por fingerprint (Etapa 13 — integração de ferramentas):
     # teto de candidatos devolvidos pelo NVD keyword search por produto/versão.
     # Correlação é lead textual (status="candidate", requires_human_review=True);

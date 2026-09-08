@@ -25,6 +25,18 @@ except ImportError:  # pragma: no cover - non-POSIX platforms (e.g. Windows)
 logger = logging.getLogger(__name__)
 
 
+def build_tool_executor() -> ToolExecutor:
+    """Instantiate the executor from the operator-provided tools manifest
+    (``TOOLS_MANIFEST``). An empty/absent manifest yields an empty registry —
+    the Chariot degrades to its built-in probes, never failing the run."""
+    from app.core.config import get_settings
+    from app.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.load(get_settings().tools_manifest)
+    return ToolExecutor(registry)
+
+
 class ToolExecutionError(RuntimeError):
     """Raised when a tool invocation fails or is blocked."""
 
@@ -79,6 +91,11 @@ class ToolExecutor:
     def __init__(self, registry: ToolRegistry) -> None:
         self._registry = registry
         self._last_invocation: dict[str, float] = {}
+
+    @property
+    def registry(self) -> ToolRegistry:
+        """Expose the registry so agents can enumerate authorized tools."""
+        return self._registry
 
     def _check_rate_limit(self, tool: ToolSpec) -> None:
         if tool.rate_limit <= 0:

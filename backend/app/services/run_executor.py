@@ -33,12 +33,16 @@ async def execute_run(
     archetypes: list[str] | None,
     sources_service: Any,
     scan_service: Any | None = None,
+    verification_service: Any | None = None,
+    tool_executor: Any | None = None,
 ) -> GraphState:
     """Execute a graph run, finalizing it or halting for a human decision."""
     director = Director(
         archetypes,
         sources_service=sources_service,
         scan_service=scan_service,
+        verification_service=verification_service,
+        tool_executor=tool_executor,
     )
     final = await director.run(state)
     if is_awaiting_review(final):
@@ -58,9 +62,12 @@ async def resume_run(
     *,
     sources_service: Any | None = None,
     scan_service: Any | None = None,
+    services: tuple[Any, Any, Any, Any] | None = None,
 ) -> GraphState:
     """Apply a human decision to a pending review and resume the run.
 
+    ``services`` é o pacote ``(sources, scan, verification, tools)`` já
+    montado pelo router; do contrário injeta o que for passado explicitamente.
     Raises ``ValueError`` with a user-facing message when the run is not
     awaiting the supplied approval.
     """
@@ -75,16 +82,30 @@ async def resume_run(
         raise ValueError("approval_id mismatch")
 
     state = GraphState.model_validate(saved)
-    state.set_sources_service(sources_service or build_sources_service())
-    if scan_service is not None:
-        state.set_scan_service(scan_service)
+    if services is not None:
+        _inject_runtime(state, services)
+    else:
+        state.set_sources_service(sources_service or build_sources_service())
+        if scan_service is not None:
+            state.set_scan_service(scan_service)
     state.human_decision = decision
 
     composition = state.composition or None
+    if services is not None:
+        sources, scan, verification, tools = services
+    else:
+        sources, scan, verification, tools = (
+            sources_service or build_sources_service(),
+            scan_service,
+            None,
+            None,
+        )
     director = Director(
         archetypes=composition,
-        sources_service=sources_service or build_sources_service(),
-        scan_service=scan_service,
+        sources_service=sources,
+        scan_service=scan,
+        verification_service=verification,
+        tool_executor=tools,
     )
     entry = state.next_agent or (composition[0] if composition else "emperor")
     final = await director.run_from(state, entry)
@@ -104,18 +125,32 @@ def state_from_run(
     *,
     sources_service: Any | None = None,
     scan_service: Any | None = None,
+    services: tuple[Any, Any, Any, Any] | None = None,
 ) -> GraphState:
     """Reconstruir o estado persistido de um run para retomá-lo.
 
+    ``services`` é o pacote ``(sources, scan, verification, tools)`` já
+    montado pelo router; do contrário injeta o que for passado explicitamente.
     Levanta ``ValueError`` quando o run não guardou estado resumível.
     """
     if not run.result:
         raise ValueError("Run não possui estado persistido para retomar")
     state = GraphState.model_validate(run.result)
-    state.set_sources_service(sources_service or build_sources_service())
-    if scan_service is not None:
-        state.set_scan_service(scan_service)
+    if services is not None:
+        _inject_runtime(state, services)
+    else:
+        state.set_sources_service(sources_service or build_sources_service())
+        if scan_service is not None:
+            state.set_scan_service(scan_service)
     return state
+
+
+def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any]) -> None:
+    sources, scan, verification, tools = services
+    state.set_sources_service(sources)
+    state.set_scan_service(scan)
+    state.set_verification_service(verification)
+    state.set_tool_executor(tools)
 
 
 async def stream_run_events(

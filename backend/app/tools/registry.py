@@ -34,6 +34,10 @@ class ToolRegistry:
     def available_tools(self) -> list[str]:
         return list(self._tools)
 
+    def specs(self) -> list[ToolSpec]:
+        """All registered specs (the Chariot filters by ``destructive`` flag)."""
+        return list(self._tools.values())
+
     @staticmethod
     def authorize(tool: ToolSpec, allowed_tools: tuple[str, ...]) -> bool:
         if "*" in allowed_tools:

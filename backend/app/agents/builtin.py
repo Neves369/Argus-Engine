@@ -19,6 +19,8 @@ from app.orchestration.state import GraphState
 from app.scanning.service import ScanBlockedError, ScanReport
 from app.services.scan_findings import derive_findings_from_scan
 from app.services.source_findings import derive_findings_from_sources
+from app.tools.executor import ToolExecutor
+from app.tools.spec import ToolKind
 
 
 def _utcnow() -> datetime:
@@ -456,22 +458,28 @@ class FoolAgent(BaseArchetype):
 
 
 class ChariotAgent(BaseArchetype):
-    """Execution node: safety checks (modo normal) ou execução controlada (devil)."""
+    """Execution node: safety checks + live non-destructive execution
+    (modo normal) ou execução controlada (devil)."""
 
     key = "chariot"
     name = "O Carro"
     role = "executor"
     model_tier = "cheap"
     output_schema = ChariotOutput
+    # O Carro é o arquétipo de execução: em modo normal ele pode invocar
+    # qualquer tool NÃO destrutiva registrada pelo operador (TOOLS_MANIFEST) —
+    # o gating de `destructive` continua sendo a fronteira real (destrutivo só
+    # no Modo Diabo).
+    allowed_tools: tuple[str, ...] = ("*",)
 
     def system_prompt(self) -> str:
         return (
             "You are O Carro, the controlled-execution archetype. "
             "In normal mode you perform non-invasive safety checks over signals "
             "already observed (passive scan, configured sources, CVE "
-            "correlation): you FLAG risk signals as candidate findings for a "
-            "human operator — you never run anything against the target on your "
-            "own. "
+            "correlation) and MAY re-probe the target live to verify candidate "
+            "findings and run operator-provided non-destructive tools — you "
+            "never run anything destructive or evasive. "
             "In execution (devil) mode you only act when the run is explicitly "
             "in execution mode AND a human operator has approved this specific "
             "action against the authorized target — never on your own "
@@ -489,14 +497,16 @@ class ChariotAgent(BaseArchetype):
         return await self._controlled_execution(state)
 
     async def _safety_check(self, state: GraphState) -> dict:
-        """Safety check (modo normal — sem aprovação humana).
+        """Safety check + execução real NÃO destrutiva (modo normal).
 
         Observa sinais não invasivos já disponíveis (scan passivo + fontes
         configuradas + correlação CVE por banner) e marca indícios de risco
-        como achados candidatos (`requires_human_review=True`), sujeitos à
-        revisão do operador. Nada é executado contra o alvo; um scan
-        bloqueado (kill-switch/fora de escopo) é silencioso — nunca fabrica
-        achado sem dado real observado.
+        como achados candidatos (`requires_human_review=True`). Em seguida,
+        com `mode="live"`, executa a camada real (Etapa 15): re-prova os
+        candidatos contra o alvo ao vivo (verificação) e invoca as tools NÃO
+        destrutivas do operador. Nada destrutivo roda; um scan/probe bloqueado
+        (kill-switch/fora de escopo) é silencioso — nunca fabrica achado sem
+        dado real observado.
         """
         started_at = _utcnow()
 
@@ -532,17 +542,27 @@ class ChariotAgent(BaseArchetype):
             finding["id"] = f"F-{len(state.findings) + len(findings) + 1}"
             findings.append(finding)
 
+        # Execução real não destrutiva: verificação ao vivo + tools do operador.
+        tool_runs, verified, refuted = await self._live_execution(state, findings, report)
+
         new_confidence = min(1.0, state.confidence + 0.2)
+        live = bool(verified or refuted or tool_runs)
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "safety",
-            "mode": "simulate",
+            "mode": "live" if live else "simulate",
             "findings": len(findings),
             "sources_consulted": len(sources),
             "scanned": report is not None,
             "pages_observed": len(report.pages) if report is not None else 0,
             "cve_correlations": len(correlated),
         }
+        if live:
+            entry["verified"] = verified
+            entry["refuted"] = refuted
+            entry["tools_tried"] = len(tool_runs)
+        if tool_runs:
+            entry["tool_runs"] = tool_runs
         update: dict[str, Any] = {
             "findings": [*state.findings, *findings],
             "confidence": new_confidence,
@@ -557,6 +577,97 @@ class ChariotAgent(BaseArchetype):
             self._trace_update(state, entry, started_at, confidence_after=new_confidence)
         )
         return update
+
+    async def _live_execution(
+        self,
+        state: GraphState,
+        findings: list[dict[str, Any]],
+        report: ScanReport | None,
+    ) -> tuple[list[dict[str, Any]], int, int]:
+        """Layer de execução real NÃO destrutiva de um run normal (Etapa 15).
+
+        1. **Verificação ao vivo:** re-prova os achados vindos do scan contra
+           o alvo (sondas GET no escopo/robots/rate-limit) e anexa
+           ``finding["verification"]`` (confirmado ou refutado com evidência
+           presencial).
+        2. **Tools do operador:** invoca uma vez cada tool NÃO destrutiva do
+           `TOOLS_MANIFEST` (gating `destructive` da Etapa 5 respeitado).
+
+        Determinístico offline: sem verifier/executor injetados nada roda e as
+        contagens ficam zero. Qualquer falha degrada para registro, nunca
+        derruba o run.
+        """
+        verified, refuted = 0, 0
+        verifier = state.verification_service
+        if verifier is not None:
+            try:
+                outcomes = await verifier.verify(
+                    report=report, findings=findings, target=state.target
+                )
+            except Exception:  # noqa: BLE001 - execução nunca derruba o run
+                outcomes = [None] * len(findings)
+            for finding, outcome in zip(findings, outcomes, strict=True):
+                if outcome is None:
+                    continue
+                finding["verification"] = outcome
+                if outcome.get("confirmed"):
+                    verified += 1
+                elif not (outcome.get("probe") or {}).get("skipped"):
+                    refuted += 1
+
+        tool_runs: list[dict[str, Any]] = []
+        executor = state.tool_executor
+        if executor is not None:
+            target_name = str(state.target.get("name", ""))
+            for spec in executor.registry.specs():
+                if spec.destructive:
+                    continue
+                tool_runs.append(await self._run_tool(executor, spec, target_name))
+        return tool_runs, verified, refuted
+
+    async def _run_tool(self, executor: ToolExecutor, tool, target: str) -> dict[str, Any]:
+        """Invoke one non-destructive tool once, recording the auditable outcome.
+
+        A falha da tool é registrada (``outcome="failed"``) — jamais torna o
+        run inválido; o saída é compactada para caber no histórico.
+        """
+        started_at = _utcnow()
+        try:
+            result = await executor.execute(
+                tool.name,
+                {"target": target, "url": target},
+                devil_mode=False,
+            )
+            return {
+                "tool": tool.name,
+                "kind": tool.kind.value if isinstance(tool.kind, ToolKind) else str(tool.kind),
+                "destructive": False,
+                "outcome": "ok",
+                "duration_ms": round((_utcnow() - started_at).total_seconds() * 1000, 2),
+                "detail": self._compact_tool_result(result),
+            }
+        except Exception as exc:  # noqa: BLE001 - falha de tool degrada, nunca quebra o run
+            return {
+                "tool": tool.name,
+                "kind": tool.kind.value if isinstance(tool.kind, ToolKind) else str(tool.kind),
+                "destructive": False,
+                "outcome": "failed",
+                "duration_ms": round((_utcnow() - started_at).total_seconds() * 1000, 2),
+                "detail": {"note": str(exc)[:300]},
+            }
+
+    @staticmethod
+    def _compact_tool_result(result: dict[str, Any]) -> dict[str, Any]:
+        if "status_code" in result:
+            return {
+                "status_code": result.get("status_code"),
+                "body": str(result.get("body", ""))[:400],
+            }
+        return {
+            "returncode": result.get("returncode"),
+            "stdout": str(result.get("stdout", ""))[:400],
+            "stderr": str(result.get("stderr", ""))[:300],
+        }
 
     async def _controlled_execution(self, state: GraphState) -> dict:
         """Execução controlada (devil mode): ação destrutiva exige aprovação

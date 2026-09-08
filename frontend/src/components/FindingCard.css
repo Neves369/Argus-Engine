@@ -85,6 +85,21 @@
   color: #fcd34d;
 }
 
+.finding-card-badge--verified {
+  background: rgba(134, 239, 172, 0.14);
+  color: #86efac;
+}
+
+.finding-card-badge--refuted {
+  background: rgba(125, 211, 252, 0.14);
+  color: #7dd3fc;
+}
+
+.finding-card-badge--skipped {
+  background: rgba(160, 174, 192, 0.14);
+  color: #cbd5e1;
+}
+
 .finding-card-badge--category {
   background: rgba(196, 181, 253, 0.12);
   color: #c4b5fd;

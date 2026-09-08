@@ -103,6 +103,12 @@ Combinações sugeridas e o detalhe de cada carta: `docs/GUIA_CARTAS.md`.
     durante a execução, não só no fim.
   - **Log**: a trilha de passos do run.
   - **Chat**: as mensagens trocadas pelos agentes.
+- No modo normal (sem Modo Death), o **Carro** roda uma camada de **execução real
+  não destrutiva**: ele **verifica ao vivo** cada lead do scan contra o alvo
+  (uma consulta simples, respeitando scope/robots) e também pode invocar **uma
+  vez cada ferramenta de checagem** que o operador do sistema tiver registrado
+  (ex.: um verificador de status HTTP). Nada disso toca em exploits nem em
+  atividade evasiva — é checagem, não ataque.
 - No canvas, o **nó ativo** fica destacado conforme o grafo avança.
 - **Se o run for cancelado (ou falhar) no meio**, o sistema guarda o estado até
   aquele momento. Ao abrir esse run (Dashboard/Sessões → **Ver**), o painel mostra
@@ -137,6 +143,13 @@ Depois que o run conclui, o painel cai na aba **Resultados**. Cada achado traz:
 - **Severidade**: critical / high / medium / low / info
 - **Categoria** (padrões como CWE/OWASP) e, quando aplicável, **escore CVSS**
 - **CVEs** relacionados e referência a **exploit público conhecido**, se houver
+- **Verificação ao vivo** (quando o Carro sondou o lead em modo normal), em três
+  estados:
+  - **verificado ao vivo** — o lead continua presente na resposta fresca do alvo;
+  - **não reprovado** — a resposta fresca não reproduziu o lead (por exemplo, o
+    header de segurança passou a existir);
+  - **verificação pulada** — a sonda não pôde ser enviada (fora de escopo, alvo
+    fora do ar ou bloqueado por `robots.txt`); o motivo aparece junto ao selo.
 - **Remediação**: o que fazer para corrigir
 - **Evidência**: o dado real que sustentou o achado
 - **Referências** para consulta
@@ -169,18 +182,19 @@ As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte
 
 - O toggle **Modo Death** no menu habilita o modo de execução destrutiva/invasiva
   (o arquétipo **O Carro**).
-- **Sem o Modo Death**, o Carro roda um **safety check**: observa sinais não
+- **Sem o Modo Death**, o Carro roda o **modo normal**: observa sinais não
   invasivos já disponíveis (scan passivo, fontes, correlação CVE) e sinaliza
-  **indícios de risco** como achados candidatos — sem executar nada contra o
-  alvo e sem exigir aprovação.
+  **indícios de risco** como achados candidatos — e em seguida **verifica-os ao
+  vivo** contra o alvo (checagem, não ataque) e roda as ferramentas de checagem
+  do operador, tudo respeitando escopo/robots e sem exigir aprovação.
 - **Com o Modo Death**, cada ação do Carro para e espera seu **Aprovar /
   Rejeitar** individual.
-- **Importante, honestamente:** o Argus Engine **não vem com nenhum backend de
-  execução real** plugado nesta carta. Mesmo aprovando uma ação no Modo Death, a
-  resposta é um registro honesto de que "nenhum backend de execução real está
-  configurado" — **nada é de fato executado contra o alvo**. O Modo Death existe
-  para demonstrar e testar o fluxo de aprovação humana; a construção do backend
-  de execução é uma das últimas etapas previstas do projeto.
+- **Importante, honestamente:** no **Modo Death** não há backend de execução
+  destrutiva. Mesmo aprovando uma ação, a resposta é um registro honesto de que
+  "nenhum backend de execução real está configurado" — **nada destrutivo é de
+  fato executado contra o alvo**. O Modo Death existe para demonstrar e testar o
+  fluxo de aprovação humana (as sondas e ferramentas de checagem não destrutivas
+  do modo normal são a execução real que já existe — ver `docs/adr/0009-chariot-execution.md`).
 - Nada destrutivo acontece **sozinho**: cada ação do Modo Death para e espera
   seu **Aprovar/Rejeitar**.
 - **Scanning ativo não é Modo Death.** Visitar o site, identificar tecnologias e
@@ -195,7 +209,8 @@ As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte
 | **Sessão por cartas** | O Imperador escala apenas as cartas escolhidas (ordem na mesa não importa); Justiça fecha. |
 | **Sem chave de API** | Fontes dependentes de chave degradam para simulado → podem não gerar achados (correto). |
 | **Alvo fora do escopo permitido** | Sem visita ao site e sem consultas; o sistema não trabalha lá. |
-| **Modo Death ligado** | O Carro vira execução controlada; cada ação exige sua aprovação (e hoje não têm backend de execução). |
+| **Modo normal** | O Carro verifica ao vivo os leads do scan e roda as ferramentas de checagem do operador (não destrutivas), sem exigir aprovação. |
+| **Modo Death ligado** | O Carro vira execução controlada; cada ação exige sua aprovação (no Death, sem backend de execução destrutiva por enquanto). |
 | **Interruptor de emergência** (`KILL_SWITCH`) | Interrompe o run em andamento e bloqueia novos (ação do operador — ver `RUNBOOK.md` §4). |
 
 ## 12. Problemas comuns

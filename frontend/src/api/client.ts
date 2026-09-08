@@ -114,6 +114,16 @@ export interface RunFinding {
   confidence?: number;
   status?: string;
   requires_human_review?: boolean;
+  verification?: {
+    confirmed: boolean;
+    probe: {
+      skipped: boolean;
+      skip_reason?: string | null;
+      status_code?: number | null;
+      url?: string;
+      observed_at?: string;
+    };
+  } | null;
 }
 
 export interface RunMeta {

@@ -84,6 +84,7 @@ def finding_report(finding: Finding) -> dict[str, Any]:
         "confidence": finding.confidence,
         "status": finding.status,
         "requires_human_review": finding.requires_human_review,
+        "verification": meta.get("verification"),
     }
 
 

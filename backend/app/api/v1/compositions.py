@@ -13,10 +13,12 @@ from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
 from app.scanning.service import build_scan_service
+from app.scanning.verify import build_verification_service
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
 from app.services.run_control import RunLockedError, ensure_no_active_run
 from app.services.run_executor import execute_run
 from app.sources.service import build_sources_service
+from app.tools.executor import build_tool_executor
 
 router = APIRouter(prefix="/compositions", tags=["compositions"])
 
@@ -131,9 +133,17 @@ async def execute_composition(
         budget_cost=settings.default_budget_cost,
         composition=archetypes,
     )
-    state.set_sources_service(build_sources_service())
-    scan_service = build_scan_service()
-    state.set_scan_service(scan_service)
+    services = (
+        build_sources_service(),
+        build_scan_service(),
+        build_verification_service(),
+        build_tool_executor(),
+    )
+    sources, scan, verification, tools = services
+    state.set_sources_service(sources)
+    state.set_scan_service(scan)
+    state.set_verification_service(verification)
+    state.set_tool_executor(tools)
     run = Run(target_id=target_id, session_id=session.id, status="running", started_at=_utcnow())
     db.add(run)
     await db.flush()
@@ -146,8 +156,10 @@ async def execute_composition(
             target_id,
             state,
             archetypes,
-            build_sources_service(),
-            scan_service,
+            sources,
+            scan,
+            verification,
+            tools,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"

@@ -48,6 +48,25 @@ Controles de scanning ativo:
 O scanning ativo NÃO é Modo Diabo — é funcionalidade padrão da plataforma. Ver
 `docs/adr/0006-active-scanning.md`.
 
+## Execução real não destrutiva (modo normal)
+
+O **modo normal** do Carro inclui uma camada de execução real **não destrutiva**
+(ver `docs/adr/0009-chariot-execution.md`):
+
+- **Sondas de verificação ao vivo** — re-prova os leads do scan com uma GET sob
+  os MESMOS controles do scanning ativo (escopo, kill-switch, robots, rate
+  limit, timeout, auditoria). Bloqueio vira "pulado", nunca falso resultado.
+- **Tools do operador** — invoca uma vez cada tool **não destrutiva** do
+  `TOOLS_MANIFEST`. Ferramentas destrutivas (`destructive: true`) **nunca**
+  rodam em modo normal — essa fronteira é o gating da Etapa 5
+  (`docs/adr/0007-tool-sandbox.md`).
+
+Esta camada NÃO é Modo Diabo: é checagem/observação sobre escopo autorizado,
+não execução de scripts invasivos ou evasivos. O Modo Diabo (exploits,
+atividades evasivas) continua sem backend de execução real — por decisão de
+produto, só deve evoluir atrás da camada Diabo completa (escopo + sandbox +
+kill-switch + auditoria + HITL).
+
 ## Modo Diabo
 
 O `DEVIL_MODE` habilita a execução **sem restrições** de scripts invasivos/destrutivos

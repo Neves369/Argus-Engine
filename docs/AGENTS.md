@@ -99,6 +99,23 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   O relatório expõe `resumable`; a UI mostra **Retomar run de onde parou** no
   `RunPanel` (`frontend/src/App.tsx` `handleResume` + `seedReport`, que pré-carrega
   log/chat sem duplicar entradas novas via `lastTraceLenRef`/`lastHistoryLenRef`).
+- **Execução real não destrutiva (Etapa 15):** o Carro em **modo normal** ganha
+  uma camada de execução real além do safety check (ver `docs/adr/0009-chariot-execution.md`):
+  (1) **Verificação ao vivo** — `VerificationService` (`app/scanning/verify.py`)
+  re-prova o `probe_url` dos leads do scan com uma GET sob os mesmos controles do
+  scanner (escopo/kill-switch/robots/rate-limit/timeout) e anexa
+  `finding["verification"]` (`confirmed`/refutado/pulado com `skip_reason`);
+  (2) **Tools do operador** — invoca uma vez cada tool **não destrutiva** do
+  `TOOLS_MANIFEST` via `ToolExecutor` (gating `destructive` da Etapa 5), falha
+  degrada (`outcome: "failed"`). `ChariotOutput.mode` fica `"live"` quando
+  executou (`verified`/`refuted`/`tools_tried`/`tool_runs`) e `"simulate"` sem
+  execução (offline/testes). **IMPORTANTE:** `Director.run` reconstrói o
+  `GraphState` via `model_dump()` — que descarta `PrivateAttr` — então todo
+  serviço (sources/scan/verification/tools) precisa ser passado ao **`Director`
+  em cada ponto de criação** (`runs.py` create/stream/resume, `compositions.py`,
+  `run_executor.execute_run`), não apenas setado no estado. Tool **destrutiva
+  nunca roda** em modo normal; o Modo Diabo continua sem backend
+  (HITL → `no_backend`).
 - **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`
   remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo

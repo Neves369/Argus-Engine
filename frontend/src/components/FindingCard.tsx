@@ -24,6 +24,7 @@ function FindingCard({
   const cves = finding.cves?.filter(Boolean) ?? [];
   const exploits = finding.known_exploits?.filter(Boolean) ?? [];
   const references = finding.references?.filter(Boolean) ?? [];
+  const verification = finding.verification ?? null;
 
   return (
     <div className="finding-card">
@@ -51,6 +52,17 @@ function FindingCard({
         )}
         {finding.requires_human_review && (
           <span className="finding-card-badge finding-card-badge--review">requer revisão</span>
+        )}
+        {verification?.confirmed && (
+          <span className="finding-card-badge finding-card-badge--verified">verificado ao vivo</span>
+        )}
+        {verification && !verification.confirmed && !verification.probe.skipped && (
+          <span className="finding-card-badge finding-card-badge--refuted">não reprovado</span>
+        )}
+        {verification?.probe.skipped && (
+          <span className="finding-card-badge finding-card-badge--skipped">
+            verificação pulada{verification.probe.skip_reason ? ` (${verification.probe.skip_reason})` : ''}
+          </span>
         )}
       </div>
 

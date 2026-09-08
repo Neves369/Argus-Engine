@@ -126,6 +126,9 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `SCAN_RESPECT_ROBOTS` | `true` (default) faz o scanner respeitar `robots.txt` do alvo (self-imposed restriction). |
 | `SCAN_EXTRA_HEADERS` / `SCAN_COOKIES` | Auth estática do scan (slice 1 de "login + scan"): headers extras em JSON (`{"Authorization":"Bearer ..."}`) e cookies de sessão (`session=abc; theme=dark`) aplicados a todo request ao alvo. Vazios por padrão. Credenciais vivem no env e **nunca** vão para log/relatório. |
 | `SCAN_LOGIN_URL` / `SCAN_LOGIN_USERNAME` / `SCAN_LOGIN_PASSWORD` | Login dinâmico (slice 2 de "login + scan"): o scanner submete o form de login do alvo e reutiliza a sessão nos demais requests. Vazios por padrão. Falha no login **não** bloqueia o scan — vira nota no relatório (`report.auth`); só efetiva quando os três estão preenchidos. |
+| `CHARIOT_VERIFY_ENABLED` | `true` (default) liga as **sondas de verificação ao vivo** do Carro em modo normal (Etapa 15): re-prova os leads do scan com GET sob os controles do scanner. Desligue para runs 100% passivos. |
+| `CHARIOT_VERIFY_MAX_PROBES` | Teto de sondas por run normal (default 10). Reduza se o alvo for sensível a volume; aumente com parcimônia (cada sonda é uma GET real no alvo). |
+| `TOOLS_MANIFEST` | Caminho do manifest das tools do operador (JSON). As tools NÃO destrutivas (`destructive: false`) são invocadas **uma vez cada** pelo Carro em modo normal; as destrutivas só rodam no Modo Diabo. Manifest vazio/ausente → o Carro degrada para as sondas embutidas. |
 
 ## 4. Kill-switch
 
@@ -255,6 +258,38 @@ Scanning ativo é funcionalidade core — roda sempre que o alvo está em
 3. Verifique `SCAN_REQUEST_TIMEOUT` — timeouts muito curtos causam falhas em
    páginas lentas.
 
+### 6.5.1 Execução real do Carro (Etapa 15) — sondas e tools
+
+Além do scanning, o **modo normal** do Carro executa, sob os mesmos controles:
+
+- **Sondas de verificação ao vivo:** re-prova o `probe_url` dos achados com uma
+  GET dentro de escopo/kill-switch/robots/rate-limit/timeout
+  (`VERIFICATION_SERVICE` reutiliza `SCAN_RATE_LIMIT`/`SCAN_REQUEST_TIMEOUT`/
+  `SCAN_MAX_BODY_BYTES`/`SCAN_USER_AGENT`). Teto em `CHARIOT_VERIFY_MAX_PROBES`
+  (default 10), off via `CHARIOT_VERIFY_ENABLED=false`. Bloqueio (robots, fora
+  de escopo, host fora do ar) vira **pulado** com `skip_reason` — nunca falso
+  resultado. Apenas achados com `probe_url`/`affected` sondável são verificados;
+  os demais ficam `verification: null`.
+- **Tools do operador:** cada tool **não destrutiva** do `TOOLS_MANIFEST` é
+  invocada **uma vez** por run normal (kwargs `target`/`url`). Destrutivas
+  (`destructive: true`) **nunca** rodam fora do Modo Diabo. Falha degrada para
+  `outcome: "failed"` no histórico, sem derrubar o run.
+
+**Runbook — run normal gravou `mode: "simulate"` sem ferramentas/sondas:**
+1. Confirme que o target está em `ALLOWED_SCOPES` (sem escopo validado não há
+   execução, nem verificação).
+2. Verifique se o run não seguiu o caminho offline (sem serviços injetados) —
+   em dev/testes, `simulate` é o comportamento esperado.
+3. Para tools: confira `TOOLS_MANIFEST` — ausente/vazio → degrada para sondas.
+4. Para sondas: confira `CHARIOT_VERIFY_ENABLED` e `CHARIOT_VERIFY_MAX_PROBES`.
+
+**Runbook — sonda marcada como "pulada":**
+1. Veja o `skip_reason` no `verification.probe` do achado (relatório/export).
+2. `robots disallow` → esperado com `SCAN_RESPECT_ROBOTS=true` (mesma política
+   do crawl); procure o path correto ou ambiente controlado.
+3. `unreachable` → o host não respondeu à sonda (rede instável/firewall); nada
+   é fabricado quando o alvo não responde.
+
 ### 6.6 Local knowledge de falsos positivos (Etapa 6)
 
 O Filtro de Qualidade suprime findings que casam com padrões de falso positivo
@@ -377,6 +412,8 @@ roda dentro de um **container Docker descartável** (`docker run --rm` de nome
 | UI pede login / sessão expira | §10 |
 | Scanning ativo bloqueado por robots.txt | §6.5 |
 | Scanning ativo muito lento ou com timeouts | §6.5 |
+| Run normal sem sondas/tools gravou `mode: "simulate"` | §6.5.1 |
+| Sonda de verificação marcada como "pulada" no relatório | §6.5.1 |
 | Falso positivo recorrente / regra aprendida agressiva | §6.6 |
 
 ## 10. Autenticação leve da UI (Etapa 11 — hardening)

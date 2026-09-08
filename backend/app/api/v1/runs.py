@@ -16,6 +16,7 @@ from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.state import GraphState
 from app.scanning.service import build_scan_service
+from app.scanning.verify import build_verification_service
 from app.schemas.decision import DecisionRead
 from app.schemas.finding import FindingRead
 from app.schemas.review import ReviewCreate
@@ -34,12 +35,32 @@ from app.services.run_executor import (
     stream_run_events,
 )
 from app.sources.service import build_sources_service
+from app.tools.executor import build_tool_executor
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _runtime_services() -> tuple[Any, Any, Any, Any]:
+    """Build the four runtime-only dependencies for a run (sources, scan,
+    verification probes, tool executor); safe to call inside a request."""
+    return (
+        build_sources_service(),
+        build_scan_service(),
+        build_verification_service(),
+        build_tool_executor(),
+    )
+
+
+def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any]) -> None:
+    sources, scan, verification, tools = services
+    state.set_sources_service(sources)
+    state.set_scan_service(scan)
+    state.set_verification_service(verification)
+    state.set_tool_executor(tools)
 
 
 async def _guard_no_active_run(db: DBSession) -> None:
@@ -91,9 +112,9 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         devil_mode=payload.devil_mode,
         composition=archetypes or [],
     )
-    state.set_sources_service(build_sources_service())
-    scan_service = build_scan_service()
-    state.set_scan_service(scan_service)
+    services = _runtime_services()
+    _inject_runtime(state, services)
+    sources, scan, verification, tools = services
 
     try:
         await execute_run(
@@ -102,8 +123,10 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
             payload.target_id,
             state,
             archetypes,
-            build_sources_service(),
-            scan_service,
+            sources,
+            scan,
+            verification,
+            tools,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -195,11 +218,15 @@ async def stream_run(
         devil_mode=devil_mode,
         composition=archetypes or [],
     )
-    state.set_sources_service(build_sources_service())
-    scan_service = build_scan_service()
-    state.set_scan_service(scan_service)
+    services = _runtime_services()
+    _inject_runtime(state, services)
+    sources, scan, verification, tools = services
     director = Director(
-        archetypes, sources_service=build_sources_service(), scan_service=scan_service
+        archetypes,
+        sources_service=sources,
+        scan_service=scan,
+        verification_service=verification,
+        tool_executor=tools,
     )
     return StreamingResponse(
         stream_run_events(db, run, state, director),
@@ -238,19 +265,19 @@ async def resume_run_stream(run_id: int, db: DBSession):
     composition = (run.result or {}).get("composition") or None
     if composition:
         composition = list(composition)
-    state = state_from_run(
-        run,
-        sources_service=build_sources_service(),
-        scan_service=build_scan_service(),
-    )
+    services = _runtime_services()
+    state = state_from_run(run, services=services)
     # Num resume geral não há decisão humana pendente — nunca re-entrar num
     # gate HITL por um pending_review/decision legado do estado persistido.
     state.pending_review = None
     state.human_decision = None
+    sources, scan, verification, tools = services
     director = Director(
         composition,
-        sources_service=build_sources_service(),
-        scan_service=build_scan_service(),
+        sources_service=sources,
+        scan_service=scan,
+        verification_service=verification,
+        tool_executor=tools,
     )
     entry = director.resume_agent(state)
 
@@ -341,8 +368,7 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
             db,
             run,
             decision,
-            sources_service=build_sources_service(),
-            scan_service=build_scan_service(),
+            services=_runtime_services(),
         )
     except ValueError as exc:
         if "mismatch" in str(exc):

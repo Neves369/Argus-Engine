@@ -84,6 +84,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 12 | Scanning Ativo (OWASP Top 10) | Download de página, crawl, análise de headers/forms, detecção de vulnerabilidades | ✅ Concluída |
 | 13 | Integração de Ferramentas Reais | NVD/CISA KEV/CVE.report no pipeline, extractors de OSINT, tools reais | ✅ Concluída |
 | 14 | Supervisor Universal | Imperador rege todo run; cartas = time disponível; Carro safety check | ✅ Concluída |
+| 15 | Execução Real (Carro) | Modo normal: verificação ao vivo + tools do operador (não destrutivas); Modo Diabo segue adiado | ✅ Concluída |
 
 ---
 
@@ -832,14 +833,65 @@ controlada do Modo Diabo.
       `tests/test_resume_api.py`).
 
 **Observações / pendências**
-- Backend de **execução real** para o Carro (testes ativos não destrutivos no modo
-  normal; exploits/atividades evasivas no Modo Diabo) permanece adiado — é uma das
-  últimas coisas do projeto (ver `docs/GUIA_CARTAS.md`, seção do Carro). Hoje o
-  Carro só sinaliza (safety) ou registra `no_backend` após aprovação HITL.
+- Backend de **execução real** para o Carro já existe para o **modo normal** (Etapa 15):
+  verificação ao vivo + tools não destrutivas do operador. Fica adiado apenas o
+  **Modo Diabo** com backend destrutivo/exploits (decisão de produto registrada na
+  Etapa 2 + `SECURITY.md`); hoje o caminho Diabo segue HITL → `no_backend`.
 - Runs órfãos presos como `running` no banco (processo morto no meio do run)
   seguem **não resumíveis pela UI**: a retomada é permitida para `cancelled`/
   `failed`; recuperar um `running` órfão exige decisão operacional
   (kill-switch + limpeza manual do status) — ver `RUNBOOK.md`.
+
+## Etapa 15 — Execução Real não destrutiva (Carro, modo normal)
+
+**Status:** `[x]` Concluída
+
+**Objetivo:** dar ao Carro um backend de execução real **seguro** para o modo
+normal: sondas de verificação ao vivo sobre os leads do scan + tools não
+destrutivas do operador — sem tocar no Modo Diabo (que segue deliberadamente
+sem backend destrutivo).
+
+**Entregáveis**
+- [x] `VerificationService` (`app/scanning/verify.py`): re-prova o `probe_url`
+  de cada candidato com GET sob os mesmos controles do scanner (escopo,
+  kill-switch, robots por host, rate limit, timeout) e anexa
+  `finding["verification"]` — `confirmed` / refutado / pulado com `skip_reason`
+  (nunca fabrica resultado). Cap `CHARIOT_VERIFY_MAX_PROBES`, off
+  `CHARIOT_VERIFY_ENABLED`.
+- [x] Sondabilidade: `derive_findings_from_scan` grava `probe_url` por achado
+  (`app/services/scan_findings.py`).
+- [x] Tools do operador no run normal: Carro invoca **uma vez** cada tool NÃO
+  destrutiva do `TOOLS_MANIFEST` via `ToolExecutor` (Etapa 5); falha degrada
+  (`outcome: "failed"`), nunca derruba o run; tool destrutiva nunca roda fora
+  do Modo Diabo.
+- [x] Registro auditável: `ChariotOutput.mode` passa a `"live"` quando houve
+  execução real (`verified`/`refuted`/`tools_tried`/`tool_runs`); sem execução,
+  `mode: "simulate"` como antes. `action` continua `"safety"`; `execute` segue
+  reservado ao caminho Diabo.
+- [x] Injeção por composição: verifier + executor chegam via `Director.__init__`
+  /`provision` e `state.set_*` em `runs.py`, `compositions.py`,
+  `run_executor.py` (`execute_run`/`state_from_run`).
+- [x] Exposição: `verification` em `finding_report` (via `meta`, sem migração);
+  badge na UI do FindingCard (verificado / não reprovado / pulada).
+- [x] Testes determinísticos (`tests/test_chariot_execution.py`) + ADR-0009.
+
+**Critérios de aceite**
+- [x] `ruff check app tests` e `pytest -q` verdes (426 passed, 2 skipped);
+      frontend `npm run lint`/`build`/`test` verdes.
+- [x] Run normal com verifier + tools injetados grava `mode: "live"` com
+      contagens e evidência por achado; sem serviços, `mode: "simulate"`.
+- [x] Sonda de lead do scan confirma ao vivo / refuta quando a página foi
+      consertada / pula quando robots/bloqueio — sem requisição indevida.
+- [x] Tool destrutiva jamais invocada pelo Carro em modo normal; falha de tool
+      ou do verifier degrada o run em vez de derrubá-lo.
+
+**Observações / pendências**
+- Modo Diabo (execução destrutiva/exploits) continua **sem backend** — ver
+  Etapa 2 e `docs/adr/0009-chariot-execution.md`.
+- Recuperar `/runs/stream` e `/resume` da mesma fronteira: as sondas/tools
+  rodam em todo run normal (build manual e composições) porque os serviços são
+  injetados em todos os pontos de criação do Director (`app/api/v1/runs.py`,
+  `app/api/v1/compositions.py`).
 
 ## Próximos passos sugeridos
 

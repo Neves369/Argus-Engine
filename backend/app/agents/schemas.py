@@ -82,19 +82,24 @@ class ChariotOutput(ArchetypeOutputBase):
     Fields are optional beyond ``agent``/``action``/``mode`` because the
     branch taken depends on the mode and HITL approval state at call time: a
     ``safety`` entry (normal mode, no approval needed) flags non-invasive risk
-    signals observed from scan/sources as candidate findings; a ``declined``
-    (operator rejected) entry never reaches the LLM gateway or produces
-    findings. ``no_backend`` is reached once the action IS approved but no real
-    execution tool is wired up — Argus Engine ships without one by design (see
-    ADR on Devil Mode scope); this action honestly reports that nothing was
-    performed rather than fabricating a success record. ``execute`` is reserved
-    for when an operator has actually configured a real execution backend.
+    signals observed from scan/sources as candidate findings; an ``execute``
+    entry records real non-destructive execution in normal mode (``mode="live"``:
+    live verification probes + operator-provided non-destructive tools); a
+    ``declined`` (operator rejected, devil mode) entry never reaches the LLM
+    gateway or produces findings. ``no_backend`` is reached in devil mode once
+    the action IS approved but no real execution tool is wired up (Argus Engine
+    ships without a destructive backend by design — see ADR on Devil Mode
+    scope); this action honestly reports that nothing was performed rather than
+    fabricating a success record.
     """
 
     action: Literal["safety", "declined", "no_backend", "execute"]
-    mode: Literal["simulate", "devil"]
+    mode: Literal["simulate", "devil", "live"]
     note: str | None = None
     findings: int | None = None
+    verified: int | None = None
+    refuted: int | None = None
+    tools_tried: int | None = None
     tokens: int | None = None
 
 

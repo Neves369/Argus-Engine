@@ -77,33 +77,45 @@ sessão.
 
 Duas caras, dependendo do **Modo Diabo**:
 
-1. **Modo normal (Modo Diabo desligado): safety check.** O Carro observa sinais
-   **não invasivos** já disponíveis — resultado do scanning ativo (headers,
-   cookies, forms, fingerprint) + fontes consultadas + correlação CVE por
-   banner — e **sinaliza indícios de risco** (ex.: header de segurança ausente,
-   cookie sem flag, form sem proteção de CSRF, casa servidora com CVE-exploit
-   público conhecido) como **achados candidatos** (`requires_human_review`).
-   **Não executa nada contra o alvo** e **não pede aprovação humana**: é um
-   papel passivo que adiciona lead ao relatório, sujeito à sua revisão manual.
+1. **Modo normal (Modo Diabo desligado): safety check + execução real NÃO
+   destrutiva.** O Carro observa sinais **não invasivos** já disponíveis —
+   resultado do scanning ativo (headers, cookies, forms, fingerprint) + fontes
+   consultadas + correlação CVE por banner — e **sinaliza indícios de risco**
+   (ex.: header de segurança ausente, cookie sem flag, form sem proteção de
+   CSRF, casa servidora com CVE-exploit público conhecido) como **achados
+   candidatos** (`requires_human_review`). A partir da Etapa 15, o Carro
+   também roda a **camada de execução real** de um run normal: **verificação
+   ao vivo** (re-prova os candidatos com uma simples GET no escopo/robots/
+   rate-limit e marca cada um como **verificado ao vivo** ou **não reprovado**)
+   e **tools do operador** (invoca uma vez cada tool **não destrutiva** do
+   `TOOLS_MANIFEST` via `ToolExecutor` da Etapa 5). O ranço é sempre
+   controlado: nada destrutivo roda em modo normal, uma sondagem bloqueada
+   (kill-switch/fora de escopo/robots/alvo fora do ar) é registrada como
+   **pulada** — nunca fabrica achado nem dá falso negativo. Não pede
+   aprovação humana para estas sondas/tools.
 
 2. **Modo Diabo ligado: execução controlada.** Cada ação destrutiva/invasiva
    **exige sua aprovação humana individual** antes de prosseguir — o run para e
    espera você aprovar ou rejeitar na tela.
 
-**Estado atual, honestamente:** o Argus Engine **não vem com nenhum backend
-de execução real** plugado nesta carta — nem por padrão, nem opcionalmente.
-Mesmo aprovando a ação no Modo Diabo, a resposta é sempre um registro honesto
-de que "nenhum backend de execução real está configurado" — nada é de fato
-executado contra o alvo. O caminho do Modo Diabo existe hoje para
-demonstrar/testar o fluxo de aprovação humana, não para realizar ações reais;
-a construção de um backend de execução (testes ativos não destrutivos em modo
-normal e exploits/atividades evasivas em Modo Diabo) é uma das últimas etapas
-previstas no projeto.
+**Estado atual, honestamente:** em modo normal o backend de **execução real
+não destrutiva** existe e funciona — verificação ao vivo (sondas) + tools do
+operador não destrutivas, tudo auditável no histórico do run. No **Modo Diabo**
+o backend de execução destrutiva/exploits continua **não implementado**: mesmo
+aprovando a ação, a resposta é um registro honesto de "nenhum backend de
+execução real está configurado" — nada destrutivo é de fato executado. O
+caminho do Modo Diabo existe hoje para demonstrar/testar o fluxo de aprovação
+humana, não para realizar ações reais; evoluí-lo até exploits/atividades
+evasivas é uma decisão de produto deliberadamente adiada (ver `ROADMAP.md`,
+Etapa 2, e `SECURITY.md`).
 
-**Por que jogar (modo normal):** para adicionar um escrutínio de riscos a partir
-do que já foi observado, sem gastar nada além do que o Eremita vê.
-**Por que não jogar:** se o Eremita já cobre a coleta e você não quer um agente
-extra na mesa.
+**Por que jogar (modo normal):** além do escrutínio de riscos a partir do que
+já foi observado, o Carro agora pode **confirmar/refutar ao vivo** os leads do
+scan e rodar as tools de checagem que o operador disponibilizar (ex.: serviço
+de status HTTP) — sem custo de LLM extra.
+**Por que não jogar:** se o Eremita já cobre a coleta e você não quer um
+agente extra na mesa — ou se você não registrou nenhuma tool não destrutiva
+(o Carro degrada para verificação embutida).
 
 ### 🌀 O Mago (`magician`) — síntese
 Não consulta nada novo. Pega tudo que **já foi acumulado** até aquele ponto
