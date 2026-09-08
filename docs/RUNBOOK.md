@@ -89,6 +89,31 @@ automaticamente no `lifespan` de startup do FastAPI — não é preciso rodá-lo
 mas `make migrate` continua útil para aplicar a migração antes do primeiro boot
 (evita a janela em que a API sobe e recebe tráfego antes do schema estar pronto).
 
+### 2.1 Deploy com Docker Compose
+
+```bash
+# da raiz do projeto
+docker compose up -d --build
+# UI:      http://localhost:8080
+# backend: interno (sem porta exposta) — /api chega via proxy do nginx
+```
+
+- Dois serviços: `backend` (python:3.13-slim + uvicorn) e `frontend`
+  (nginx:alpine servindo o build da SPA com proxy `/api` → `backend:8000`).
+  Só a porta **8080** (frontend) é exposta ao host; o backend fica na rede
+  interna do compose.
+- Config por `backend/.env` (opcional, importado com `env_file.required: false`);
+  sem `.env`, o backend sobe com defaults (e **sem `ALLOWED_SCOPES` o scan degrada** —
+  configure o `.env` com o escopo autorizado).
+- Persistência: o volume `./data` mapeia `/app/data` no backend — banco
+  `argus.db`, evidências e o `tools.json` do operador (coloque o manifest ali e
+  aponte `TOOLS_MANIFEST=/app/data/tools.json` no `.env`).
+- **Single-replica (SQLite):** não escale o serviço `backend` acima de 1 réplica
+  sem trocar o banco — o lock de run único e os arquivos SQLite não suportam
+  escrita concorrente entre processos.
+- Migrações rodam no `lifespan` (boot); `docker compose up --build` já aplica.
+- CI valida `docker compose config` e o build das imagens em cada push/PR.
+
 **Checklist de pré-subida:**
 - [ ] `.env` presente e revisado (nunca commitado — ver `.gitignore`)
 - [ ] `ALLOWED_SCOPES` contém exatamente os alvos autorizados desta implantação

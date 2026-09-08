@@ -41,3 +41,13 @@ jobs:
         run: npm run lint
       - name: Type-check + build (tsc -b && vite build)
         run: npm run build
+
+  compose:
+    name: Docker compose (config + build images)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose config
+        run: docker compose config --quiet
+      - name: Build images (backend + frontend, no push)
+        run: docker compose build --pull
