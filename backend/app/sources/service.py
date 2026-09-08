@@ -24,6 +24,7 @@ from app.sources.spec import DataSourceSpec, SourceKind
 logger = logging.getLogger(__name__)
 
 _ENV_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
+_ENV_EMBEDDED = re.compile(r"\$\{([A-Z0-9_]+)\}")
 _URL_FORMATTER = string.Formatter()
 
 
@@ -37,16 +38,34 @@ def _resolve_env_placeholders(template: dict[str, Any]) -> dict[str, Any]:
     headers and query parameters, so a source that authenticates via a query
     parameter (e.g. Shodan's ``key=``) uses the same mechanism as a header-key
     source.
+
+    Values may also *embed* a placeholder, as in ``"Bearer ${ENV_VAR}"`` —
+    the embedded variable is substituted in place. If any embedded variable is
+    unset the whole entry is dropped (never send ``"Bearer "`` or a partial
+    literal), so a bearer-token source degrades exactly like an unconfigured
+    key source.
     """
     resolved: dict[str, Any] = {}
     for key, value in template.items():
-        match = _ENV_PLACEHOLDER.match(value) if isinstance(value, str) else None
+        if not isinstance(value, str):
+            resolved[key] = value
+            continue
+        match = _ENV_PLACEHOLDER.match(value)
         if match:
             env_value = os.environ.get(match.group(1))
             if env_value:
                 resolved[key] = env_value
-        else:
+            continue
+        embedded = _ENV_EMBEDDED.findall(value)
+        if not embedded:
             resolved[key] = value
+            continue
+        env_values = {name: os.environ.get(name) for name in embedded}
+        if any(v is None for v in env_values.values()):
+            continue
+        resolved[key] = _ENV_EMBEDDED.sub(
+            lambda m, env=env_values: env[m.group(1)] or m.group(0), value
+        )
     return resolved
 
 

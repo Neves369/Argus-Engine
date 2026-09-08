@@ -713,11 +713,16 @@ conhecidos. Ver `docs/adr/0008-cve-correlation.md`.
 - Correlação só dispara com versão no banner — implementado (`product_from_banner`
   recusa banner sem versão; tech sem versão é pulada), testado em
   `tests/test_cve_correlate.py`
-- Sources novas adicionadas depois: Censys (lookup de host, Platform API v2, Basic
-  auth com `CENSYS_API_ID`/`CENSYS_API_SECRET`), Shodan (`SHODAN_API_KEY` via query
+- Sources novas adicionadas depois: Censys (lookup de host, Platform API v3,
+  Bearer
+  token com `CENSYS_API_TOKEN` — contas atuais geram *Personal Access Token* único;
+  o antigo Basic com `CENSYS_API_ID`/`CENSYS_API_SECRET` era do Legacy Search API,
+  substituído), Shodan (`SHODAN_API_KEY` via query
   param) + InternetDB (Shodan grátis, sem chave) e RDAP/whois passivo (sem chave,
   `follow_redirects`). `DataSourceSpec` ganhou `auth_basic` e `follow_redirects`, e
-  `${ENV_VAR}` agora resolve também em `params_template` (chave como query param).
+  `${ENV_VAR}` resolve também em `params_template` (chave como query param) e em
+  valores **embutidos** (ex. `"Bearer ${CENSYS_API_TOKEN}"` — drop da entrada inteira
+  se a variável estiver vazia).
   **Decisão:** certstream ficou **fora de escopo** — é um feed WebSocket de streaming,
   não uma fonte HTTP de consulta (padrão ADR-0003), e crt.sh já cobre certificate
   transparency; registrado aqui para não ser reaberto por engano.

@@ -240,14 +240,13 @@ def test_resolve_basic_auth_requires_two_templates():
 
 
 @respx.mock
-def test_fetch_sends_basic_auth_header(client, monkeypatch):
-    monkeypatch.setenv("CENSYS_TEST_ID", "acme")
-    monkeypatch.setenv("CENSYS_TEST_SECRET", "swordfish")
+def test_fetch_sends_bearer_token_header(client, monkeypatch):
+    monkeypatch.setenv("CENSYS_TEST_TOKEN", "censys_test_pat")
     spec = DataSourceSpec(
         name="censys-like",
         kind=SourceKind.HTTP,
         url="http://censys-like.local/hosts/{query}",
-        auth_basic=["${CENSYS_TEST_ID}", "${CENSYS_TEST_SECRET}"],
+        headers_template={"Authorization": "Bearer ${CENSYS_TEST_TOKEN}"},
         query_param="query",
         fields=[],
     )
@@ -257,17 +256,16 @@ def test_fetch_sends_basic_auth_header(client, monkeypatch):
     svc = DataSourceService(_registry(spec))
     _run(svc.query("censys-like", {"query": "8.8.8.8"}))
     assert route.called
-    expected = "Basic " + base64.b64encode(b"acme:swordfish").decode()
-    assert route.calls[0].request.headers["Authorization"] == expected
+    assert route.calls[0].request.headers["Authorization"] == "Bearer censys_test_pat"
 
 
 @respx.mock
-def test_fetch_omits_basic_auth_without_configured_credentials(client):
+def test_fetch_omits_bearer_token_when_unset(client):
     spec = DataSourceSpec(
         name="censys-like2",
         kind=SourceKind.HTTP,
         url="http://censys-like2.local/hosts/{query}",
-        auth_basic=["${CENSYS_TEST_ID_UNSET}", "${CENSYS_TEST_SECRET_UNSET}"],
+        headers_template={"Authorization": "Bearer ${CENSYS_TEST_TOKEN_UNSET}"},
         query_param="query",
         fields=[],
     )
@@ -487,7 +485,8 @@ def test_shodan_censys_and_rdap_declare_secret_and_redirect_styles():
     reg = DataSourceRegistry(path)
     shodan = reg.get_source("shodan")
     assert shodan.params_template["key"] == "${SHODAN_API_KEY}"
-    assert reg.get_source("censys").auth_basic == ["${CENSYS_API_ID}", "${CENSYS_API_SECRET}"]
+    censys_auth = reg.get_source("censys").headers_template["Authorization"]
+    assert censys_auth == "Bearer ${CENSYS_API_TOKEN}"
     assert reg.get_source("rdap").follow_redirects is True
 
 
@@ -695,6 +694,26 @@ def test_censys_extractor_accepts_flat_payload_too():
     findings = _derived("censys", {"services": [{"service_name": "SSH", "port": 22}]})
     assert len(findings) == 1
     assert "SSH @ 22" in findings[0]["evidence"]
+
+
+def test_censys_extractor_reads_v3_resource_shape():
+    data = {
+        "result": {
+            "resource": {
+                "ip": "1.2.3.4",
+                "services": [
+                    {"protocol": "HTTP", "port": 443, "transport_protocol": "tcp"},
+                    {"protocol": "DNS", "port": 53, "transport_protocol": "udp"},
+                ],
+            },
+            "extensions": [],
+        }
+    }
+    findings = _derived("censys", data)
+    assert len(findings) == 1
+    evidence = findings[0]["evidence"]
+    assert "HTTP @ 443/tcp" in evidence
+    assert "DNS @ 53/udp" in evidence
 
 
 def test_censys_extractor_skips_no_services():

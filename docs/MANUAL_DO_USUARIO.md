@@ -148,7 +148,7 @@ fonte **degrada para simulado** e **não gera achado** — nunca inventa dado.
 | **Domínio** | NVD (CVEs), crt.sh (subdomínios), HackerTarget (DNS), RDAP (registro do domínio) | NVD mais generoso | Tudo funciona; NVD com cota menor |
 | **Domínio** | urlscan.io (avaliações públicas) | Cota maior | Funciona com cota anônima |
 | **IP** | InternetDB, ip-api (geolocalização) | — | Funcionam sempre |
-| **IP** | Shodan (`SHODAN_API_KEY`), Censys (`CENSYS_API_ID`/`CENSYS_API_SECRET`) | Dados reais (portas/CVEs/serviços) | Degradam para simulado (sem achado) |
+| **IP** | Shodan (`SHODAN_API_KEY`), Censys (`CENSYS_API_TOKEN`) | Dados reais (portas/CVEs/serviços) | Degradam para simulado (sem achado) |
 | **Qualquer** | AbuseIPDB (`ABUSEIPDB_API_KEY`) | Reputação real de IP | Todos os checks falham → simulado |
 
 As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte

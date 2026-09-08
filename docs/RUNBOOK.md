@@ -94,7 +94,7 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `LLM_STRATEGY` | `priority`\|`fallback`\|`cost-optimized`\|`auto` — como o gateway ordena os providers. Trocar para `cost-optimized` é a alavanca mais rápida se o custo de LLM subir inesperadamente. |
 | `GEMINI_API_KEY` | Chave do Google Gemini. O provider usa o endpoint OpenAI-compat da Google (`/v1beta/openai`), então aparece no Settings UI e em `GET /api/v1/providers` como os demais. Modelo default: `gemini/gemini-2.5-flash` (adicione em `EXECUTION_MODELS`/`JUDGMENT_MODELS` para usá-lo). |
 | `SHODAN_API_KEY` | Chave opcional da fonte `shodan` (host lookup). Sem ela a fonte degrada para resultado simulado — a fonte `internetdb` (Shodan grátis, sem chave) continua cobrindo IPs. |
-| `CENSYS_API_ID` / `CENSYS_API_SECRET` | Credenciais opcionais da fonte `censys` (Basic auth). Sem as duas, o lookup de host degrada para resultado simulado. |
+| `CENSYS_API_TOKEN` | Token opcional da fonte `censys` (lookup de host, Bearer). O Censys entrega um *Personal Access Token* único; sem ele o lookup degrada para resultado simulado. |
 | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL_SECONDS` | Cache de prefixo em memória (por processo). Desligar (`false`) se estiver depurando um provider e precisar garantir que toda chamada é real. |
 | `CAVEMAN_PROMPTS` | `true` remove palavras de enchimento das mensagens enviadas aos providers (Economia de Tokens, Etapa 7). **Desligado por padrão.** |
 | `HISTORY_COMPRESSION` / `HISTORY_KEEP_LAST` | `true` trunca o histórico entre nós do grafo (mantém o primeiro + últimos N=8 registros), cortando tokens de contexto. **Desligado por padrão** (opt-in). |

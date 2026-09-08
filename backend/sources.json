@@ -127,11 +127,13 @@
   },
   {
     "name": "censys",
-    "description": "Censys hosts lookup for a single IP (Platform API v2). The free tier covers host/web-property/certificate lookup by IP; *search* requires a paid plan. Uses HTTP Basic auth with CENSYS_API_ID + CENSYS_API_SECRET; without them every call degrades to a simulated result.",
+    "description": "Censys hosts lookup for a single IP (Platform API v3). The free tier covers host lookups by IP; *search* requires a paid plan. Authenticates with a Personal Access Token (Bearer); without CENSYS_API_TOKEN every call degrades to a simulated result.",
     "kind": "http",
-    "url": "https://search.censys.io/api/v2/hosts/{query}",
+    "url": "https://api.platform.censys.io/v3/global/asset/host/{query}",
     "method": "GET",
-    "auth_basic": ["${CENSYS_API_ID}", "${CENSYS_API_SECRET}"],
+    "headers_template": {
+      "Authorization": "Bearer ${CENSYS_API_TOKEN}"
+    },
     "timeout": 15.0,
     "rate_limit": 0.5,
     "ttl": 3600,

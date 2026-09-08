@@ -374,17 +374,20 @@ def _shodan_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _censys_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
-    # Platform API v2 wraps the host record under `result`; accept both the
-    # nested live shape and a flat shape for robustness.
+    # Platform API v3 wraps the host under `result.resource` (services, whois,
+    # ...); v2 wrapped it directly under `result`. Accept both nested live
+    # shapes plus a flat shape for robustness.
     payload = data.get("result") if isinstance(data.get("result"), dict) else data
-    services = payload.get("services")
+    if isinstance(payload, dict):
+        payload = payload.get("resource", payload)
+    services = payload.get("services") if isinstance(payload, dict) else None
     if not isinstance(services, list) or not services:
         return None
     entries: list[str] = []
     for svc in services:
         if not isinstance(svc, dict):
             continue
-        name = svc.get("service_name")
+        name = svc.get("service_name") or svc.get("protocol")
         port = svc.get("port")
         proto = svc.get("transport_protocol")
         if port is None and not name:
@@ -399,7 +402,7 @@ def _censys_finding(target: str, data: dict[str, Any]) -> dict[str, Any] | None:
         "id": None,
         "title": f"{len(entries)} serviço(s) exposto(s) no IP {target} segundo o Censys",
         "description": (
-            "O lookup de host do Censys (Platform API v2) lista os serviços "
+            "O lookup de host do Censys (Platform API v3) lista os serviços "
             "que ele observou neste IP. É uma observação passiva e "
             "potencialmente defasada: serviços podem ter mudado desde a última "
             "varredura — confirmar antes de agir."

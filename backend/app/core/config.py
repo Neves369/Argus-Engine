@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Carrega o arquivo `.env` do diretório de trabalho para `os.environ`
+# (override=False: variáveis já exportadas no ambiente ganham). O
+# pydantic-settings lê `.env` apenas para os campos declarados no `Settings`;
+# os resolvers de chaves de fontes de dados (app/sources/service.py) leem de
+# `os.environ`, então sem isso as chaves do `.env` nunca chegariam a eles e
+# toda fonte com autenticação degradaria para simulado silenciosamente.
+load_dotenv()
 
 
 class Settings(BaseSettings):
