@@ -173,8 +173,10 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
     from app.orchestration.compose import validate_sequence
     from app.orchestration.state import GraphState
     from app.scanning.service import build_scan_service
+    from app.scanning.verify import build_verification_service
     from app.services.run_executor import execute_run
     from app.sources.service import build_sources_service
+    from app.tools.executor import build_tool_executor
 
     async def _run() -> tuple[int, str]:
         async with async_session_factory() as session:
@@ -213,6 +215,12 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
             state.set_sources_service(build_sources_service())
             scan_service = build_scan_service()
             state.set_scan_service(scan_service)
+            # Mesma fronteira do Director por API (Etapa 15): sem esses serviços
+            # o Carro degrada para "simulate" em runs headless.
+            verification_service = build_verification_service()
+            tool_executor = build_tool_executor()
+            state.set_verification_service(verification_service)
+            state.set_tool_executor(tool_executor)
             run = Run(
                 target_id=target_id,
                 session_id=record.id,
@@ -237,6 +245,8 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                     archetypes,
                     build_sources_service(),
                     scan_service,
+                    verification_service,
+                    tool_executor,
                 )
             except Exception as exc:  # noqa: BLE001
                 run.status = "failed"

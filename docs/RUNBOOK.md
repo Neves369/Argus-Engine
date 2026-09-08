@@ -283,6 +283,16 @@ Além do scanning, o **modo normal** do Carro executa, sob os mesmos controles:
 3. Para tools: confira `TOOLS_MANIFEST` — ausente/vazio → degrada para sondas.
 4. Para sondas: confira `CHARIOT_VERIFY_ENABLED` e `CHARIOT_VERIFY_MAX_PROBES`.
 
+**Runbook — execução live via CLI:**
+1. `argus compose execute` injeta os mesmos serviços do `Director` por API
+   (`build_verification_service()` + `build_tool_executor()`), então o Carro
+   também executa sondas/tools em runs headless.
+2. Sem manifest em `TOOLS_MANIFEST`, o CLI usa só as sondas embutidas; para
+   experimentar, copie o exemplo: `cp tools.json.example tools.json` (confira o
+   `TOOLS_MANIFEST`/ponto de partida no `config.py` — resolvido relativo ao CWD).
+3. O manifest de exemplo só contém tools **não destrutivas** (`destructive: false`,
+   GET de leitura); substitua os `url` placeholder pelo alvo autorizado.
+
 **Runbook — sonda marcada como "pulada":**
 1. Veja o `skip_reason` no `verification.probe` do achado (relatório/export).
 2. `robots disallow` → esperado com `SCAN_RESPECT_ROBOTS=true` (mesma política

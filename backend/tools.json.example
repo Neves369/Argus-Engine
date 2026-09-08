@@ -1,0 +1,32 @@
+[
+  {
+    "name": "http_status",
+    "description": "Consulta o status HTTP e permite que o Carro verifique a presença/porta de um recurso autorizado. Somente leitura (GET), sem envio de payload.",
+    "kind": "http",
+    "method": "GET",
+    "url": "https://example.com",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "security_headers",
+    "description": "Lê os cabeçalhos de resposta (Content-Security-Policy, HSTS, X-Frame-Options etc.) de um alvo autorizado. Apenas leitura.",
+    "kind": "http",
+    "method": "GET",
+    "url": "https://example.com",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "robots_check",
+    "description": "Baixa o /robots.txt do alvo autorizado para descobrir caminhos declarados. Apenas leitura.",
+    "kind": "http",
+    "method": "GET",
+    "url": "https://example.com/robots.txt",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  }
+]

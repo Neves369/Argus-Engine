@@ -140,3 +140,23 @@ def test_compose_review_requires_one_flag():
 def test_compose_review_rejects_unknown_run():
     result = _invoke("compose", "review", "99999", "--approve", "--yes")
     assert result.exit_code == 1
+
+
+def test_tools_example_manifest_is_safe():
+    """tools.json.example carrega sem erros e não expõe tool destrutiva."""
+    from pathlib import Path
+
+    from app.tools.registry import ToolRegistry
+
+    repo_root = Path(__file__).resolve().parents[1]
+    manifest = repo_root / "tools.json.example"
+    assert manifest.exists()
+
+    registry = ToolRegistry()
+    registry.load(manifest)
+    specs = registry.specs()
+
+    assert specs, "manifest de exemplo deveria ter ao menos uma tool"
+    names = [s.name for s in specs]
+    assert {"http_status", "security_headers", "robots_check"} <= set(names)
+    assert all(not s.destructive for s in specs), "manifest de exemplo não pode ter tool destrutiva"
