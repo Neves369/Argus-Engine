@@ -57,7 +57,8 @@
 }
 
 .run-panel-cancel,
-.run-panel-close {
+.run-panel-close,
+.run-panel-resume {
   border: 1px solid rgba(170, 59, 255, 0.45);
   background: rgba(170, 59, 255, 0.12);
   color: #e9d5ff;
@@ -74,8 +75,21 @@
   color: #fca5a5;
 }
 
+.run-panel-resume {
+  border-color: rgba(74, 222, 128, 0.55);
+  background: rgba(74, 222, 128, 0.1);
+  color: #86efac;
+}
+
+.run-panel-resume-hint {
+  font-size: 11px;
+  color: #86efac;
+  opacity: 0.8;
+}
+
 .run-panel-cancel:hover,
-.run-panel-close:hover {
+.run-panel-close:hover,
+.run-panel-resume:hover {
   background: rgba(170, 59, 255, 0.25);
 }
 

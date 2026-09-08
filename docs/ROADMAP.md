@@ -153,7 +153,9 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 - Persistência/retomada de runs usa JSON no estado; a retomada de um run de
   composição parado em HITL mantém a composição (`GraphState.composition`) e,
   portanto, o time restrito — o resume reconstrói o mesmo grafo supervisionado.
-  Retomada geral via UI ainda pendente.
+  **Retomada geral via UI entregue na Etapa 14**: o estado é sempre persistido
+  (resultado ou parcial), runs `cancelled`/`failed` com estado são resumíveis via
+  `GET /runs/{id}/resume` (SSE) e o botão **Retomar** no `RunPanel`.
 
 ---
 
@@ -810,18 +812,34 @@ controlada do Modo Diabo.
       `test_dashboard.py` (trace começa em `emperor`).
 - [x] Docs atualizados: `docs/GUIA_CARTAS.md`, `docs/MANUAL_DO_USUARIO.md`,
       `docs/AGENTS.md` (seção Supervisor universal).
+- [x] **Retomada geral via UI** (deixa de ser pendência): `stream_run_events`
+      (`app/services/run_executor.py`) unifica o SSE de run novo e de retomada,
+      e **passa a persistir o estado parcial em falha** (além de cancelamento) —
+      runs `cancelled`/`failed` com `result` viram resumíveis. Novo endpoint
+      `GET /runs/{id}/resume` (SSE, mesmo lock/kill-switch/fluxo de
+      cancelamento/live log) retoma de `next_agent` ou da primeira carta / do
+      Imperador (`Director.resume_agent`). O relatório expõe `resumable`; a UI
+      mostra o botão **Retomar run de onde parou** no `RunPanel` (log/chat pré-
+      carregados do estado persistido, sem duplicar histórico).
 
 **Critérios de aceite**
 - [x] Run sem cartas executa com o time completo do Imperador e fecha na Justiça.
 - [x] Run com composição restringe o time; ordem das cartas não altera o run.
-- [x] `ruff check app tests` e `pytest -q` verdes (405 passed, 2 skipped); frontend
+- [x] `ruff check app tests` e `pytest -q` verdes (414 passed, 2 skipped); frontend
       `npm run lint`/`build` verdes.
+- [x] Run `cancelled`/`failed` com estado resumível retoma de onde parou pelo
+      endpoint e pela UI, sem recomeçar do zero (coberto em
+      `tests/test_resume_api.py`).
 
 **Observações / pendências**
 - Backend de **execução real** para o Carro (testes ativos não destrutivos no modo
   normal; exploits/atividades evasivas no Modo Diabo) permanece adiado — é uma das
   últimas coisas do projeto (ver `docs/GUIA_CARTAS.md`, seção do Carro). Hoje o
   Carro só sinaliza (safety) ou registra `no_backend` após aprovação HITL.
+- Runs órfãos presos como `running` no banco (processo morto no meio do run)
+  seguem **não resumíveis pela UI**: a retomada é permitida para `cancelled`/
+  `failed`; recuperar um `running` órfão exige decisão operacional
+  (kill-switch + limpeza manual do status) — ver `RUNBOOK.md`.
 
 ## Próximos passos sugeridos
 

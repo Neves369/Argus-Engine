@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,23 +14,25 @@ from app.db.models import Decision, Finding, Run, Target
 from app.db.models import Session as SessionModel
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
-from app.orchestration.hitl import is_awaiting_review
 from app.orchestration.state import GraphState
 from app.scanning.service import build_scan_service
 from app.schemas.decision import DecisionRead
 from app.schemas.finding import FindingRead
 from app.schemas.review import ReviewCreate
 from app.schemas.run import RunCreate, RunRead
-from app.services.persistence import persist_run_result
 from app.services.run_control import (
     RunLockedError,
     active_run,
-    clear_cancel,
     ensure_no_active_run,
-    is_cancel_requested,
     request_cancel,
 )
-from app.services.run_executor import execute_run, resume_run
+from app.services.run_executor import (
+    RESUMABLE_STATUSES,
+    execute_run,
+    resume_run,
+    state_from_run,
+    stream_run_events,
+)
 from app.sources.service import build_sources_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -187,93 +187,82 @@ async def stream_run(
     db.add(run)
     await db.commit()
     await db.refresh(run)
-    run_id = run.id
 
-    async def event_stream():
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
-        event_id = 0
+    state = GraphState(
+        target=target_meta,
+        budget_tokens=settings.default_budget_tokens,
+        budget_cost=settings.default_budget_cost,
+        devil_mode=devil_mode,
+        composition=archetypes or [],
+    )
+    state.set_sources_service(build_sources_service())
+    scan_service = build_scan_service()
+    state.set_scan_service(scan_service)
+    director = Director(
+        archetypes, sources_service=build_sources_service(), scan_service=scan_service
+    )
+    return StreamingResponse(
+        stream_run_events(db, run, state, director),
+        media_type="text/event-stream",
+    )
 
-        def make(event: str, data: dict[str, Any]) -> str:
-            nonlocal event_id
-            event_id += 1
-            return (
-                f"id: {event_id}\nevent: {event}\n"
-                f"data: {json.dumps(data, default=str)}\n\n"
-            )
 
-        async def producer() -> None:
-            await queue.put("retry: 3000\n\n")
-            await queue.put(make("start", {"run_id": run_id}))
-            state = GraphState(
-                target=target_meta,
-                budget_tokens=settings.default_budget_tokens,
-                budget_cost=settings.default_budget_cost,
-                devil_mode=devil_mode,
-                composition=archetypes or [],
-            )
-            state.set_sources_service(build_sources_service())
-            scan_service = build_scan_service()
-            state.set_scan_service(scan_service)
-            director = Director(
-                archetypes, sources_service=build_sources_service(), scan_service=scan_service
-            )
-            final = state.model_dump()
-            try:
-                async for chunk in director.stream(state):
-                    if is_cancel_requested(run_id):
-                        run.status = "cancelled"
-                        run.result = final
-                        break
-                    for node, update in chunk.items():
-                        final.update(update)
-                        await queue.put(
-                            make("node", {"node": node, "update": update})
-                        )
-                else:
-                    final_state = GraphState.model_validate(final)
-                    if is_awaiting_review(final_state):
-                        run.status = "pending_review"
-                    else:
-                        run.status = "completed"
-                        await persist_run_result(db, run_id, run.target_id, final_state)
-                    run.result = final
-            except Exception as exc:  # noqa: BLE001
-                run.status = "failed"
-                run.error = str(exc)
-                await queue.put(make("error", {"message": str(exc)}))
-            finally:
-                clear_cancel(run_id)
-                run.finished_at = _utcnow()
+@router.get("/{run_id}/resume")
+async def resume_run_stream(run_id: int, db: DBSession):
+    """Retomada geral via UI/SSE: continua um run interrompido (cancelled ou
+    failed com estado persistido) de onde ele parou, com o mesmo fluxo de
+    log ao vivo/cancelamento de ``/runs/stream``."""
+    if is_kill_switch_active():
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
 
-            await db.commit()
-            await queue.put(make("done", {"run_id": run_id, "status": run.status}))
-            await queue.put(None)
+    await _guard_no_active_run(db)
 
-        async def heartbeat() -> None:
-            try:
-                while True:
-                    await asyncio.sleep(15)
-                    await queue.put(": ping\n\n")
-            except asyncio.CancelledError:
-                return
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
-        async def consumer():
-            producer_task = asyncio.create_task(producer())
-            heartbeat_task = asyncio.create_task(heartbeat())
-            try:
-                while True:
-                    item = await queue.get()
-                    if item is None:
-                        break
-                    yield item
-            finally:
-                producer_task.cancel()
-                heartbeat_task.cancel()
+    if run.status not in RESUMABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Run #{run_id} não pode ser retomado a partir do status "
+                f"'{run.status}' (retomável: {', '.join(RESUMABLE_STATUSES)})"
+            ),
+        )
+    if not run.result:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run #{run_id} não possui estado persistido para retomar",
+        )
 
-        async for chunk in consumer():
-            yield chunk
+    composition = (run.result or {}).get("composition") or None
+    if composition:
+        composition = list(composition)
+    state = state_from_run(
+        run,
+        sources_service=build_sources_service(),
+        scan_service=build_scan_service(),
+    )
+    # Num resume geral não há decisão humana pendente — nunca re-entrar num
+    # gate HITL por um pending_review/decision legado do estado persistido.
+    state.pending_review = None
+    state.human_decision = None
+    director = Director(
+        composition,
+        sources_service=build_sources_service(),
+        scan_service=build_scan_service(),
+    )
+    entry = director.resume_agent(state)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    run.status = "running"
+    run.error = None
+    run.finished_at = None
+    await db.commit()
+    await db.refresh(run)
+    return StreamingResponse(
+        stream_run_events(db, run, state, director, entry=entry),
+        media_type="text/event-stream",
+    )
 
 
 @router.get("/active")

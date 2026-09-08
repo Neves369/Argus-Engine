@@ -162,6 +162,7 @@ export interface Report {
   run_id: number;
   target?: string;
   status: string;
+  resumable?: boolean;
   generated_at?: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -368,6 +369,14 @@ export function reviewRun(runId: number, payload: ReviewPayload): Promise<Run> {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function resumeRunStream(
+  runId: number,
+  onEvent: (event: StreamEvent) => void,
+  options: RunStreamOptions = {},
+): Promise<RunEndSignal> {
+  return runStream(`/runs/${runId}/resume`, onEvent, options);
 }
 
 export function listCompositions(): Promise<Composition[]> {

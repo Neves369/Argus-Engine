@@ -85,6 +85,20 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   O painel também expõe botões de export (Markdown/JSON/CSV/SARIF/PDF) via
   `GET /runs/{id}/export` e, para runs `pending_review`, a UI de revisão HITL
   (**Aprovar**/**Rejeitar** → `POST /runs/{id}/review`) —   loop HITL fechado na UI.
+- **Retomada geral (Etapa 14):** o estado é persistido em `Run.result` **na
+  conclusão e também no cancelamento/falha** (estado parcial em
+  `stream_run_events`) — qualquer run `cancelled`/`failed` com `result` vira
+  resumível. `GET /runs/{id}/resume` (SSE, `app/api/v1/runs.py` +
+  `app/services/run_executor.py`) reconstrói o `GraphState` via `state_from_run`,
+  escolhe o nó de entrada com `Director.resume_agent` (`next_agent` → primeira
+  carta da composição → `emperor`) e continua o run **de onde parou, sem
+  recomeçar do zero** (histórico/trace persistidos não são re-gerados). O
+  endpoint respeita kill-switch (423), lock de run único (409) e o mesmo
+  protocolo SSE de `/runs/stream` (retry/start/node/error/done, heartbeat,
+  cancelamento). Run sem estado persistido (`result=None`) ou `completed` → 409.
+  O relatório expõe `resumable`; a UI mostra **Retomar run de onde parou** no
+  `RunPanel` (`frontend/src/App.tsx` `handleResume` + `seedReport`, que pré-carrega
+  log/chat sem duplicar entradas novas via `lastTraceLenRef`/`lastHistoryLenRef`).
 - **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`
   remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo

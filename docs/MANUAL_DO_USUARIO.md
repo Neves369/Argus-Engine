@@ -104,6 +104,11 @@ Combinações sugeridas e o detalhe de cada carta: `docs/GUIA_CARTAS.md`.
   - **Log**: a trilha de passos do run.
   - **Chat**: as mensagens trocadas pelos agentes.
 - No canvas, o **nó ativo** fica destacado conforme o grafo avança.
+- **Se o run for cancelado (ou falhar) no meio**, o sistema guarda o estado até
+  aquele momento. Ao abrir esse run (Dashboard/Sessões → **Ver**), o painel mostra
+  **Retomar run de onde parou**: a investigação continua a partir da última etapa
+  executada — histórico, log e chat já ficam pré-carregados e só recebem as
+  entradas novas — sem recomeçar do zero.
 
 ## 7. Quando o sistema pede a sua aprovação
 
@@ -203,6 +208,8 @@ custo de LLM subindo, backup, falsos positivos), há um índice rápido em
   aguardando sua decisão). Termine ou decida primeiro.
 - **"O run parou sem motivo"** — confira se está em `pending_review` (é decisão
   sua, não defeito) — seção 7.
+- **"O run cancelou/falhou no meio"** — não precisa refazer do zero: abra o run e
+  use **Retomar run de onde parou** (seção 6).
 - **"Relatório veio sem achados"** — pode ser o comportamento correto (sem chaves
   ou sem dado real disponível) — seções 9. Não é um bug.
 - **UI pede login / senha** — consulte `RUNBOOK.md` §10.

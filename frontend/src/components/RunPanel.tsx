@@ -27,7 +27,9 @@ interface RunPanelProps {
   readonly?: boolean;
   pendingReview?: PendingReview | null;
   reviewing?: boolean;
+  resumable?: boolean;
   onReview: (approved: boolean, note: string) => void;
+  onResume: () => void;
   onCancel: () => void;
   onClose: () => void;
 }
@@ -64,7 +66,9 @@ function RunPanel({
   readonly = false,
   pendingReview,
   reviewing = false,
+  resumable = false,
   onReview,
+  onResume,
   onCancel,
   onClose,
 }: RunPanelProps) {
@@ -180,6 +184,16 @@ function RunPanel({
             <button type="button" className="run-panel-cancel" onClick={onCancel}>
               Cancelar
             </button>
+          )}
+          {resumable && !running && (
+            <>
+              <button type="button" className="run-panel-resume" onClick={onResume}>
+                Retomar run de onde parou
+              </button>
+              <span className="run-panel-resume-hint">
+                Run interrompido — continua da última etapa executada.
+              </span>
+            </>
           )}
           <button type="button" className="run-panel-close" onClick={onClose} aria-label="Fechar">
             ✕

@@ -22,14 +22,26 @@ ativo é funcionalidade core (ver `docs/adr/0006-active-scanning.md`), com rate
 limiting, timeout e self-imposed restrictions.
 
 **Run único por vez:** a plataforma só permite **um run ativo por vez** (status
-`running` ou `pending_review`). Qualquer tentativa de iniciar outro run nesse
-estado retorna `409` (`POST /runs`, `GET /runs/stream`,
-`POST /compositions/{id}/execute`). `GET /runs/active` informa qual run, se
-houver, está ativo. Um run em `pending_review` sem decisão do operador mantém o
-lock — comportamento esperado (um alvo por vez), não defeito; resolva a decisão
-via §5 para liberar. Runs em execução podem ser cancelados com
-`POST /runs/{id}/cancel` (válido só para `running`); o cancelamento efetiva
-**entre nós** do grafo — o nó em andamento termina antes de parar.
+ `running` ou `pending_review`). Qualquer tentativa de iniciar outro run nesse
+ estado retorna `409` (`POST /runs`, `GET /runs/stream`,
+ `POST /compositions/{id}/execute`). `GET /runs/active` informa qual run, se
+ houver, está ativo. Um run em `pending_review` sem decisão do operador mantém o
+ lock — comportamento esperado (um alvo por vez), não defeito; resolva a decisão
+ via §5 para liberar. Runs em execução podem ser cancelados com
+ `POST /runs/{id}/cancel` (válido só para `running`); o cancelamento efetiva
+ **entre nós** do grafo — o nó em andamento termina antes de parar.
+ 
+**Retomada de runs interrompidos (Etapa 14):** o estado é persistido em `result`
+ também em cancelamento e em falha (parcial), então runs `cancelled`/`failed` com
+ estado vão para `GET /api/v1/runs/{id}/report` como `resumable: true`. A
+ retomada é feita por `GET /runs/{id}/resume` (SSE, mesmo protocolo/fluxo do
+ `stream`, kill-switch 423 e lock 409), que continua **de onde parou** (do
+ `next_agent`, da primeira carta da composição ou do Imperador) sem recomeçar do
+ zero. Na UI, o `RunPanel` mostra **Retomar run de onde parou** para esses runs.
+ Runs `completed` ou sem estado persistido (`result` nulo) **não** são resumíveis
+ (409). Um run órfão preso como `running` (processo morto no meio do run) também
+ **não**: livrá-lo exige decisão operacional — kill-switch (§4) e limpeza manual
+ do status (consulte `docs/AGENTS.md` antes de alterar o banco).
 
 **Conferir o resultado de um run:** pela UI, o painel de execução cai na aba
 **Resultados** ao concluir (achados em primeiro plano com severidade, CVEs, exploit
@@ -43,8 +55,9 @@ o painel mostra a **revisão humana** (contexto + proposta) com botões **Aprova
 Rejeitar** (mapeia `POST /runs/{id}/review`); o Dashboard rotula a ação como
 **Revisar** nesses casos. Pela API:
 - `GET /runs/{id}/report` — **relatório estruturado** (`summary` + `findings[]` +
-  `observability` + `trace` + `history` + `started_at`/`finished_at`/`duration_ms`),
-  a forma canônica do "o que foi achado" (consumido pela UI em `finishRun`/`openReport`).
+  `observability` + `trace` + `history` + `started_at`/`finished_at`/`duration_ms`
+  + `resumable`), a forma canônica do "o que foi achado" (consumido pela UI em
+  `finishRun`/`openReport`).
 - `GET /runs/{id}/export?format=markdown` — relatório Markdown legível (severidade,
   CVSS, CVEs, exploits conhecidos, evidência, remediação, referências).
 - `GET /runs/{id}/export?format=json|csv|sarif` — mesmo conteúdo em JSON/CSV/SARIF 2.1.0.
@@ -355,6 +368,7 @@ roda dentro de um **container Docker descartável** (`docker run --rm` de nome
 | Run parado sem avançar | §5 |
 | Não consigo iniciar um novo run (responde 409) | §1 (run único), §5 (`pending_review`) |
 | Preciso parar um run em execução | §1 (`POST /runs/{id}/cancel`), §4 (kill-switch) |
+| Run cancelou/falhou no meio e quero continuar de onde parou | §1 (retomada, `GET /runs/{id}/resume`) |
 | Custo de LLM subindo sem explicação | §3 (`LLM_STRATEGY=cost-optimized`), §6.4 |
 | Segredo apareceu em log ou seria enviado a um provider | §6.1 |
 | Tool trava ou consome recursos indevidamente | §6.2, §6.3 |

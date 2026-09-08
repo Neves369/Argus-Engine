@@ -105,6 +105,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
         "run_id": run.id,
         "target": target,
         "status": run.status,
+        "resumable": run.status in ("cancelled", "failed") and bool(run.result),
         "generated_at": _iso(run.finished_at) or _iso(run.created_at),
         "started_at": _iso(run.started_at),
         "finished_at": _iso(run.finished_at),

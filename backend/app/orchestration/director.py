@@ -80,13 +80,24 @@ class Director:
             return result
         return GraphState.model_validate(result)
 
-    async def stream(self, state: GraphState) -> AsyncGenerator[dict, None]:
-        """Yield per-node updates as the graph executes."""
-        async for event in self._compile().astream(state.model_dump(), stream_mode="updates"):
+    async def stream(
+        self, state: GraphState, *, entry: str | None = None
+    ) -> AsyncGenerator[dict, None]:
+        """Yield per-node updates as the graph executes.
+
+        ``entry`` retoma a partir de um nó específico (padrão: o Imperador).
+        """
+        async for event in self._compile(entry).astream(
+            state.model_dump(), stream_mode="updates"
+        ):
             yield event
 
-    async def resume(self, state: GraphState) -> GraphState:
-        """Resume from the state's ``next_agent`` (used after /review)."""
+    def resume_agent(self, state: GraphState) -> str:
+        """Nó por onde um run interrompido (cancelado/falho) volta a rodar.
+
+        Usa o ``next_agent`` reservado pelo estado; sem ele, a primeira carta
+        da composição (time restrito) ou o Imperador (supervisor universal).
+        """
         entry = state.next_agent
         if not entry:
             entry = (
@@ -94,7 +105,11 @@ class Director:
                 if state.composition
                 else (self._archetypes[0] if self._archetypes else "emperor")
             )
-        return await self.run_from(state, entry)
+        return entry
+
+    async def resume(self, state: GraphState) -> GraphState:
+        """Resume from the state's ``next_agent`` (used after /review)."""
+        return await self.run_from(state, self.resume_agent(state))
 
     async def inject_human_input(self, state: GraphState, decision: dict[str, Any]) -> GraphState:
         """Apply a human decision to a pending review and resume the run."""

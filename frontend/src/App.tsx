@@ -22,6 +22,7 @@ import {
   getActiveRun,
   getReport,
   logout,
+  resumeRunStream,
   reviewRun,
   runStream,
   type ActiveRunInfo,
@@ -99,6 +100,7 @@ function App() {
   const [runTrace, setRunTrace] = useState<TraceStep[]>([]);
   const [runPendingReview, setRunPendingReview] = useState<PendingReview | null>(null);
   const [runReviewing, setRunReviewing] = useState(false);
+  const [runResumable, setRunResumable] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
   const lastTraceLenRef = useRef(0);
@@ -231,6 +233,7 @@ function App() {
     setRunFindings([]);
     setRunTrace([]);
     setRunPendingReview(null);
+    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
     lastTraceLenRef.current = 0;
@@ -310,6 +313,7 @@ function App() {
     setRunTrace([]);
     setRunPendingReview(null);
     setRunReviewing(false);
+    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
     setConnectionsOn(true);
@@ -341,6 +345,7 @@ function App() {
     setRunTrace(report.trace ?? []);
     setRunError(null);
     setRunStatus(report.status);
+    setRunResumable(Boolean(report.resumable));
     setRunPendingReview(report.pending_review ?? null);
     setRunMeta((prev) => ({
       ...prev,
@@ -350,6 +355,34 @@ function App() {
       durationMs: report.duration_ms ?? prev.durationMs,
       stopReason: report.observability.stop_reason ?? prev.stopReason,
     }));
+  }
+function seedReport(report: Report) {
+    setRunLog(
+      (report.trace ?? []).map((step) => ({
+        node: step.node ?? '?',
+        text: formatTraceStep(step),
+      })),
+    );
+    setChat(
+      (report.history ?? []).map((entry) => ({
+        agent: entry.agent ?? '?',
+        action: entry.action ?? '',
+        reasoning: String(entry.reasoning ?? ''),
+        findings: typeof entry.findings === 'number' ? entry.findings : undefined,
+        sources:
+          typeof entry.sources_consulted === 'number'
+            ? entry.sources_consulted
+            : undefined,
+        scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
+        pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
+        cve_correlations:
+          typeof entry.cve_correlations === 'number'
+            ? entry.cve_correlations
+            : undefined,
+      })),
+    );
+    lastTraceLenRef.current = (report.trace ?? []).length;
+    lastHistoryLenRef.current = (report.history ?? []).length;
   }
 
   async function openReport(runNumber: number) {
@@ -369,38 +402,18 @@ function App() {
     setRunFindings([]);
     setRunTrace([]);
     setRunPendingReview(null);
+    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
     setRunEnded(true);
     try {
       const report = await getReport(runNumber);
-      const trace = report.trace ?? [];
-      const history = report.history ?? [];
-      setRunLog(
-        trace.map((step) => ({ node: step.node ?? '?', text: formatTraceStep(step) })),
-      );
-      setChat(
-        history.map((entry) => ({
-          agent: entry.agent ?? '?',
-          action: entry.action ?? '',
-          reasoning: String(entry.reasoning ?? ''),
-          findings: typeof entry.findings === 'number' ? entry.findings : undefined,
-          sources:
-            typeof entry.sources_consulted === 'number'
-              ? entry.sources_consulted
-              : undefined,
-          scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
-          pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
-          cve_correlations:
-            typeof entry.cve_correlations === 'number' ? entry.cve_correlations : undefined,
-        })),
-      );
+      seedReport(report);
       applyReport(report);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     }
   }
-
   async function handleReview(approved: boolean, note: string) {
     if (runId == null || runPendingReview == null) return;
     setRunReviewing(true);
@@ -461,6 +474,34 @@ function App() {
     } catch (error) {
       setRunResult(
         error instanceof Error ? `Erro: ${error.message}` : 'Erro inesperado ao executar.',
+      );
+    } finally {
+      setBusy(false);
+      void refreshActiveRun();
+    }
+  }
+
+  async function handleResume() {
+    const resumeId = runId ?? historyRunId;
+    if (resumeId == null) return;
+    if (activeRun.active) {
+      setRunResult(
+        `Aguarde o run #${activeRun.run_id} (${activeRun.status}) concluir antes de retomar outro.`,
+      );
+      return;
+    }
+    beginRun();
+    try {
+      const report = await getReport(resumeId);
+      seedReport(report);
+      const signal = await resumeRunStream(resumeId, ingestEvent, {
+        onStart: setRunId,
+      });
+      await finishRun(signal);
+      setRunResult(`Run #${signal.run_id}: ${signal.status}`);
+    } catch (error) {
+      setRunResult(
+        error instanceof Error ? `Erro: ${error.message}` : 'Erro inesperado ao retomar.',
       );
     } finally {
       setBusy(false);
@@ -647,7 +688,9 @@ function App() {
               error={runError}
               pendingReview={runPendingReview}
               reviewing={runReviewing}
+              resumable={runResumable}
               readonly={readOnlyReport}
+              onResume={() => void handleResume()}
               onReview={(approved, note) => void handleReview(approved, note)}
               onCancel={() => void handleCancel()}
               onClose={() => {
