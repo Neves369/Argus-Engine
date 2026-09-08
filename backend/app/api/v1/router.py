@@ -9,6 +9,7 @@ from app.api.v1 import (
     compositions,
     dashboard,
     findings,
+    operate,
     providers,
     runs,
     sources,
@@ -31,3 +32,4 @@ api_router.include_router(compositions.router, dependencies=[Depends(require_aut
 api_router.include_router(dashboard.router, dependencies=[Depends(require_auth)])
 api_router.include_router(archetypes.router, dependencies=[Depends(require_auth)])
 api_router.include_router(providers.router, dependencies=[Depends(require_auth)])
+api_router.include_router(operate.router, dependencies=[Depends(require_auth)])

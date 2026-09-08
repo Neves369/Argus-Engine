@@ -606,6 +606,22 @@ OSINT) de forma controlada e cacheada, sem wrappers embutidos.
 cada controle de hardening acima com seu próprio runbook de incidente, backup/
 recuperação de banco e evidências, e leitura de log.
 
+**Melhorias posteriores (operações)**
+
+- **Kill-switch acionável em runtime** (one-way/abort-only): `GET/POST
+  /api/v1/operate/kill-switch` + botão na UI (Settings → Segurança). Fecha o
+  pilar "kill-switch desde o dia 1" documentado na Etapa 0 — antes só dava para
+  ativar via `KILL_SWITCH` no boot. Desativação exige restart (fail-closed):
+  um painel comprometido nunca destrava. Testes: `tests/test_security.py`.
+- **Auth hardening** (`/auth/login`): rate-limit por IP em memória
+  (`LOGIN_MAX_ATTEMPTS`/`LOGIN_WINDOW_SECONDS`, `429` + `Retry-After`, login
+  correto zera o contador).
+- **Rotação de senha** (`POST /auth/password` + UI): persiste a nova senha
+  cifrada na tabela `app_settings` (exige
+  `ARGUS_ENCRYPTION_KEY`); passa a valer na hora e sobrevive a restarts. Por
+  default (`ARGUS_SESSION_SECRET` vazio) rotacionar invalida todas as sessões.
+  Testes: `tests/test_auth.py`.
+
 ---
 
 ## Etapa 11 — Relatório de Segurança

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 
+from app.core.auth_overrides import effective_ui_password
 from app.core.config import get_settings
 
 COOKIE_NAME = "argus_session"
@@ -11,7 +12,7 @@ COOKIE_NAME = "argus_session"
 
 def _secret() -> bytes:
     settings = get_settings()
-    key = settings.session_secret or settings.ui_password
+    key = settings.session_secret or effective_ui_password()
     if not key:
         return b"argus-dev-insecure-secret"
     return key.encode("utf-8")

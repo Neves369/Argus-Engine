@@ -468,6 +468,37 @@ export function getMe(): Promise<{ authenticated: boolean; ui_enabled: boolean }
   return request<{ authenticated: boolean; ui_enabled: boolean }>('/auth/me');
 }
 
+export type KillSwitchSource = 'env' | 'runtime' | 'none';
+
+export interface KillSwitchStatus {
+  active: boolean;
+  source: KillSwitchSource;
+}
+
+export function getKillSwitchStatus(): Promise<KillSwitchStatus> {
+  return request<KillSwitchStatus>('/operate/kill-switch');
+}
+
+export function activateKillSwitch(reason: string): Promise<KillSwitchStatus> {
+  return request<KillSwitchStatus>('/operate/kill-switch', {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: boolean; sessions_invalidated: boolean }> {
+  return request('/auth/password', {
+    method: 'POST',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+}
+
 export function cancelRun(runId: number): Promise<{ status: string; run_id: number; run_status: string }> {
   return request(`/runs/${runId}/cancel`, { method: 'POST' });
 }

@@ -2,18 +2,27 @@
 
 import { useState, useEffect } from 'react';
 import './Settings.css';
-import { listProviders, setProviderApiKey, setProviderEnabled } from '../api/client';
-import type { ProviderConfig } from '../api/client';
+import {
+  listProviders,
+  setProviderApiKey,
+  setProviderEnabled,
+  activateKillSwitch,
+  changePassword,
+  getKillSwitchStatus,
+  type KillSwitchStatus,
+  type ProviderConfig,
+} from '../api/client';
 
 interface SettingsProps {
   onClose: () => void;
+  onSessionInvalidated?: () => void;
 }
 
 function formatTokens(value: number) {
   return value.toLocaleString('pt-BR');
 }
 
-function Settings({ onClose }: SettingsProps) {
+function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
@@ -21,6 +30,16 @@ function Settings({ onClose }: SettingsProps) {
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<{type: 'success' | 'error', msg: string} | null>(null);
   const [hasEncryption, setHasEncryption] = useState(true);
+
+  const [killSwitch, setKillSwitch] = useState<KillSwitchStatus | null>(null);
+  const [ksLoading, setKsLoading] = useState(false);
+  const [ksReason, setKsReason] = useState('');
+  const [ksArmed, setKsArmed] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwdBusy, setPwdBusy] = useState(false);
 
   useEffect(() => {
     async function loadProviders() {
@@ -35,6 +54,14 @@ function Settings({ onClose }: SettingsProps) {
       }
     }
     loadProviders();
+  }, []);
+
+  useEffect(() => {
+    getKillSwitchStatus()
+      .then(setKillSwitch)
+      .catch((err) => {
+        setFlash({ type: 'error', msg: `Falha ao consultar kill-switch: ${err instanceof Error ? err.message : String(err)}` });
+      });
   }, []);
 
   if (loading) {
@@ -103,6 +130,58 @@ function Settings({ onClose }: SettingsProps) {
       );
     } catch (err) {
       setFlash({ type: 'error', msg: `Falha ao atualizar provedor: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
+  async function handleActivateKillSwitch() {
+    if (!ksReason.trim()) {
+      setFlash({ type: 'error', msg: 'Informe um motivo para ativar o kill-switch.' });
+      return;
+    }
+    setKsLoading(true);
+    setKsArmed(false);
+    try {
+      const status = await activateKillSwitch(ksReason.trim());
+      setKillSwitch(status);
+      setKsReason('');
+      setFlash({ type: 'success', msg: 'Kill-switch ativado. Para desativar, reinicie o servidor sem KILL_SWITCH.' });
+    } catch (err) {
+      setFlash({ type: 'error', msg: `Falha ao ativar kill-switch: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setKsLoading(false);
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setFlash({ type: 'error', msg: 'Preencha a senha atual, a nova e a confirmação.' });
+      return;
+    }
+    if (newPassword.length < 8) {
+      setFlash({ type: 'error', msg: 'A nova senha deve ter pelo menos 8 caracteres.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setFlash({ type: 'error', msg: 'A confirmação não confere com a nova senha.' });
+      return;
+    }
+    setPwdBusy(true);
+    try {
+      const result = await changePassword(currentPassword, newPassword);
+      const msg = result.sessions_invalidated
+        ? 'Senha alterada com sucesso! Conecte-se novamente.'
+        : 'Senha alterada com sucesso!';
+      setFlash({ type: 'success', msg });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      if (result.sessions_invalidated) {
+        onSessionInvalidated?.();
+      }
+    } catch (err) {
+      setFlash({ type: 'error', msg: `Falha ao alterar senha: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setPwdBusy(false);
     }
   }
 
@@ -257,6 +336,138 @@ function Settings({ onClose }: SettingsProps) {
         <button type="button" className="modal-submit" onClick={onClose}>
           Fechar
         </button>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-header">
+          <span className="settings-section-title">Segurança</span>
+        </div>
+
+        <div className="settings-section-body">
+          <div className="settings-model-row">
+            <span className="settings-model-name">Kill-switch</span>
+            <span className="settings-model-model">
+              {killSwitch === null
+                ? 'consultando…'
+                : killSwitch.active
+                  ? killSwitch.source === 'env'
+                    ? 'ATIVO (via KILL_SWITCH no ambiente — desativa com restart)'
+                    : 'ATIVO (runtime)'
+                  : 'Inativo'}
+            </span>
+          </div>
+          <div className="modal-field">
+            <label className="modal-label" htmlFor="kill-switch-reason">
+              Motivo (obrigatório para ativar)
+            </label>
+            <div className="settings-key-row">
+              <input
+                id="kill-switch-reason"
+                className="modal-input"
+                type="text"
+                placeholder="Ex.: incidente em andamento no alvo exemplo.com"
+                value={ksReason}
+                onChange={(e) => {
+                  setKsReason(e.target.value);
+                  setKsArmed(false);
+                }}
+                disabled={killSwitch?.active === true || ksLoading}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {ksArmed ? (
+                <>
+                  <button
+                    type="button"
+                    className="settings-key-toggle"
+                    onClick={() => void handleActivateKillSwitch()}
+                    disabled={killSwitch?.active === true || ksLoading}
+                  >
+                    Confirmar ativação
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-key-toggle"
+                    onClick={() => setKsArmed(false)}
+                    disabled={ksLoading}
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="settings-key-toggle"
+                  onClick={() => setKsArmed(true)}
+                  disabled={killSwitch?.active === true || ksLoading || !ksReason.trim()}
+                >
+                  Ativar kill-switch
+                </button>
+              )}
+            </div>
+            {ksArmed && (
+              <span className="settings-key-status">
+                O kill-switch é one-way: só será desativado reiniciando o servidor sem KILL_SWITCH.
+              </span>
+            )}
+          </div>
+
+          <div className="modal-field">
+            <label className="modal-label" htmlFor="pwd-current">
+              Senha atual
+            </label>
+            <input
+              id="pwd-current"
+              className="modal-input"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              disabled={pwdBusy}
+            />
+          </div>
+          <div className="modal-field">
+            <label className="modal-label" htmlFor="pwd-new">
+              Nova senha (mín. 8 caracteres)
+            </label>
+            <input
+              id="pwd-new"
+              className="modal-input"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              disabled={pwdBusy}
+            />
+          </div>
+          <div className="modal-field">
+            <label className="modal-label" htmlFor="pwd-confirm">
+              Confirmar nova senha
+            </label>
+            <input
+              id="pwd-confirm"
+              className="modal-input"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              disabled={pwdBusy}
+            />
+          </div>
+          {!hasEncryption && (
+            <span className="settings-key-status">
+              Configure <code>ARGUS_ENCRYPTION_KEY</code> para poder trocar a senha.
+            </span>
+          )}
+          <button
+            type="button"
+            className="modal-submit"
+            onClick={() => void handleChangePassword()}
+            disabled={pwdBusy || !hasEncryption}
+          >
+            Trocar senha
+          </button>
+        </div>
       </div>
 
       {cleared && <div className="settings-toast">Cache limpo</div>}

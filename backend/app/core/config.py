@@ -148,12 +148,12 @@ class Settings(BaseSettings):
     scan_respect_robots: bool = True
     # User-Agent usado nas requisições ao alvo (`SCAN_USER_AGENT`).
     scan_user_agent: str = "ArgusEngine/0.1 (authorized scanning)"
-    # Auth estática do scan (slice 1 de "login + scan", ROADMAP Etapa 12):
+    # Auth estática do scan ("login + scan", ROADMAP Etapa 12):
     # headers extras aplicados a todo request ao alvo (`SCAN_EXTRA_HEADERS`,
     # JSON: {"Authorization": "Bearer ..."}) e cookies de sessão
     # (`SCAN_COOKIES`, formato "a=b; c=d"). Mantém o scan funcional atrás de
     # alvos com sessão; credenciais ficam fora do relatório/log (ver
-    # app/core/secrets.py). Login dinâmico (form) = slice 2, ainda não feito.
+    # app/core/secrets.py).
     scan_extra_headers: dict[str, str] = {}
     scan_cookies: str = ""
     # Login dinâmico do scan (slice 2 de "login + scan"): o scanner submete o
@@ -193,6 +193,15 @@ class Settings(BaseSettings):
     # Segredo para assinar o cookie de sessão. Se vazio, deriva de UI_PASSWORD.
     # Env: ARGUS_SESSION_SECRET.
     session_secret: str = Field(default="", validation_alias="ARGUS_SESSION_SECRET")
+
+    # Rate-limit do /auth/login (hardening): máximo de tentativas erradas por IP
+    # dentro de uma janela em segundos; ultrapassou → 429 + Retry-After. Estado
+    # em memória (single-process) — o contador zera no restart. O login correto
+    # zera o contador do IP. Env: LOGIN_MAX_ATTEMPTS / LOGIN_WINDOW_SECONDS.
+    login_max_attempts: int = 5
+    login_window_seconds: int = 300
+    # Tamanho mínimo da nova senha na rotação (POST /auth/password).
+    ui_password_min_length: int = 8
 
 
 @lru_cache

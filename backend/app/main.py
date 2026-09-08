@@ -17,6 +17,7 @@ from app.db.migrate import run_migrations
 from app.db.session import async_session_factory, engine
 from app.schemas.health import Health
 from app.schemas.policy import PolicyRead
+from app.services.app_settings import load_ui_password_override_from_db
 from app.services.provider_config import _load_overrides_from_db
 from app.services.run_recovery import recover_stale_runs
 
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI):
             logger.info("Recuperou %d run(s) órfão(s): %s", len(recovered), recovered)
     if has_encryption():
         await _load_overrides_from_db()
+        await load_ui_password_override_from_db()
     app.state.policy = load_policy()
     yield
     await engine.dispose()

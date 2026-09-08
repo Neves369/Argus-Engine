@@ -750,7 +750,13 @@ function seedReport(report: Report) {
         onClose={() => setSettingsOpen(false)}
         size="wide"
       >
-        <Settings onClose={() => setSettingsOpen(false)} />
+        <Settings
+          onClose={() => setSettingsOpen(false)}
+          onSessionInvalidated={() => {
+            setSettingsOpen(false);
+            void handleLogout();
+          }}
+        />
       </Modal>
       <Modal
         open={sessionsOpen}

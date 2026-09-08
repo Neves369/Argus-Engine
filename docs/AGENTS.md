@@ -66,6 +66,13 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   vazia, `require_auth` vira no-op (**modo aberto**). **Ao adicionar um novo router
   protegido, inclua-o em `router.py` — ele herda o guard automaticamente; não crie
   dependência manual por endpoint.** As rotas `/auth/*` e `/health` ficam de fora do guard.
+  `/auth/login` tem rate-limit por IP (`LOGIN_MAX_ATTEMPTS`/`LOGIN_WINDOW_SECONDS`).
+  Rotação de senha: `POST /auth/password` grava a nova senha cifrada em `app_settings`
+  (`app/services/app_settings.py` + `app/core/auth_overrides.py`); a senha efetiva
+  (`effective_ui_password`) prioriza o override e derruba as sessões (a menos que
+  `ARGUS_SESSION_SECRET` esteja definido). Kill-switch é acionado em runtime por
+  `app/api/v1/operate.py` (one-way; desativa com restart) — adicionar/alterar
+  endpoints que criam runs exige manter todos os gates de `is_kill_switch_active()`.
   Frontend: `Login.tsx` + `client.ts` (`login`/`logout`/`getMe`, `credentials: 'include'`)
   e `App.tsx` (`handleLogin`/`handleLogout`/`handleMe`).
 - `POST /runs/{id}/cancel` só válido para status `running`; o sinal é checado

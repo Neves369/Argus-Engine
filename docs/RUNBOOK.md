@@ -145,8 +145,10 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 | `TOOL_SANDBOX_IMAGE` / `TOOL_SANDBOX_CPUS` / `TOOL_SANDBOX_PIDS_LIMIT` / `TOOL_SANDBOX_UID` | Defaults da sandbox (§6.7): imagem (`alpine:latest`), `--cpus` (1.0), `--pids-limit` (64) e uid não-root (65534). Override por tool no `tools.json` via `sandbox_image`/`sandbox_network`/`sandbox_user`. |
 | `DATABASE_URL` | Aponta para o SQLite. Trocar exige rodar `alembic upgrade head` contra o novo arquivo antes do primeiro boot. |
 | `EVIDENCE_DIR` | Onde os arquivos de evidência (hash SHA-256) são gravados. Precisa ser volume persistente e com backup — ver §7.2. |
-| `UI_PASSWORD` | Se definida, a UI exige login com essa senha (cookie de sessão HMAC). Se vazia, a API roda em **modo aberto** (sem auth) — útil para dev/teste local, nunca para expor em rede. |
-| `ARGUS_SESSION_SECRET` | Chave de assinatura do cookie de sessão. Se vazia, deriva de `UI_PASSWORD`; defina explicitamente em produção. |
+| `UI_PASSWORD` | Se definida, a UI exige login com essa senha (cookie de sessão HMAC). Se vazia, a API roda em **modo aberto** (sem auth) — útil para dev/teste local, nunca para expor em rede. Uma senha rotacionada via `POST /auth/password` tem prioridade sobre esta variável. |
+| `ARGUS_SESSION_SECRET` | Chave de assinatura do cookie de sessão. Se vazia, deriva da senha efetiva (rotacionada se existir); defina explicitamente em produção. Ao trocar a senha com esta variável definida, os cookies existentes **não** são invalidados. |
+| `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_SECONDS` | Rate-limit do `/auth/login` (default: 5 tentativas por IP em 300s). Ultrapassou → `429` + `Retry-After`; login correto zera o contador. Estado em memória — zera no restart. |
+| `UI_PASSWORD_MIN_LENGTH` | Tamanho mínimo da nova senha na rotação via UI (default 8). |
 | `SCAN_RATE_LIMIT` | Requisições por segundo ao alvo durante scanning ativo. Default: 10. |
 | `SCAN_REQUEST_TIMEOUT` | Timeout em segundos por requisição HTTP ao alvo. Default: 10. |
 | `SCAN_MAX_PAGES` | Número máximo de páginas crawleadas por scan (limite de escopo). Default: 10. |
@@ -160,17 +162,24 @@ A lista completa está em `.env.example`; aqui só as que mais aparecem em opera
 
 ## 4. Kill-switch
 
-- **Ligar:** `KILL_SWITCH=true` no `.env` + restart do processo, **ou** via runtime flag
-  se exposta pela sua implantação (ver `app/core/security.py`).
+- **Ligar:** `KILL_SWITCH=true` no `.env` + restart do processo, **ou** em runtime
+  pela UI (Configurações → Segurança → Ativar kill-switch) ou pela API:
+  `GET /api/v1/operate/kill-switch` (status) e `POST /api/v1/operate/kill-switch`
+  com `{"reason": "..."}` (ativa). A ativação runtime é **one-way** (abort-only):
+  um painel/sessão comprometido não consegue destravar.
 - **Efeito:** todo novo nó do grafo recusa executar; runs em andamento param no
   próximo nó (não há rollback de ações já tomadas — o kill-switch impede *a
   próxima* ação, não desfaz a anterior).
 - **Quando usar:** qualquer suspeita de comportamento fora de escopo, custo
   disparando sem explicação, ou incidente de segurança em andamento contra o
   próprio Argus Engine.
-- **Desligar:** reverter a variável e reiniciar. Runs que pararam em `pending_review`
+- **Desligar:** reverter `KILL_SWITCH` no ambiente (ou, no caso de ativação
+  runtime, apenas reiniciar o processo sem a variável) — somente com acesso ao
+  servidor. Runs que pararam em `pending_review`
   ou no meio do grafo **não** retomam sozinhos — precisam ser revisados
   manualmente (`GET /api/v1/runs/{id}`) antes de decidir se devem continuar.
+- **Auditoria:** toda ativação grava no log estruturado (`logger`, campo
+  `reason`). Ver §8.
 
 ## 5. Human-in-the-Loop (fila de aprovação)
 
@@ -466,13 +475,30 @@ usuário). O fluxo é:
 3. `GET /api/v1/auth/me` devolve `{authenticated, ui_enabled}` para a UI decidir
    se mostra o login; `POST /api/v1/auth/logout` limpa o cookie.
 
-**Modo aberto:** se `UI_PASSWORD` estiver vazia, `require_auth` é desativado — a UI
+**Modo aberto:** se não houver senha efetiva (`UI_PASSWORD` do env ou override
+rotacionado), `require_auth` é desativado — a UI
 entra direto, sem tela de login. Use só em dev/teste local. Em qualquer implantação
 acessível por rede, defina `UI_PASSWORD` (e `ARGUS_SESSION_SECRET` explícito).
+
+**Tentativas de login** são rate-limiteadas por IP (`LOGIN_MAX_ATTEMPTS` em
+`LOGIN_WINDOW_SECONDS`, defaults 5/300s); o `429` carrega `Retry-After`. Estado em
+memória (single-process) — o restart zera os contadores. Em frente ao nginx, o IP
+é lido do primeiro valor de `X-Forwarded-For`.
+
+**Rotação de senha:** `POST /api/v1/auth/password` (autenticado) valida a senha
+atual e persiste a nova **cifrada** com a `ARGUS_ENCRYPTION_KEY`
+(exigida — sem ela a rota responde `409`). A senha rotacionada passa a valer
+imediatamente e sobrevive a restarts (tabela `app_settings`). Por default
+(`ARGUS_SESSION_SECRET` vazio), a chave HMAC dos cookies deriva da senha, então
+rotacionar **invalida todas as sessões ativas** — a UI desloga e exige novo login.
+Com `ARGUS_SESSION_SECRET` definido, os cookies existentes continuam válidos.
 
 **Runbook — esqueceu a senha / quer deslogar todos:** como não há banco de usuários,
 basta trocar `ARGUS_SESSION_SECRET` (ou `UI_PASSWORD`) e reiniciar — todos os cookies
 existentes deixam de validar. Não há senha "esqueci" por design (operador único).
+Se houver override rotacionado gravado e você quiser voltar a usar o `UI_PASSWORD`
+do ambiente, remova a linha `ui_password` da tabela `app_settings` no banco e
+reinicie.
 
 **Runbook — `409` no login:** significa que `UI_PASSWORD` não está definida (modo
 aberto); não há o que autenticar — acesse a UI direto.

@@ -15,6 +15,16 @@ def is_kill_switch_active() -> bool:
     return _kill_switch.is_set() or get_settings().kill_switch
 
 
+def kill_switch_source() -> str:
+    """Origem do kill-switch: 'env' (KILL_SWITCH no boot), 'runtime' (operador,
+    in-process) ou 'none' quando inativo. 'env' só se desarma com restart."""
+    if get_settings().kill_switch:
+        return "env"
+    if _kill_switch.is_set():
+        return "runtime"
+    return "none"
+
+
 def activate_kill_switch() -> None:
     _kill_switch.set()
 
