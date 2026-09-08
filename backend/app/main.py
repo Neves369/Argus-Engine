@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,12 +14,14 @@ from app.core.crypto import has_encryption
 from app.core.logging import setup_logging
 from app.core.policy import load_policy
 from app.db.migrate import run_migrations
-from app.db.session import engine
+from app.db.session import async_session_factory, engine
 from app.schemas.health import Health
 from app.schemas.policy import PolicyRead
 from app.services.provider_config import _load_overrides_from_db
+from app.services.run_recovery import recover_stale_runs
 
 settings = get_settings()
+logger = logging.getLogger("argus")
 setup_logging(settings.log_level)
 
 
@@ -26,6 +29,10 @@ setup_logging(settings.log_level)
 async def lifespan(app: FastAPI):
     Path("data").mkdir(parents=True, exist_ok=True)
     await run_migrations()
+    async with async_session_factory() as session:
+        recovered = await recover_stale_runs(session)
+        if recovered:
+            logger.info("Recuperou %d run(s) órfão(s): %s", len(recovered), recovered)
     if has_encryption():
         await _load_overrides_from_db()
     app.state.policy = load_policy()

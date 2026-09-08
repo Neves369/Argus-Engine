@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     default_budget_tokens: int = 100_000
     default_budget_cost: float = 1.0
     confidence_threshold: float = 0.6
+    # Idade (segundos) a partir da qual um run `running`/`pending_review` é
+    # tratado como órfão (processo anterior morreu sem finalizar) e recuperado
+    # para `failed` — retomável pela UI. Ver app/services/run_recovery.py.
+    run_stale_after_seconds: int = 86400
 
     # Supervisor (modo padrão, sem cartas): número máximo de rodadas em que o
     # Imperador pode delegar a um membro do time antes de fechar o run. Protege

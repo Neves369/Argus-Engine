@@ -39,9 +39,12 @@ limiting, timeout e self-imposed restrictions.
  `next_agent`, da primeira carta da composição ou do Imperador) sem recomeçar do
  zero. Na UI, o `RunPanel` mostra **Retomar run de onde parou** para esses runs.
  Runs `completed` ou sem estado persistido (`result` nulo) **não** são resumíveis
- (409). Um run órfão preso como `running` (processo morto no meio do run) também
- **não**: livrá-lo exige decisão operacional — kill-switch (§4) e limpeza manual
- do status (consulte `docs/AGENTS.md` antes de alterar o banco).
+ (409). Um run órfão preso como `running` (processo morto no meio do run) é
+ recuperado **automaticamente** para `failed` — retomável — quando sua idade
+ passa de `RUN_STALE_AFTER_SECONDS` (default 24h): a recuperação roda no boot
+ (`app/services/run_recovery.py`) e antes de qualquer lock de run único
+ (`ensure_no_active_run`). Via UI: o run aparece `failed` com aviso e o botão
+ **Retomar run de onde parou**.
 
 **Conferir o resultado de um run:** pela UI, o painel de execução cai na aba
 **Resultados** ao concluir (achados em primeiro plano com severidade, CVEs, exploit

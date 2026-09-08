@@ -837,10 +837,11 @@ controlada do Modo Diabo.
   verificação ao vivo + tools não destrutivas do operador. Fica adiado apenas o
   **Modo Diabo** com backend destrutivo/exploits (decisão de produto registrada na
   Etapa 2 + `SECURITY.md`); hoje o caminho Diabo segue HITL → `no_backend`.
-- Runs órfãos presos como `running` no banco (processo morto no meio do run)
-  seguem **não resumíveis pela UI**: a retomada é permitida para `cancelled`/
-  `failed`; recuperar um `running` órfão exige decisão operacional
-  (kill-switch + limpeza manual do status) — ver `RUNBOOK.md`.
+- Runs órfãos presos como `running`/`pending_review` no banco (processo morto no
+  meio do run) agora são **recuperados automaticamente** para `failed` — retomável
+  pela UI — quando a idade passa de `RUN_STALE_AFTER_SECONDS` (default 24h):
+  `app/services/run_recovery.py` roda no boot (`app/main.py`) e dentro de
+  `ensure_no_active_run` (`app/services/run_control.py`).
 
 ## Etapa 15 — Execução Real não destrutiva (Carro, modo normal)
 

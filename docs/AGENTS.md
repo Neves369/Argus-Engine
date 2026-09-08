@@ -47,6 +47,10 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
 
 - `backend/app/services/run_control.py` — lock de run único (`ensure_no_active_run` /
   `RunLockedError`) e cancelamento em memória (`request_cancel` / `is_cancel_requested`).
+  Antes de levantar `RunLockedError`, `ensure_no_active_run` **recupera runs órfãos**
+  (running/pending_review mais velhos que `RUN_STALE_AFTER_SECONDS`, default 24h) para
+  `failed`/retomável — `backend/app/services/run_recovery.py`, também chama no boot
+  (`app/main.py` lifespan).
 - O guard de lock deve ser aplicado em **todos** os pontos que criam Run:
   `POST /runs`, `GET /runs/stream`, `POST /compositions/{id}/execute`. Cliente que
   tentar iniciar com run ativo recebe `409`.

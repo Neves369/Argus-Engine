@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run
+from app.services.run_recovery import recover_stale_runs
 
 ACTIVE_STATUSES = ("running", "pending_review")
 
@@ -40,6 +41,9 @@ async def active_run(db: AsyncSession) -> Run | None:
 
 
 async def ensure_no_active_run(db: AsyncSession) -> None:
+    # Run órfão (processo anterior morreu) não deve travar o lock: recupera
+    # para `failed` (retomável) antes de decidir se há um run realmente ativo.
+    await recover_stale_runs(db)
     run = await active_run(db)
     if run is not None:
         raise RunLockedError(
