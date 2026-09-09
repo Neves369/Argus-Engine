@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 .env
 backend/data/
+/data/
 .pytest_cache/
 .ruff_cache/
 build/

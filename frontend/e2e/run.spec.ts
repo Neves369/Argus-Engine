@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { login, openMenu, setTarget, startRun } from './helpers';
+import { login, metricValue, openMenu, readMetrics, setTarget, startRun } from './helpers';
 
 test.describe('Run ponta a ponta', () => {
-  test('alvo → run ao vivo (SSE) → relatório → dashboard', async ({ page }) => {
+  test('alvo → run ao vivo (SSE) → relatório → dashboard', async ({ page, request }) => {
     await login(page);
     await setTarget(page);
 
@@ -16,6 +16,14 @@ test.describe('Run ponta a ponta', () => {
       timeout: 90_000,
     });
     await expect(page.locator('.run-panel-title')).toContainText('Run #');
+
+    // Métricas de negócio: o run concluído (compartilhamos o mesmo backend
+    // determinístico entre os specs, então é exatamente 1 run completed) é
+    // refletido no /metrics — contador, gauge de ativo e timestamp resetado.
+    const metrics = await readMetrics(request);
+    expect(metricValue(metrics, 'argus_runs_total', { status: 'completed' })).toBe(1);
+    expect(metricValue(metrics, 'argus_runs_active')).toBe(0);
+    expect(metricValue(metrics, 'argus_run_started_at_seconds')).toBe(0);
 
     // Relatório: alvo + seções de resultado renderizadas.
     await expect(

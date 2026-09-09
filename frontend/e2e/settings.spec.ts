@@ -2,13 +2,15 @@ import { expect, test } from '@playwright/test';
 import {
   E2E_NEW_PASSWORD,
   login,
+  metricValue,
   openSettings,
+  readMetrics,
   setTarget,
   startRun,
 } from './helpers';
 
 test.describe('Segurança (Configurações)', () => {
-  test('kill-switch ativado em runtime bloqueia novos runs', async ({ page }) => {
+  test('kill-switch ativado em runtime bloqueia novos runs', async ({ page, request }) => {
     await login(page);
     await openSettings(page);
 
@@ -22,6 +24,10 @@ test.describe('Segurança (Configurações)', () => {
 
     await expect(security.locator('.settings-model-model')).toContainText('ATIVO (runtime)');
     await expect(page.locator('.settings-toast')).toContainText('Kill-switch ativado');
+
+    // O gauge de negócio reflete a ativação one-way no /metrics do backend.
+    const metrics = await readMetrics(request);
+    expect(metricValue(metrics, 'argus_kill_switch_active')).toBe(1);
 
     // Fecha as configurações e tenta rodar: o backend responde 423.
     await page.locator('.modal-submit', { hasText: 'Fechar' }).click();

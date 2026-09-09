@@ -3,7 +3,9 @@
 test: test-backend test-frontend
 
 test-backend:
-	cd backend && .venv/bin/pytest
+	cd backend && { \
+	  if [ -x .venv/bin/pytest ]; then .venv/bin/pytest; else python -m pytest; fi; \
+	}
 
 test-frontend:
 	cd frontend && npm test
