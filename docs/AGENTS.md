@@ -19,7 +19,7 @@ frontend React (Vite + React Flow) com arquétipos visuais estilo tarô.
 
 ## Documentos obrigatórios de contexto
 
-- `ROADMAP.md` — plano vivo; fonte de verdade das etapas (0 a 10).
+- `ROADMAP.md` — plano vivo; fonte de verdade das etapas (0 a 15).
 - `SECURITY.md` — política de segurança e controles.
 - `CONTRIBUTING.md` — convenções e fluxo.
 - `MANUAL_DO_USUARIO.md` — como o usuário usa a plataforma (UI, cartas, relatório).
@@ -168,7 +168,9 @@ Frontend (dentro de `frontend/`):
 
 ```bash
 npm run lint
+npm test               # testes unitários (vitest, jsdom)
 npm run build
+npm run e2e            # E2E Playwright (requer backend em :8000)
 npm run dev
 ```
 

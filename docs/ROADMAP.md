@@ -29,7 +29,7 @@ Estas são duas funcionalidades **separadas**:
 | **Scanning Ativo** (padrão) | **Sempre** quando alvo em `ALLOWED_SCOPES` | Download de página, crawl, análise de headers/forms, fingerprinting, detecção de vulnerabilidades OWASP Top 10 | Rate limiting, timeout, self-imposed restrictions, logging completo |
 | **Modo Diabo** (futuro) | Só com `DEVIL_MODE=ON` | Execução de scripts invasivos/destrutivos (exploits) | Escopo validado + sandbox + kill-switch + auditoria + HITL |
 
-**Scanning ativo NÃO é Modo Diabo.** O scanning é funcionalidade core — ele访访 o alvo para encontrar vulnerabilidades reais. O Modo Diabo é uma camada adicional para execução sem restrições.
+**Scanning ativo NÃO é Modo Diabo.** O scanning é funcionalidade core — ele escaneia o alvo para encontrar vulnerabilidades reais. O Modo Diabo é uma camada adicional para execução sem restrições.
 
 ---
 
@@ -108,7 +108,7 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 
 **Observações / pendências**
 - `make setup` documentado no `Makefile` (Linux) e comandos Windows no `README`.
-- ADRs (`docs/adr/`) ainda não iniciados.
+- ADRs (`docs/adr/`) registrados e concluídos (0001–0010).
 
 ---
 
