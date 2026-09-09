@@ -4,13 +4,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .env
-data/
+backend/data/
 .pytest_cache/
 .ruff_cache/
 build/
 dist/
 
 # Frontend (Node/Vite)
+frontend/src/data/sessions.ts
 logs
 *.log
 npm-debug.log*

@@ -1,4 +1,4 @@
-import emperrorImg from '../assets/cards/emperror.jpg';
+import emperorImg from '../assets/cards/emperor.jpg';
 import towerImg from '../assets/cards/tower.jpg';
 import './CharacterPanel.css';
 
@@ -16,7 +16,7 @@ function CharacterPanel({
   onPhotoClick,
   image,
 }: CharacterPanelProps) {
-  const defaultImg = side === 'ally' ? emperrorImg : towerImg;
+  const defaultImg = side === 'ally' ? emperorImg : towerImg;
 
   return (
     <div className={`character-panel character-panel--${side}`}>
