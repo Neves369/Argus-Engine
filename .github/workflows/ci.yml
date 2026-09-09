@@ -41,6 +41,8 @@ jobs:
         run: npm run lint
       - name: Type-check + build (tsc -b && vite build)
         run: npm run build
+      - name: Unit tests (vitest)
+        run: npm test
 
   e2e:
     name: E2E (Playwright)
