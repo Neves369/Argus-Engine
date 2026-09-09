@@ -7,9 +7,9 @@ name: argus-prod
 #
 # O merge mantém o projeto `argus-prod`: o Prometheus alcança o `backend` pela
 # rede padrão e o Grafana já chega provisionado com datasource + dashboard.
-# Dados de TSDB/Grafana ficam em volumes nomeados (`argus-*-data`); os binds
-# são apenas de config (read-only). Para coleção de logs (Loki + promtail),
-# veja docs/RUNBOOK §13.
+# Dados de TSDB/Grafana/Loki ficam em volumes nomeados (`argus-*-data`); os
+# binds são apenas de config (read-only). O receptor real do Alertmanager é
+# configurado em `ops/alertmanager/alertmanager.yml` (sem webhook fake).
 
 services:
   prometheus:
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD é obrigatória}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -51,6 +51,27 @@ services:
     depends_on:
       - prometheus
 
+  loki:
+    image: grafana/loki:3.3.2
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./ops/loki:/etc/loki:ro
+      - argus-loki-data:/loki
+    expose:
+      - "3100"
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./ops/promtail:/etc/promtail:ro
+
 volumes:
   argus-prometheus-data:
   argus-grafana-data:
+  argus-loki-data:

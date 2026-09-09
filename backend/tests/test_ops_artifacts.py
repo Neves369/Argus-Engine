@@ -108,6 +108,45 @@ def test_monitoring_compose_has_core_stack():
         )
 
 
+def test_monitoring_compose_ships_logs_to_loki():
+    compose = yaml.safe_load(
+        (ROOT / "ops/docker-compose.monitoring.yml").read_text()
+    )
+    services = compose["services"]
+    assert {"loki", "promtail"} <= set(services)
+    assert "argus-loki-data" in compose.get("volumes", {})
+    assert any(
+        "argus-loki-data" in m for m in services["loki"]["volumes"]
+    )
+    assert services["promtail"]["volumes"][0].startswith("/var/run/docker.sock")
+
+
+def test_loki_config_is_valid_minimal():
+    config = yaml.safe_load((ROOT / "ops/loki/local-config.yaml").read_text())
+    assert config["common"]["path_prefix"] == "/loki"
+    store = config["common"]["storage"]["filesystem"]
+    assert store["chunks_directory"].startswith("/loki")
+    assert config["server"]["http_listen_port"] == 3100
+    assert config["auth_enabled"] is False
+
+
+def test_grafana_admin_password_required_on_prod_not_dev():
+    prod = (ROOT / "ops/docker-compose.monitoring.yml").read_text()
+    dev = (ROOT / "ops/docker-compose.monitoring.dev.yml").read_text()
+    assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?" in prod
+    assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}" in dev
+
+
+def test_alertmanager_has_no_placeholder_receiver():
+    config = yaml.safe_load(
+        (ROOT / "ops/alertmanager/alertmanager.yml").read_text()
+    )
+    dumped = yaml.safe_dump(config)
+    assert "placeholder.invalid" not in dumped
+    assert any(receiver["name"] == "default" for receiver in config["receivers"])
+    assert config["route"]["receiver"] == "default"
+
+
 def test_monitoring_dev_compose_merges_with_base_dev_stack():
     compose = yaml.safe_load(
         (ROOT / "ops/docker-compose.monitoring.dev.yml").read_text()

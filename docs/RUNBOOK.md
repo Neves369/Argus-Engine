@@ -630,17 +630,17 @@ Além das métricas HTTP, o backend expõe métricas de processo de run:
 ### 13.2 Stack (compose de monitoramento)
 
 ```bash
-# Sobe prometheus + alertmanager + grafana junto com o deploy de produção.
+# Sobe prometheus + alertmanager + grafana + loki/promtail com o deploy de produção.
+# Obrigatória adicional: GRAFANA_ADMIN_PASSWORD (sem default em produção).
 docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml up -d
 ```
 
 - Projeto: `argus-prod` (mesmo do compose de produção — merge no mesmo network,
   o Prometheus alcança o `backend` por `backend:8000`).
-- Serviços: `prometheus` (expose interno 9090, dados em volume
-  `argus-prometheus-data`), `alertmanager` (porta **9093**), `grafana` (porta
-  **3000**, login `admin`/`$GRAFANA_ADMIN_PASSWORD`, default `admin` no primeiro
-  acesso). Volumes nomeados (`argus-*-data`) em vez de binds `./data` — os binds
-  são só de config (`./ops/*` read-only).
+- Serviços: `prometheus` (expose interno 9090), `alertmanager` (porta **9093**),
+  `grafana` (porta **3000** — **exige `GRAFANA_ADMIN_PASSWORD`**, sem default),
+  `loki` (interno, :3100) e `promtail` (lê `/var/run/docker.sock`). Dados em
+  volumes nomeados (`argus-*-data`); os binds são só de config (`./ops/*` read-only).
 - Grafana chega **provisionado**: datasource `Prometheus` (http://prometheus:9090)
   e dashboard "Argus Engine — Visão geral" (runs ativos, kill-switch, 5xx rate,
   throughput, p95, runs por status, início do run).
@@ -650,22 +650,28 @@ docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml u
   - `ArgusRunActiveTooLong` — run ativo há mais de 2h (gauge de início).
   - `ArgusRunsFailing` — qq finalização `failed` na janela de 15m.
 - **Notificações:** rodam pelo Alertmanager; o `ops/alertmanager/alertmanager.yml`
-  tem um receptor "default" genérico — configure o seu (Slack/email/webhook)
-  antes de confiar em alertas.
+  entrega por padrão só na UI do Alertmanager (**:9093**) — sem webhook fake.
+  Adicione o seu receptor (exemplos Slack/email comentados no arquivo) e
+  reinicie com `docker compose -f ... restart alertmanager`.
 - **Acesso público:** o `/metrics` não exige auth (igual ao `/health`) — em
   produção, deixe o `backend` sem porta externa (só seed no network) e aponte o
   scrape para `backend:8000` internamente. Não exponha `:9090`/`:3000` em
   produção; use `GRAFANA_ADMIN_PASSWORD` e o auth do Grafana para acessar a UI.
 
-### 13.3 Logs estruturados (coleção opcional)
+### 13.3 Logs estruturados
 
 - No compose de produção, backend e frontend usam o driver `json-file` com
   rotação (`max-size: 20m`, `max-file: 5`) — os logs continuam em stdout para
   `docker compose logs`.
-- Para agregar, `ops/promtail/config.yml` mostra um job com `docker_sd_configs`
-  (descobre containers do projeto `argus-prod` e envia ao Loki em
-  `http://loki:3100/...`) — adicione `loki` e `promtail` ao compose de
-  monitoramento se quiser consultar logs com o Grafana.
+- Com o compose de monitoramento, o **Loki** (volume `argus-loki-data`) já
+  coleta via **promtail**: `ops/promtail/config.yml` descobre os containers do
+  projeto `argus-prod` pelo docker socket (`docker_sd_configs`) e envia para
+  `http://loki:3100/loki/api/v1/push`. Consulte os logs no Grafana (Explorer →
+  datasource Loki), ou direto:
+  ```bash
+  curl -s 'http://localhost:3100/loki/api/v1/query_range?query=%7Bjob%3D%22argus%22%7D&limit=5'
+  ```
+  (para acesso externo, o Loki fica interno ao network — use `docker compose exec`).
 
 ### 13.4 Verificação
 

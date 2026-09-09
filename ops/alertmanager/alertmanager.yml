@@ -1,5 +1,20 @@
-# Roteamento base. Configure um receptor real (Slack/email/HTTP) aqui e ajuste
-# o `url` do webhook da seção `receivers`.
+# Roteamento base. O receptor `default` sem integração ativa apenas entrega os
+# alertas na UI do Alertmanager (:9093). Para notificar de verdade, adicione
+# aqui o seu receptor (Slack/email/webhook) e ajuste o roteamento:
+#
+#   receivers:
+#     - name: default
+#       webhook_configs:
+#         - url: https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
+#       # ou, para e-mail (requer SMTP):
+#       email_configs:
+#         - to: ops@example.com
+#           from: alertmanager@example.com
+#           smarthost: smtp.example.com:587
+#           auth_username: alertmanager
+#           auth_password: 'segredo'
+#
+# Depois de alterar, reinicie o serviço: docker compose <args> restart alertmanager.
 global:
   resolve_timeout: 5m
 
@@ -12,6 +27,3 @@ route:
 
 receivers:
   - name: default
-    # Exemplo com webhook genérico; troque pelo seu notificador.
-    webhook_configs:
-      - url: http://placeholder.invalid/webhook
