@@ -96,6 +96,8 @@ jobs:
           ACME_EMAIL: ci@example.org
           UI_PASSWORD: ci
         run: docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml config --quiet
+      - name: Validate dev + monitoring compose merge
+        run: docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml config --quiet
       - name: Build images (backend + frontend, no push)
         run: docker compose build --pull
 

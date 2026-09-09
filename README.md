@@ -81,6 +81,16 @@ cd frontend && npm run lint && npm run build && npm test
 npm run e2e                 # Playwright (back + front reais, determinístico)
 ```
 
+## Observabilidade
+
+Prometheus + Grafana provisionado + Alertmanager em **dev local** (mais rápido
+de validar com um run real — ver RUNBOOK §13.5):
+
+```bash
+docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml up -d --build
+# UI :8080 | Prometheus :9090 | Grafana :3000 (admin/admin) | Alertmanager :9093
+```
+
 ## Licença
 
 MIT — ver [LICENSE](LICENSE).

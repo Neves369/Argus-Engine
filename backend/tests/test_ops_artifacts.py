@@ -100,6 +100,40 @@ def test_monitoring_compose_has_core_stack():
     )
     services = set(compose["services"])
     assert {"prometheus", "alertmanager", "grafana"} <= services
+    assert "argus-prometheus-data" in compose.get("volumes", {})
+    assert "argus-grafana-data" in compose.get("volumes", {})
+    for service in ("prometheus", "grafana"):
+        assert not any(
+            mount.startswith("./data") for mount in compose["services"][service]["volumes"]
+        )
+
+
+def test_monitoring_dev_compose_merges_with_base_dev_stack():
+    compose = yaml.safe_load(
+        (ROOT / "ops/docker-compose.monitoring.dev.yml").read_text()
+    )
+    # Mesmo projeto do docker-compose.yml base (rede compartilhada: o
+    # Prometheus alcança o backend em backend:8000 sem tocar no deploy prod).
+    assert compose["name"] == "argus"
+    services = compose["services"]
+    assert {"prometheus", "alertmanager", "grafana"} <= set(services)
+    for service in ("prometheus", "grafana"):
+        ports = {
+            p if isinstance(p, str) else str(p.get("published", p))
+            for p in services[service].get("ports", [])
+        }
+        assert ports, f"{service} expõe porta local"
+    # Dados em volumes nomeados do projeto `argus`, isolados do deploy prod
+    # (`argus-prod`); config vem de bind read-only em ./ops.
+    assert "argus-prometheus-data" in compose.get("volumes", {})
+    assert "argus-grafana-data" in compose.get("volumes", {})
+    for service, volume in (
+        ("prometheus", "argus-prometheus-data"),
+        ("grafana", "argus-grafana-data"),
+    ):
+        mounts = services[service]["volumes"]
+        assert any(volume in m for m in mounts), f"{service} usa volume nomeado"
+        assert not any(m.startswith("./data") for m in mounts)
 
 
 def test_promtail_ships_to_loki_via_docker_discovery():

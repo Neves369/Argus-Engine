@@ -1,15 +1,13 @@
-name: argus-prod
+name: argus
 
-# Stack de observabilidade OPCIONAL para o deploy de produção. Use em conjunto
-# com o compose de produção:
+# Observabilidade LOCAL (build dev, sem GHCR/Traefik). Merge com o compose
+# base — a mesma rede `argus` alcança o backend em `backend:8000`:
 #
-#   docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml up -d
+#   docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml up -d --build
 #
-# O merge mantém o projeto `argus-prod`: o Prometheus alcança o `backend` pela
-# rede padrão e o Grafana já chega provisionado com datasource + dashboard.
-# Dados de TSDB/Grafana ficam em volumes nomeados (`argus-*-data`); os binds
-# são apenas de config (read-only). Para coleção de logs (Loki + promtail),
-# veja docs/RUNBOOK §13.
+# Prometheus ganha porta 9090 exposta (inspeção local de targets/alertas);
+# TSDB/Grafana ficam em volumes nomeados do projeto `argus` (isolados do deploy
+# de produção, cujo projeto é `argus-prod`). Limpe com `down -v`.
 
 services:
   prometheus:
@@ -21,8 +19,8 @@ services:
     volumes:
       - ./ops/prometheus:/etc/prometheus:ro
       - argus-prometheus-data:/prometheus
-    expose:
-      - "9090"
+    ports:
+      - "9090:9090"
 
   alertmanager:
     image: prom/alertmanager:v0.27.0

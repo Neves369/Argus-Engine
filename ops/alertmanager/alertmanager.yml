@@ -1,5 +1,3 @@
-apiVersion: 1
-
 # Roteamento base. Configure um receptor real (Slack/email/HTTP) aqui e ajuste
 # o `url` do webhook da seção `receivers`.
 global:

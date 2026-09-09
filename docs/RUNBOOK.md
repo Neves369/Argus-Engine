@@ -636,9 +636,11 @@ docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml u
 
 - Projeto: `argus-prod` (mesmo do compose de produção — merge no mesmo network,
   o Prometheus alcança o `backend` por `backend:8000`).
-- Serviços: `prometheus` (expose interno 9090, dados em `./data/prometheus`),
-  `alertmanager` (porta **9093**), `grafana` (porta **3000**, login
-  `admin`/`$GRAFANA_ADMIN_PASSWORD`, default `admin` no primeiro acesso).
+- Serviços: `prometheus` (expose interno 9090, dados em volume
+  `argus-prometheus-data`), `alertmanager` (porta **9093**), `grafana` (porta
+  **3000**, login `admin`/`$GRAFANA_ADMIN_PASSWORD`, default `admin` no primeiro
+  acesso). Volumes nomeados (`argus-*-data`) em vez de binds `./data` — os binds
+  são só de config (`./ops/*` read-only).
 - Grafana chega **provisionado**: datasource `Prometheus` (http://prometheus:9090)
   e dashboard "Argus Engine — Visão geral" (runs ativos, kill-switch, 5xx rate,
   throughput, p95, runs por status, início do run).
@@ -674,3 +676,42 @@ curl -s http://localhost:9090/api/v1/targets | python -c \
   'import json,sys; print(json.load(sys.stdin)["data"]["targets"])'   # up do backend
 # Grafana: http://localhost:3000 -> dashboards -> "Argus Engine — Visão geral"
 ```
+
+### 13.5 Observabilidade local (build dev, sem GHCR/Traefik)
+
+Para **ver o dashboard e os alertas funcionando com runs reais** sem deploy de
+produção, use o override de dev — ele mergeia com o compose base (rede `argus`,
+scrape de `backend:8000`) e guarda TSDB/Grafana em volumes nomeados do projeto
+`argus` (isolados do `argus-prod`):
+
+```bash
+# na raiz do projeto
+docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml up -d --build
+
+# URLs:  UI localhost:8080 | Prometheus localhost:9090 | Grafana localhost:3000 |
+#        Alertmanager localhost:9093 (Grafana: admin / $GRAFANA_ADMIN_PASSWORD, default admin)
+```
+
+Smoke roteiro:
+
+1. **Stack up:** `... up -d --build`; aguarde o backend ficar healthy.
+2. **Scrape ativo:**
+   ```bash
+   curl -s localhost:9090/api/v1/targets | python -c \
+     'import json,sys; [print(t["labels"]["job"], t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"]]'
+   ```
+3. **Run real:** logue na UI e rode um run (alvo em `ALLOWED_SCOPES`); enquanto
+   o run estiver ativo, confirme as métricas de negócio:
+   ```bash
+   docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml \
+     exec backend python -c \
+     "import urllib.request as u; [print(l) for l in u.urlopen('http://localhost:8000/metrics').read().decode().splitlines() if l.startswith(('argus_runs_active','argus_run_started_at_seconds','argus_runs_total','argus_kill_switch_active'))]"
+   ```
+   Espere `argus_runs_active 1.0` e um `argus_run_started_at_seconds` > 0.
+4. **Dashboard:** Grafana → "Argus Engine — Visão geral" → painéis "Runs ativos"
+   e "Início do run ativo" refletindo o run; finalize o run e veja
+   "Runs finalizados por status" acumulando `completed`.
+5. **Kill-switch:** ative via UI (Configurações → kill-switch) e veja o painel
+   "Kill-switch" virar 1 (alerta `ArgusKillSwitchActive` em :9093).
+6. **Reset:** `docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml down -v`
+   remove os containers e os volumes `argus-prometheus-data`/`argus-grafana-data`.
