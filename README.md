@@ -44,8 +44,8 @@ frontend.
 ## Documentação
 
 - **docs/RUNBOOK.md** — operação: subir o serviço, configuração (`.env`, scopes,
-  kill-switch, HITL, hardening), métricas `/metrics` e deploy de produção com
-  TLS (Traefik + Let's Encrypt).
+  kill-switch, HITL, hardening), métricas `/metrics`, observabilidade de
+  produção (Prometheus/alertas/Grafana/logs) e deploy com TLS.
 - **docs/ROADMAP.md** — plano vivo das etapas.
 - **docs/SECURITY.md** — política de segurança e controles.
 - **docs/CONTRIBUTING.md** — convenções e fluxo de desenvolvimento.
@@ -62,8 +62,11 @@ frontend.
 - **Auth da UI**: senha única de operador (`UI_PASSWORD`) com sessão assinada
   (HttpOnly/SameSite=Lax, opcional `Secure` em produção), rate-limit de login e
   rotação de senha.
-- **Observabilidade**: métricas Prometheus em `/metrics`, relatório de segurança
-  (CWE/OWASP, CVSS, CVEs) e exportação Markdown/JSON/CSV/SARIF/PDF.
+- **Observabilidade**: métricas Prometheus em `/metrics` (HTTP + negócio: runs,
+  kill-switch) e stack opcional em `ops/` — Prometheus, Alertmanager, Grafana
+  dashboard provisionado e roteamento de logs json-file para Loki — para o
+  deploy de produção. Relatório de segurança (CWE/OWASP, CVSS, CVEs) com export
+  Markdown/JSON/CSV/SARIF/PDF.
 - **CI/CD**: lint + testes (pytest, eslint/tsc, Playwright E2E), validação de
   compose, build de imagens Docker e release para GHCR em tags `v*`.
 

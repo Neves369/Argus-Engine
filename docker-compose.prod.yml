@@ -52,6 +52,11 @@ services:
       - ./data:/app/data
     expose:
       - "8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     healthcheck:
       test:
         - CMD
@@ -71,6 +76,11 @@ services:
         condition: service_healthy
     expose:
       - "80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     labels:
       - traefik.enable=true
       - traefik.http.services.argus.loadbalancer.server.port=80

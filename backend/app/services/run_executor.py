@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run
+from app.metrics import record_run_terminal
 from app.orchestration.director import Director
 from app.orchestration.hitl import is_awaiting_review
 from app.orchestration.state import GraphState
@@ -52,6 +53,7 @@ async def execute_run(
         run.status = "completed"
         run.result = final.model_dump()
         await persist_run_result(db, run.id, target_id, final)
+    record_run_terminal(run.status)
     return final
 
 
@@ -114,6 +116,7 @@ async def resume_run(
     else:
         run.status = "completed"
         await persist_run_result(db, run.id, run.target_id, final)
+    record_run_terminal(run.status)
     run.result = final.model_dump()
     run.finished_at = _utcnow()
     await db.commit()
@@ -188,6 +191,7 @@ async def stream_run_events(
                 if is_cancel_requested(run.id):
                     run.status = "cancelled"
                     run.result = final
+                    record_run_terminal("cancelled")
                     break
                 for node, update in chunk.items():
                     final.update(update)
@@ -199,10 +203,12 @@ async def stream_run_events(
                 else:
                     run.status = "completed"
                     await persist_run_result(db, run.id, run.target_id, final_state)
+                record_run_terminal(run.status)
                 run.result = final
         except Exception as exc:  # noqa: BLE001
             run.status = "failed"
             run.error = str(exc)
+            record_run_terminal("failed")
             # Persiste o estado parcial: permite retomar de onde parou depois.
             run.result = final
             await queue.put(make("error", {"message": str(exc)}))

@@ -1,0 +1,143 @@
+{
+  "id": null,
+  "uid": "argus-overview",
+  "title": "Argus Engine — Visão geral",
+  "tags": ["argus"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Runs ativos",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "mappings": [{ "options": { "0": "nenhum", "1": "ATIVO", "2": "ATIVO" }, "type": "value" }] },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "argus_runs_active",
+          "legendFormat": "runs ativos",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Kill-switch",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "argus_kill_switch_active",
+          "legendFormat": "kill-switch",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Erros 5xx (5m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.03 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(argus_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(argus_http_requests_total[5m])), 1e-6)",
+          "legendFormat": "5xx",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Throughput HTTP (req/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(argus_http_requests_total[5m])) by (path)",
+          "legendFormat": "{{path}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Latência HTTP P95 (requisições autenticadas)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "unit": "s",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(argus_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "bar gauge",
+      "title": "Runs finalizados por status",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(argus_runs_total) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Início do run ativo",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "argus_run_started_at_seconds",
+          "legendFormat": "started_at",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

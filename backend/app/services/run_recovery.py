@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run
+from app.metrics import record_run_terminal
 
 _STALE_STATUSES = ("running", "pending_review")
 _RECOVERY_ERROR = (
@@ -39,6 +40,7 @@ async def recover_stale_runs(db: AsyncSession) -> list[int]:
         run.status = "failed"
         run.finished_at = _utcnow()
         run.error = _RECOVERY_ERROR
+        record_run_terminal("failed")
         recovered.append(run.id)
     if recovered:
         await db.commit()

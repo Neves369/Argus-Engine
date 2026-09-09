@@ -88,6 +88,14 @@ jobs:
           ACME_EMAIL: ci@example.org
           UI_PASSWORD: ci
         run: docker compose -f docker-compose.prod.yml config --quiet
+      - name: Validate production + monitoring compose merge
+        env:
+          GHCR_OWNER: ci
+          TAG: 0.0.0
+          DOMAIN: argus.example.org
+          ACME_EMAIL: ci@example.org
+          UI_PASSWORD: ci
+        run: docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml config --quiet
       - name: Build images (backend + frontend, no push)
         run: docker compose build --pull
 

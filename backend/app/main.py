@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.crypto import has_encryption
 from app.core.logging import setup_logging
 from app.core.policy import load_policy
+from app.core.security import is_kill_switch_active
 from app.db.migrate import run_migrations
 from app.db.session import async_session_factory, engine
 from app.metrics import (
@@ -21,6 +22,7 @@ from app.metrics import (
     MetricsMiddleware,
     metrics_headers,
     metrics_response,
+    set_kill_switch,
 )
 from app.schemas.health import Health
 from app.schemas.policy import PolicyRead
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
         await load_ui_password_override_from_db()
     app.state.policy = load_policy()
     BUILD_INFO.labels(settings.app_name).set(1)
+    set_kill_switch(is_kill_switch_active())
     yield
     await engine.dispose()
 

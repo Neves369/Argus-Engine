@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Decision, Finding, Run, Target
 from app.db.models import Session as SessionModel
+from app.metrics import record_run_start, record_run_terminal
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.state import GraphState
@@ -104,6 +105,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     db.add(run)
     await db.commit()
     await db.refresh(run)
+    record_run_start(run.started_at.timestamp() if run.started_at else None)
 
     state = GraphState(
         target=target_dict,
@@ -131,6 +133,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error = str(exc)
+        record_run_terminal("failed")
     finally:
         run.finished_at = _utcnow()
 
@@ -210,6 +213,7 @@ async def stream_run(
     db.add(run)
     await db.commit()
     await db.refresh(run)
+    record_run_start(run.started_at.timestamp() if run.started_at else None)
 
     state = GraphState(
         target=target_meta,
@@ -286,6 +290,7 @@ async def resume_run_stream(run_id: int, db: DBSession):
     run.finished_at = None
     await db.commit()
     await db.refresh(run)
+    record_run_start(run.started_at.timestamp() if run.started_at else None)
     return StreamingResponse(
         stream_run_events(db, run, state, director, entry=entry),
         media_type="text/event-stream",
@@ -313,6 +318,7 @@ async def cancel_run(run_id: int, db: DBSession) -> dict[str, Any]:
     request_cancel(run_id)
     run.status = "cancelled"
     run.finished_at = _utcnow()
+    record_run_terminal("cancelled")
     await db.commit()
     await db.refresh(run)
     return {"status": "ok", "run_id": run_id, "run_status": run.status}

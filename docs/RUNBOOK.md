@@ -459,6 +459,7 @@ roda dentro de um **container Docker descartável** (`docker run --rm` de nome
 | UI pede login / sessão expira | §10 |
 | Quero consultar métricas do serviço (Prometheus) | §11 |
 | Como fazer deploy de produção com TLS / aplicar release | §12 |
+| Preciso subir/consultar métricas, alertas e dashboard de produção | §13 |
 | Scanning ativo bloqueado por robots.txt | §6.5 |
 | Scanning ativo muito lento ou com timeouts | §6.5 |
 | Run normal sem sondas/tools gravou `mode: "simulate"` | §6.5.1 |
@@ -601,3 +602,75 @@ curl -s https://argus.exemplo.com/health | head    # se quiser confirmar backend
 
 **Runbook — `401` no login:** senha incorreta. Não há bloqueio por tentativas (por
 design, operador único); se suspeitar exposição, troque `UI_PASSWORD` e o segredo.
+
+## 13. Observabilidade de produção (Prometheus + alertas + dashboard + logs)
+
+Além do `/metrics` (§11), o repositório entrega artefatos prontos de
+observabilidade em `ops/` — tudo **opcional** e separado do compose de produção.
+
+### 13.1 Métricas de negócio (exportadas em `/metrics`)
+
+Além das métricas HTTP, o backend expõe métricas de processo de run:
+
+| Métrica | Tipo | Significado |
+|---|---|---|
+| `argus_runs_total{status}` | counter | Finalizações por status (`completed`, `failed`, `cancelled`, `pending_review`) |
+| `argus_runs_active` | gauge | 1 enquanto há run ativo (`running` **ou** `pending_review`); 0 caso contrário |
+| `argus_run_started_at_seconds` | gauge | Época (Unix) de início do run ativo; 0 se inativo |
+| `argus_kill_switch_active` | gauge | 1 durante kill-switch (env ou runtime) |
+
+- Coxeamento no ciclo de vida do run: `runs.py` (create/stream/resume/cancel),
+  `run_executor.py` (execute_run/resume_run/stream), `run_recovery.py` (marca
+  órfãos como `failed`) e `operate.py` + `main.py` (kill-switch).
+- `pending_review` mantém `argus_runs_active=1` na definição: o HITL continua sob o
+  lock de run único até o run ser aprovado/rejeitado.
+- A métrica HTTP clássica (contagem/histograma) e o `BUILD_INFO` (§11) seguem
+  disponíveis; o 5xx-rate para alerta usa `argus_http_requests_total`.
+
+### 13.2 Stack (compose de monitoramento)
+
+```bash
+# Sobe prometheus + alertmanager + grafana junto com o deploy de produção.
+docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml up -d
+```
+
+- Projeto: `argus-prod` (mesmo do compose de produção — merge no mesmo network,
+  o Prometheus alcança o `backend` por `backend:8000`).
+- Serviços: `prometheus` (expose interno 9090, dados em `./data/prometheus`),
+  `alertmanager` (porta **9093**), `grafana` (porta **3000**, login
+  `admin`/`$GRAFANA_ADMIN_PASSWORD`, default `admin` no primeiro acesso).
+- Grafana chega **provisionado**: datasource `Prometheus` (http://prometheus:9090)
+  e dashboard "Argus Engine — Visão geral" (runs ativos, kill-switch, 5xx rate,
+  throughput, p95, runs por status, início do run).
+- Alertas (`ops/prometheus/alerting-rules.yml`):
+  - `ArgusHTTP5xxRate` — proporção de 5xx por path > 5% (avaliação 10m).
+  - `ArgusKillSwitchActive` — hit no kill-switch (`== 1`).
+  - `ArgusRunActiveTooLong` — run ativo há mais de 2h (gauge de início).
+  - `ArgusRunsFailing` — qq finalização `failed` na janela de 15m.
+- **Notificações:** rodam pelo Alertmanager; o `ops/alertmanager/alertmanager.yml`
+  tem um receptor "default" genérico — configure o seu (Slack/email/webhook)
+  antes de confiar em alertas.
+- **Acesso público:** o `/metrics` não exige auth (igual ao `/health`) — em
+  produção, deixe o `backend` sem porta externa (só seed no network) e aponte o
+  scrape para `backend:8000` internamente. Não exponha `:9090`/`:3000` em
+  produção; use `GRAFANA_ADMIN_PASSWORD` e o auth do Grafana para acessar a UI.
+
+### 13.3 Logs estruturados (coleção opcional)
+
+- No compose de produção, backend e frontend usam o driver `json-file` com
+  rotação (`max-size: 20m`, `max-file: 5`) — os logs continuam em stdout para
+  `docker compose logs`.
+- Para agregar, `ops/promtail/config.yml` mostra um job com `docker_sd_configs`
+  (descobre containers do projeto `argus-prod` e envia ao Loki em
+  `http://loki:3100/...`) — adicione `loki` e `promtail` ao compose de
+  monitoramento se quiser consultar logs com o Grafana.
+
+### 13.4 Verificação
+
+```bash
+docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml \
+  config --quiet                                          # merge válido
+curl -s http://localhost:9090/api/v1/targets | python -c \
+  'import json,sys; print(json.load(sys.stdin)["data"]["targets"])'   # up do backend
+# Grafana: http://localhost:3000 -> dashboards -> "Argus Engine — Visão geral"
+```

@@ -11,6 +11,7 @@ from app.core.security import (
     is_kill_switch_active,
     kill_switch_source,
 )
+from app.metrics import set_kill_switch
 
 logger = logging.getLogger("argus")
 
@@ -49,5 +50,6 @@ async def activate_kill_switch_route(payload: KillSwitchActivate) -> dict:
         return {"active": True, "source": "runtime"}
 
     activate_kill_switch()
+    set_kill_switch(True)
     logger.warning("Kill-switch ativado em runtime", extra={"reason": payload.reason})
     return {"active": True, "source": "runtime"}

@@ -1,0 +1,45 @@
+groups:
+  - name: argus-backend
+    rules:
+      - alert: ArgusHTTP5xxRate
+        expr: |
+          sum by (path) (
+            rate(argus_http_requests_total{status=~"5.."}[5m])
+          ) / clamp_min(
+            sum by (path) (
+              rate(argus_http_requests_total[5m])
+            ), 1e-6
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taxa de erro 5xx acima de 5% (path '{{ $labels.path }}')"
+
+      - alert: ArgusKillSwitchActive
+        expr: argus_kill_switch_active == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kill-switch ativo"
+          description: "O kill-switch foi acionado e a plataforma está com runs bloqueados. Investigue a causa antes de reiniciar sem KILL_SWITCH."
+
+      - alert: ArgusRunActiveTooLong
+        expr: argus_runs_active == 1 and (time() - argus_run_started_at_seconds) > 7200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run ativo por mais de 2h"
+          description: "Um run está ativo há mais de 2 horas. Verifique o dashboard de runs e, se necessário, cancele (POST /runs/{id}/cancel)."
+
+      - alert: ArgusRunsFailing
+        expr: |
+          rate(argus_runs_total{status="failed"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Runs falhando em sequência"
+          description: "Houve finalizações com status 'failed' recentemente (veja argus_runs_total{status='failed'})."

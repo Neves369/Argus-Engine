@@ -1,0 +1,18 @@
+# Exemplo de coleta de logs (Loki opcional). Use o docker_sd para descobrir os
+# containers do projeto `argus-prod` e enviar os logs JSON do driver json-file
+# para o Loki. Exemplo de stack completa em docs/RUNBOOK §13.
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: argus
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '.*argus.*'
+        action: keep
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service

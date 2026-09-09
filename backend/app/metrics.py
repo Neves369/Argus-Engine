@@ -23,6 +23,27 @@ BUILD_INFO = Gauge(
     ["app"],
 )
 
+RUNS_TOTAL = Counter(
+    "argus_runs_total",
+    "Runs finalizados por status (completed/failed/cancelled/pending_review).",
+    ["status"],
+)
+
+RUNS_ACTIVE = Gauge(
+    "argus_runs_active",
+    "Indica se há um run ativo (running ou pending_review) — lock de run único.",
+)
+
+RUN_STARTED_AT = Gauge(
+    "argus_run_started_at_seconds",
+    "Época (Unix) em que o run ativo começou; 0 se não há run ativo.",
+)
+
+KILL_SWITCH_ACTIVE = Gauge(
+    "argus_kill_switch_active",
+    "1 enquanto o kill-switch estiver ativo; 0 caso contrário.",
+)
+
 # Path das próprias métricas é excluído para evitar ruído.
 METRICS_PATH = "/metrics"
 
@@ -30,6 +51,31 @@ METRICS_PATH = "/metrics"
 def record_request(method: str, path: str, status: int, duration: float) -> None:
     HTTP_REQUESTS.labels(method, path, status).inc()
     HTTP_REQUEST_DURATION.labels(method, path).observe(duration)
+
+
+def record_run_start(started_at: float | None = None) -> None:
+    """Marca o início de um run: ativa o gauge e grava o instante de início."""
+    RUNS_ACTIVE.set(1)
+    RUN_STARTED_AT.set(started_at if started_at is not None else time.time())
+
+
+def record_run_terminal(status: str) -> None:
+    """Registra a passagem de um run por um estado terminal.
+
+    `completed`, `failed` e `cancelled` desativam o run. `pending_review`
+    também conta como finalização (estatística), mas mantém o run ativo: a
+    retomada/revisão continua sob o mesmo lock de run único.
+    """
+    if status == "running":
+        return
+    RUNS_TOTAL.labels(status).inc()
+    if status != "pending_review":
+        RUNS_ACTIVE.set(0)
+        RUN_STARTED_AT.set(0)
+
+
+def set_kill_switch(active: bool) -> None:
+    KILL_SWITCH_ACTIVE.set(1 if active else 0)
 
 
 async def metrics_response() -> bytes:
