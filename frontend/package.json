@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "bash -c 'if [ -f ../backend/.venv/bin/activate ]; then source ../backend/.venv/bin/activate; fi; rm -rf /tmp/argus-e2e; mkdir -p /tmp/argus-e2e; playwright test'"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.5",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.49.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",

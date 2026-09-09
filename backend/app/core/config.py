@@ -194,6 +194,10 @@ class Settings(BaseSettings):
     # Env: ARGUS_SESSION_SECRET.
     session_secret: str = Field(default="", validation_alias="ARGUS_SESSION_SECRET")
 
+    # Marca o cookie de sessão com Secure (só HTTPS). Obrigatório em produção
+    # (o TLS é terminado no Traefik). Env: SESSION_COOKIE_SECURE.
+    session_cookie_secure: bool = Field(default=False, validation_alias="SESSION_COOKIE_SECURE")
+
     # Rate-limit do /auth/login (hardening): máximo de tentativas erradas por IP
     # dentro de uma janela em segundos; ultrapassou → 429 + Retry-After. Estado
     # em memória (single-process) — o contador zera no restart. O login correto

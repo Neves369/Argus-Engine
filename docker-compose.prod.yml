@@ -1,0 +1,86 @@
+name: argus-prod
+
+# Deploy de produção: Traefik como proxy de borda com TLS automático
+# (Let's Encrypt via ACME HTTP-01). A UI responde em https://$DOMAIN e o nginx
+# do frontend repassa /api para o backend na rede interna.
+#
+# Variáveis obrigatórias:
+#   GHCR_OWNER       plantão do image registry (ex.: seu usuário/org no GHCR)
+#   TAG              versão das imagens GHCR (ex.: 1.2.3)
+#   DOMAIN           ex.: argus.example.com (aponta o DNS A para este host)
+#   ACME_EMAIL       e-mail para Let's Encrypt
+#   UI_PASSWORD      senha do operador (requerida, diferente da de dev)
+#
+# Opcionais:
+#   ARGUS_SESSION_SECRET   segredo fixo do cookie (recomendado)
+#
+# Uso: GHCR_OWNER=seu-org TAG=1.2.3 DOMAIN=argus.ex.com ACME_EMAIL=ops@ex.com \
+#      UI_PASSWORD='...' docker compose -f docker-compose.prod.yml up -d
+
+services:
+  traefik:
+    image: traefik:v3.4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command:
+      - --providers.docker
+      - --providers.docker.exposedByDefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpChallenge.entryPoint=web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/acme:/letsencrypt
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER é obrigatória}/argus-engine-backend:${TAG:?TAG é obrigatória}
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/argus.db
+      EVIDENCE_DIR: /app/data/evidence
+      UI_PASSWORD: ${UI_PASSWORD:?UI_PASSWORD é obrigatória}
+      ARGUS_SESSION_SECRET: ${ARGUS_SESSION_SECRET:-}
+      SESSION_COOKIE_SECURE: "true"
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER é obrigatória}/argus-engine-frontend:${TAG:?TAG é obrigatória}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.argus.loadbalancer.server.port=80
+      # HTTP -> HTTPS (Let's Encrypt) e HTTPS com certificado.
+      - traefik.http.routers.argus-redirect.rule=Host(`${DOMAIN:?DOMAIN é obrigatória}`)
+      - traefik.http.routers.argus-redirect.entrypoints=web
+      - traefik.http.routers.argus-redirect.middlewares=argus-redirect
+      - traefik.http.middlewares.argus-redirect.redirectscheme.scheme=https
+      - traefik.http.routers.argus.rule=Host(`${DOMAIN:?DOMAIN é obrigatória}`)
+      - traefik.http.routers.argus.entrypoints=websecure
+      - traefik.http.routers.argus.tls.certresolver=letsencrypt
+
+volumes: {}

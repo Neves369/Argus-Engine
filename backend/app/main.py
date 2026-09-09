@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.db.models  # noqa: F401  (register models on Base.metadata)
@@ -15,6 +15,13 @@ from app.core.logging import setup_logging
 from app.core.policy import load_policy
 from app.db.migrate import run_migrations
 from app.db.session import async_session_factory, engine
+from app.metrics import (
+    BUILD_INFO,
+    METRICS_PATH,
+    MetricsMiddleware,
+    metrics_headers,
+    metrics_response,
+)
 from app.schemas.health import Health
 from app.schemas.policy import PolicyRead
 from app.services.app_settings import load_ui_password_override_from_db
@@ -38,6 +45,7 @@ async def lifespan(app: FastAPI):
         await _load_overrides_from_db()
         await load_ui_password_override_from_db()
     app.state.policy = load_policy()
+    BUILD_INFO.labels(settings.app_name).set(1)
     yield
     await engine.dispose()
 
@@ -52,12 +60,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(MetricsMiddleware)
+
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
 @app.get("/health", response_model=Health, tags=["health"])
 async def health() -> Health:
     return Health(status="ok", app=settings.app_name)
+
+
+@app.get(METRICS_PATH, include_in_schema=False, tags=["metrics"])
+async def metrics() -> Response:
+    """Exposição de métricas no formato do Prometheus."""
+    return Response(content=await metrics_response(), headers=metrics_headers())
 
 
 @app.get("/policy", response_model=PolicyRead, tags=["policy"])

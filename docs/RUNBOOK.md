@@ -457,6 +457,8 @@ roda dentro de um **container Docker descartável** (`docker run --rm` de nome
 | Comportamento fora de escopo ou suspeita de segurança | §4 (kill-switch) |
 | Precisa restaurar de um backup | §7 |
 | UI pede login / sessão expira | §10 |
+| Quero consultar métricas do serviço (Prometheus) | §11 |
+| Como fazer deploy de produção com TLS / aplicar release | §12 |
 | Scanning ativo bloqueado por robots.txt | §6.5 |
 | Scanning ativo muito lento ou com timeouts | §6.5 |
 | Run normal sem sondas/tools gravou `mode: "simulate"` | §6.5.1 |
@@ -502,6 +504,100 @@ reinicie.
 
 **Runbook — `409` no login:** significa que `UI_PASSWORD` não está definida (modo
 aberto); não há o que autenticar — acesse a UI direto.
+
+## 11. Métricas (Prometheus `/metrics`)
+
+O backend expõe métricas no formato do Prometheus em `GET /metrics`
+(também acessível via `GET /api/metrics` junto aos demais endpoints da API, porque
+o nginx do frontend repassa todo `/api/`). Mesma política do `/health`: **sem
+autenticação** — restrinja o acesso por rede (firewall/filtro no coletor), não por
+aplicação.
+
+- Dependente: `prometheus-client` (runtime).
+- Nomes: `argus_http_requests_total{method,path,status}` (counter),
+  `argus_http_request_duration_seconds{method,path}` (histograma, buckets
+  10ms–10s) e `argus_build_info{app}` (gauge fixa = 1, setada no startup).
+- O próprio `/metrics` é excluído da contagem (não gera ruído self-scrape).
+- Exemplo de scrape (passa pelo nginx do backend na porta interna 8000):
+
+  ```bash
+  curl -s http://localhost:8000/metrics | head
+  ```
+
+- Config do scraper Prometheus: `scrape_configs: [{ job_name: argus, static_configs:
+  [{ targets: ['<host>:8000'] }] }]` — expondo 8000 à rede de monitoramento, ou via
+  reverse proxy/extração do nginx. Single-process: os counters são locais à instância;
+  com múltiplas réplicas (quando houver) agregue com `sum()` na query.
+
+Verificação: `pytest tests/test_metrics.py` cobre exposição, contagem de requests
+(incluindo erros) e a exclusão do próprio endpoint.
+
+## 12. Deploy de produção com TLS (Traefik + Let's Encrypt) e release
+
+O fluxo de release e o compose de produção fornecem a UI sob `https://$DOMAIN`,
+com certificado TLS automático do Let's Encrypt e cookie de sessão marcado `Secure`.
+
+### 12.1 Release (CI)
+
+- Taguear um release gera e publica as imagens GHCR via job `release` do
+  `ci.yml` (dispara só em tags `v*`):
+
+  ```bash
+  git tag v1.2.3
+  git push origin v1.2.3
+  ```
+
+- Imagens publicadas:
+  - `ghcr.io/<owner>/argus-engine-backend:<tag>` e `:latest`
+  - `ghcr.io/<owner>/argus-engine-frontend:<tag>` e `:latest`
+- O `compose` job do CI valida **tanto** o `docker-compose.yml` quanto o
+  `docker-compose.prod.yml` (com variáveis de exemplo) e faz o build local sem push.
+
+### 12.2 Deploy
+
+```bash
+# na raiz do projeto (mesma máquina que vai servir; DNS já apontando para ela)
+GHCR_OWNER=<seu-usuario-ou-org> \
+TAG=<tag-do-release> \
+DOMAIN=argus.exemplo.com \
+ACME_EMAIL=ops@exemplo.com \
+UI_PASSWORD='senha-forte-do-operador' \
+ARGUS_SESSION_SECRET='segredo-aleatorio-fixo-secreto' \
+docker compose -f docker-compose.prod.yml up -d
+```
+
+- Serviços: `traefik` (borda, ports 80/443), `backend` (interno, sem porta
+  exposta) e `frontend` (nginx + SPA, interno); o Traefik roteia `$DOMAIN` para o
+  frontend e o frontend repassa `/api/` ao backend.
+- **Let's Encrypt:** o Traefik usa ACME HTTP-01 — o certificado é emitido na
+  primeira requisição válida; a porta **80** precisa estar acessível para o
+  challenge. Persistência do ACME em `./data/acme/acme.json` (volume `./data`).
+- **HTTP → HTTPS:** router de redirecionamento; a UI só responde em `$DOMAIN`
+  (host header). Acessar por IP não resolve o virtual host.
+- **Cookie seguro:** `SESSION_COOKIE_SECURE=true` é fixado no compose de produção —
+  o cookie `argus_session` passa a carregar o atributo `Secure`. Em TLS terminado
+  no Traefik, `X-Forwarded-Proto`/`Host` seguem via nginx até o backend.
+- **Requisitos de porta/imagem:** `GHCR_OWNER`, `TAG`, `DOMAIN`, `ACME_EMAIL` e
+  `UI_PASSWORD` são obrigatórias e falham o `up` se ausentes (interpolação do
+  compose); `ARGUS_SESSION_SECRET` é recomendado (cookies sobrevivem a rotação de
+  senha) — gere com `openssl rand -hex 32`.
+- Backup: o banco e evidências ficam em `./data` (mesma política do §7); o ACME
+  `acme.json` também vive ali — inclua-o no backup ou o cert será reemitido.
+- Versionamento de dados: `docker compose -f docker-compose.prod.yml` cria o banco
+  SQLite em `./data/argus.db`; migrações aplicam no boot (`lifespan`) — o mesmo
+  modelo single-replica do §2.1 vale aqui.
+
+### 12.3 Verificação pós-deploy
+
+```bash
+curl -sI https://argus.exemplo.com/            # 200, TLS, redirect de http cai em https
+curl -s  http://argus.exemplo.com/metrics | head   # via /api do nginx (ou direto :8000)
+curl -s https://argus.exemplo.com/health | head    # se quiser confirmar backend
+```
+
+- Certificado: `openssl s_client -connect argus.exemplo.com:443 -servername argus.exemplo.com
+  </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates`.
+- Logs: `docker compose -f docker-compose.prod.yml logs -f --tail 100 traefik frontend backend`.
 
 **Runbook — `401` no login:** senha incorreta. Não há bloqueio por tentativas (por
 design, operador único); se suspeitar exposição, troque `UI_PASSWORD` e o segredo.

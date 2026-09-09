@@ -116,6 +116,7 @@ async def login(payload: LoginPayload, request: Request) -> JSONResponse:
         token,
         httponly=True,
         samesite="lax",
+        secure=get_settings().session_cookie_secure,
         path="/",
         max_age=SESSION_MAX_AGE,
     )
@@ -132,8 +133,8 @@ async def logout() -> JSONResponse:
 @router.get("/me")
 async def me(argus_session: str | None = Cookie(default=None)) -> dict[str, bool]:
     if not effective_ui_password():
-        return {"authenticated": True}
-    return {"authenticated": verify_session_token(argus_session)}
+        return {"authenticated": True, "ui_enabled": False}
+    return {"authenticated": verify_session_token(argus_session), "ui_enabled": True}
 
 
 @router.post("/password", dependencies=[Depends(require_auth)])

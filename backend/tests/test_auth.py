@@ -28,6 +28,14 @@ def test_require_auth_open_when_no_password():
     require_auth(None)
 
 
+def test_me_open_mode(client):
+    # Sem UI_PASSWORD (/me em modo aberto): entra direto, ui_enabled False.
+    assert client.get("/api/v1/auth/me").json() == {
+        "authenticated": True,
+        "ui_enabled": False,
+    }
+
+
 def _build_auth_client(monkeypatch, session_secret: str | None = "test-secret"):
     monkeypatch.setenv("UI_PASSWORD", "test-pass")
     if session_secret:
@@ -48,6 +56,12 @@ def test_auth_flow(monkeypatch):
     with client:
         # No session cookie yet -> protected routes require auth.
         assert client.get("/api/v1/runs").status_code == 401
+        # Com senha configurada, /me sinaliza ui_enabled (mostra o login) e
+        # não-autenticado.
+        assert client.get("/api/v1/auth/me").json() == {
+            "authenticated": False,
+            "ui_enabled": True,
+        }
 
         # Wrong password is rejected.
         assert client.post("/api/v1/auth/login", json={"password": "wrong"}).status_code == 401
@@ -59,7 +73,10 @@ def test_auth_flow(monkeypatch):
 
         # With the cookie, protected routes work and /me reports authenticated.
         assert client.get("/api/v1/runs").status_code == 200
-        assert client.get("/api/v1/auth/me").json()["authenticated"] is True
+        assert client.get("/api/v1/auth/me").json() == {
+            "authenticated": True,
+            "ui_enabled": True,
+        }
 
         # Logout clears the cookie and re-protects the routes.
         assert client.post("/api/v1/auth/logout").status_code == 200
@@ -111,6 +128,20 @@ def test_login_success_resets_limit(monkeypatch):
             == 401
         )
     auth_mod._reset_login_attempts()
+    get_settings.cache_clear()
+
+
+def test_session_cookie_secure_flag(monkeypatch):
+    # SESSION_COOKIE_SECURE=true (produção, atrás do Traefik) -> cookie Secure.
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    client = _build_auth_client(monkeypatch)
+    with client:
+        resp = client.post("/api/v1/auth/login", json={"password": "test-pass"})
+    assert resp.status_code == 200
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "argus_session=" in set_cookie
+    assert "Secure" in set_cookie
+    assert "HttpOnly" in set_cookie
     get_settings.cache_clear()
 
 

@@ -22,6 +22,11 @@ node_modules
 dist-ssr
 *.local
 
+# E2E (Playwright)
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json
