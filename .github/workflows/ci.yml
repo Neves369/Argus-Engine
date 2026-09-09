@@ -99,6 +99,8 @@ jobs:
         run: docker compose -f docker-compose.prod.yml -f ops/docker-compose.monitoring.yml config --quiet
       - name: Validate dev + monitoring compose merge
         run: docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml config --quiet
+      - name: Validate ops scripts syntax
+        run: bash -n ops/argus.sh
       - name: Build images (backend + frontend, no push)
         run: docker compose build --pull
 

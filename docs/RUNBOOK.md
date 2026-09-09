@@ -460,6 +460,7 @@ roda dentro de um **container Docker descartável** (`docker run --rm` de nome
 | Quero consultar métricas do serviço (Prometheus) | §11 |
 | Como fazer deploy de produção com TLS / aplicar release | §12 |
 | Preciso subir/consultar métricas, alertas e dashboard de produção | §13 |
+| Quero operar a stack por script (subir/derruba/status/logs) | §14 |
 | Scanning ativo bloqueado por robots.txt | §6.5 |
 | Scanning ativo muito lento ou com timeouts | §6.5 |
 | Run normal sem sondas/tools gravou `mode: "simulate"` | §6.5.1 |
@@ -721,3 +722,41 @@ Smoke roteiro:
    "Kill-switch" virar 1 (alerta `ArgusKillSwitchActive` em :9093).
 6. **Reset:** `docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml down -v`
    remove os containers e os volumes `argus-prometheus-data`/`argus-grafana-data`.
+
+## 14. Operação por scripts (`ops/argus.sh`)
+
+Wrapper para subir/derrubar/observar a stack sem decorar os `-f` do compose e
+as variáveis de interpolação.
+
+```bash
+ops/argus.sh <modo: prod|dev> <comando> [opções]
+```
+
+- **modos:** `prod` (default — Traefik + TLS + monitoring) e `dev` (compose
+  base + monitoring dev, com `--build`).
+- **comandos:** `up`, `down`, `status`, `logs`, `help`.
+- O `up` sobe o **monitoring junto** por padrão; `--no-monitoring` desliga
+  (antes de outros flags).
+- Variáveis de produção vêm do ambiente ou de `ops/.env` (`ops/.env.example` é
+  o template; `ARGUS_OPS_ENV` troca o arquivo). Validadas antes de qualquer
+  comando prod — inclusive `down`/`status`, porque o compose interpola `:?`.
+
+```bash
+# Deploy de produção (vs. obrigatórias de ops/.env)
+ops/argus.sh prod up
+ops/argus.sh prod status
+ops/argus.sh prod logs -f backend
+ops/argus.sh prod down
+
+# Dev local (build) — mesmo do §13.5, sem decorar os -f
+ops/argus.sh dev up          # :8080 UI | :9090 prom | :3000 grafana | :9093 AM
+ops/argus.sh dev status
+ops/argus.sh dev down -v     # -v pede confirmação e remove volumes argus-*-data
+```
+
+- `prod up` primeiro faz `docker compose pull` (imagens GHCR do `TAG` definido)
+  e depois `up -d`; as URLs saem no final (incluindo a dica do Let's Encrypt).
+- `down -v` remove os volumes nomeados `argus-*-data` (TSDB/Grafana/Loki) —
+  **destrutivo**, exige confirmação.
+- `status` mostra `docker compose ps` + probes HTTP (Traefik/UI, Grafana,
+  Alertmanager; no dev também o Prometheus).

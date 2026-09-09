@@ -147,6 +147,23 @@ def test_alertmanager_has_no_placeholder_receiver():
     assert config["route"]["receiver"] == "default"
 
 
+def test_argus_script_and_prod_env_template():
+    script = ROOT / "ops/argus.sh"
+    assert script.exists()
+    assert script.stat().st_mode & 0o111, "ops/argus.sh precisa ser executável"
+
+    template = (ROOT / "ops/.env.example").read_text()
+    for var in (
+        "GHCR_OWNER",
+        "TAG",
+        "DOMAIN",
+        "ACME_EMAIL",
+        "UI_PASSWORD",
+        "GRAFANA_ADMIN_PASSWORD",
+    ):
+        assert f"{var}=" in template, f"{var} documentada no .env.example"
+
+
 def test_monitoring_dev_compose_merges_with_base_dev_stack():
     compose = yaml.safe_load(
         (ROOT / "ops/docker-compose.monitoring.dev.yml").read_text()

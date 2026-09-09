@@ -91,6 +91,17 @@ docker compose -f docker-compose.yml -f ops/docker-compose.monitoring.dev.yml up
 # UI :8080 | Prometheus :9090 | Grafana :3000 (admin/admin) | Alertmanager :9093
 ```
 
+Operação por script (prod e dev, ver RUNBOOK §14):
+
+```bash
+ops/argus.sh dev up          # stack local
+ops/argus.sh dev status      # ps + probes de saúde
+ops/argus.sh dev down        # derruba
+
+# Produção (variáveis em ops/.env — copie de ops/.env.example)
+ops/argus.sh prod up
+```
+
 ## Licença
 
 MIT — ver [LICENSE](LICENSE).
