@@ -40,6 +40,7 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwdBusy, setPwdBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<'providers' | 'security'>('providers');
 
   useEffect(() => {
     async function loadProviders() {
@@ -73,7 +74,6 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
   }
 
   const totalTokens = providers.reduce((sum, p) => sum + p.usage_tokens, 0);
-  const totalCost = providers.reduce((sum, p) => sum + p.usage_cost, 0);
 
   function toggleKeyVisibility(provider: string) {
     setVisibleKeys((prev) => {
@@ -187,30 +187,35 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
 
   return (
     <div className="settings">
+      <div className="settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'providers'}
+          className={`settings-tab${activeTab === 'providers' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('providers')}
+        >
+          Provedores
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'security'}
+          className={`settings-tab${activeTab === 'security' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('security')}
+        >
+          Segurança
+        </button>
+      </div>
+
+      {activeTab === 'providers' && (
+        <>
       <div className="settings-summary">
         <div className="settings-summary-item">
           <span className="settings-summary-label">Total de tokens</span>
           <span className="settings-summary-value">{formatTokens(totalTokens)}</span>
         </div>
-        <div className="settings-summary-item">
-          <span className="settings-summary-label">Custo total</span>
-          <span className="settings-summary-value">${totalCost.toFixed(2)}</span>
-        </div>
       </div>
-
-      {!hasEncryption && (
-        <div className="settings-warning">
-          As chaves de API serão mantidas apenas em memória e perdidas ao reiniciar o
-          servidor. Configure <code>ARGUS_ENCRYPTION_KEY</code> no <code>.env</code> para
-          persistir com segurança.
-        </div>
-      )}
-
-      {flash && (
-        <div className={`settings-toast ${flash.type}`}>
-          {flash.msg}
-        </div>
-      )}
 
       {providers.length === 0 ? (
         <div className="settings-section">
@@ -230,10 +235,6 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
               <div className="settings-section-header">
                 <span className="settings-section-title">
                   {provider.provider.toUpperCase()} {provider.enabled ? '' : '(desativado)'}
-                </span>
-                <span className="settings-section-meta">
-                  {formatTokens(provider.usage_tokens)} tokens ·
-                  ${provider.usage_cost.toFixed(2)}
                 </span>
               </div>
 
@@ -312,9 +313,6 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
                     <span className="settings-usage-text">
                       {formatTokens(provider.usage_tokens)} tokens
                     </span>
-                    <span className="settings-usage-cost">
-                      ${provider.usage_cost.toFixed(2)}
-                    </span>
                   </div>
                   <div className="settings-usage-bar">
                     <div className="settings-usage-fill" style={{ width: `${usagePercent}%` }} />
@@ -333,10 +331,19 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
         <button type="button" className="modal-submit" onClick={restoreDefaults}>
           Restaurar padrões
         </button>
-        <button type="button" className="modal-submit" onClick={onClose}>
-          Fechar
-        </button>
       </div>
+        </>
+      )}
+
+      {activeTab === 'security' && (
+        <>
+      {!hasEncryption && (
+        <div className="settings-warning">
+          As chaves de API serão mantidas apenas em memória e perdidas ao reiniciar o
+          servidor. Configure <code>ARGUS_ENCRYPTION_KEY</code> no <code>.env</code> para
+          persistir com segurança.
+        </div>
+      )}
 
       <div className="settings-section">
         <div className="settings-section-header">
@@ -468,6 +475,20 @@ function Settings({ onClose, onSessionInvalidated }: SettingsProps) {
             Trocar senha
           </button>
         </div>
+      </div>
+        </>
+      )}
+
+      {flash && (
+        <div className={`settings-toast ${flash.type}`}>
+          {flash.msg}
+        </div>
+      )}
+
+      <div className="settings-actions">
+        <button type="button" className="modal-submit" onClick={onClose}>
+          Fechar
+        </button>
       </div>
 
       {cleared && <div className="settings-toast">Cache limpo</div>}

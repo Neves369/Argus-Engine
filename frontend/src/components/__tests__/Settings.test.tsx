@@ -35,12 +35,18 @@ beforeEach(() => {
   } as client.ProvidersResponse)
 })
 
+async function openSecurityTab() {
+  fireEvent.click(await screen.findByRole('tab', { name: 'Segurança' }))
+}
+
 describe('Settings — Segurança (kill-switch)', () => {
   it('mostra o status do kill-switch e ativa com motivo e confirmação', async () => {
     client.getKillSwitchStatus.mockResolvedValue({ active: false, source: 'none' })
     client.activateKillSwitch.mockResolvedValue({ active: true, source: 'runtime' })
 
+    openSecurityTab()
     render(<Settings onClose={() => {}} />)
+    await openSecurityTab()
 
     expect(await screen.findByText('Inativo')).toBeInTheDocument()
 
@@ -62,7 +68,9 @@ describe('Settings — Segurança (kill-switch)', () => {
   it('não ativa o kill-switch sem motivo', async () => {
     client.getKillSwitchStatus.mockResolvedValue({ active: false, source: 'none' })
 
+    openSecurityTab()
     render(<Settings onClose={() => {}} />)
+    await openSecurityTab()
     await screen.findByText('Inativo')
 
     const armButton = screen.getByRole('button', { name: 'Ativar kill-switch' })
@@ -73,6 +81,7 @@ describe('Settings — Segurança (kill-switch)', () => {
     client.getKillSwitchStatus.mockResolvedValue({ active: true, source: 'env' })
 
     render(<Settings onClose={() => {}} />)
+    await openSecurityTab()
 
     expect(
       await screen.findByText(/ATIVO \(via KILL_SWITCH no ambiente/)
@@ -87,7 +96,9 @@ describe('Settings — Segurança (troca de senha)', () => {
     client.changePassword.mockResolvedValue({ ok: true, sessions_invalidated: true })
     const onSessionInvalidated = vi.fn()
 
+    openSecurityTab()
     render(<Settings onClose={() => {}} onSessionInvalidated={onSessionInvalidated} />)
+    await openSecurityTab()
 
     await screen.findByText('Inativo')
 
@@ -124,7 +135,9 @@ describe('Settings — Segurança (troca de senha)', () => {
       has_encryption_configured: false,
     } as client.ProvidersResponse)
 
+    openSecurityTab()
     render(<Settings onClose={() => {}} />)
+    await openSecurityTab()
 
     const mentions = await screen.findAllByText(/ARGUS_ENCRYPTION_KEY/)
     expect(mentions.length).toBeGreaterThan(0)
