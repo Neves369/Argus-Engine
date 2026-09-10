@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  ChatMessage,
   PendingReview,
   ReportFormat,
+  RunDecision,
   RunFinding,
   RunLogLine,
   RunMeta,
-  TraceStep,
 } from '../api/client';
 import { getReportExport, getReportExportBlob } from '../api/client';
 import FindingCard from './FindingCard';
@@ -19,17 +18,14 @@ interface RunPanelProps {
   status: string | null;
   running: boolean;
   log: RunLogLine[];
-  chat: ChatMessage[];
+  decisions: RunDecision[];
   meta: RunMeta;
   findings: RunFinding[];
-  trace: TraceStep[];
   error?: string | null;
   readonly?: boolean;
   pendingReview?: PendingReview | null;
   reviewing?: boolean;
-  resumable?: boolean;
   onReview: (approved: boolean, note: string) => void;
-  onResume: () => void;
   onCancel: () => void;
   onClose: () => void;
 }
@@ -58,17 +54,14 @@ function RunPanel({
   status,
   running,
   log,
-  chat,
+  decisions,
   meta,
   findings,
-  trace,
   error,
   readonly = false,
   pendingReview,
   reviewing = false,
-  resumable = false,
   onReview,
-  onResume,
   onCancel,
   onClose,
 }: RunPanelProps) {
@@ -77,18 +70,22 @@ function RunPanel({
   const [reviewNote, setReviewNote] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevRunningRef = useRef(running);
+  const prevStatusRef = useRef(status);
 
   useEffect(() => {
-    if (prevRunningRef.current && !running) {
+    if (status === 'pending_review' && prevStatusRef.current !== 'pending_review') {
+      setTab('chat');
+    } else if (prevRunningRef.current && !running) {
       setTab('results');
     }
+    prevStatusRef.current = status;
     prevRunningRef.current = running;
-  }, [running]);
+  }, [status, running]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [log, chat]);
+  }, [log, decisions]);
 
   async function handleExport(format: ReportFormat) {
     if (runId == null) return;
@@ -149,7 +146,6 @@ function RunPanel({
     <div className="run-panel">
       <div className="run-panel-header">
         <span className="run-panel-title">
-          Run #{runId ?? '—'}
           {status && <span className={`run-panel-status run-panel-status--${statusClass}`}>{statusLabel}</span>}
         </span>
         <div className="run-panel-actions">
@@ -185,65 +181,11 @@ function RunPanel({
               Cancelar
             </button>
           )}
-          {resumable && !running && (
-            <>
-              <button type="button" className="run-panel-resume" onClick={onResume}>
-                Retomar run de onde parou
-              </button>
-              <span className="run-panel-resume-hint">
-                Run interrompido — continua da última etapa executada.
-              </span>
-            </>
-          )}
           <button type="button" className="run-panel-close" onClick={onClose} aria-label="Fechar">
             ✕
           </button>
         </div>
       </div>
-
-      {status === 'pending_review' && pendingReview && (
-        <div className="run-panel-review">
-          <div className="run-panel-review-title">
-            Revisão humana exigida
-            <span className={`run-panel-review-kind run-panel-review-kind--${pendingReview.kind}`}>
-              {pendingReview.kind}
-            </span>
-          </div>
-          {pendingReview.context && (
-            <p className="run-panel-review-context">{pendingReview.context}</p>
-          )}
-          {pendingReview.proposal && (
-            <pre className="run-panel-review-proposal">
-              {JSON.stringify(pendingReview.proposal, null, 2)}
-            </pre>
-          )}
-          <textarea
-            className="run-panel-review-note"
-            placeholder="Nota (opcional)"
-            value={reviewNote}
-            onChange={(e) => setReviewNote(e.target.value)}
-            rows={2}
-          />
-          <div className="run-panel-review-actions">
-            <button
-              type="button"
-              className="run-panel-review-approve"
-              disabled={reviewing}
-              onClick={() => onReview(true, reviewNote)}
-            >
-              {reviewing ? 'Enviando…' : 'Aprovar'}
-            </button>
-            <button
-              type="button"
-              className="run-panel-review-reject"
-              disabled={reviewing}
-              onClick={() => onReview(false, reviewNote)}
-            >
-              {reviewing ? 'Enviando…' : 'Rejeitar'}
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="run-panel-tabs" role="tablist">
         <button
@@ -258,7 +200,7 @@ function RunPanel({
           className={`run-panel-tab${tab === 'chat' ? ' is-active' : ''}`}
           onClick={() => setTab('chat')}
         >
-          Chat{chat.length > 0 ? ` (${chat.length})` : ''}
+          Chat{decisions.length > 0 ? ` (${decisions.length})` : ''}
         </button>
         <button
           type="button"
@@ -285,53 +227,84 @@ function RunPanel({
           </div>
         )}
 
-        {tab === 'chat' && (
+{tab === 'chat' && (
           <div className="run-panel-scroll" ref={scrollRef}>
-            {chat.length === 0 ? (
-              <div className="run-panel-empty">O raciocínio dos arquétipos aparecerá aqui.</div>
+            {decisions.length === 0 && !(status === 'pending_review' && pendingReview) ? (
+              <div className="run-panel-empty">
+                {status === 'pending_review'
+                  ? 'Aguardando decisão humana…'
+                  : 'Nenhuma decisão humana requerida neste run.'}
+              </div>
             ) : (
-              chat.map((message, index) => (
-                <div key={index} className="run-panel-chat-bubble">
-                  <div className="run-panel-chat-head">
-                    <span className="run-panel-chat-agent">{message.agent}</span>
-                    <span className="run-panel-chat-action">{message.action}</span>
-                  </div>
-                  {(message.cve_correlations !== undefined ||
-                    message.findings !== undefined ||
-                    message.sources !== undefined ||
-                    message.scanned) && (
-                    <div className="run-panel-chat-meta">
-{message.cve_correlations !== undefined && message.cve_correlations > 0 && (
-                        <span className="run-panel-chat-chip run-panel-chat-chip--cve">
-                          {message.cve_correlations} correlaç
-                          {message.cve_correlations === 1 ? 'ão CVE' : 'ões CVE'}
-                        </span>
-                      )}
-                      {message.findings !== undefined && message.findings > 0 && (
-                        <span className="run-panel-chat-chip">
-                          {message.findings} achado{message.findings === 1 ? '' : 's'}
-                        </span>
-                      )}
-                      {message.sources !== undefined && message.sources > 0 && (
-                        <span className="run-panel-chat-chip">
-                          {message.sources} fonte{message.sources === 1 ? '' : 's'}
-                        </span>
-                      )}
-                      {message.scanned && (
-                        <span className="run-panel-chat-chip">
-                          scan ativo
-                          {message.pages !== undefined && message.pages > 0
-                            ? ` · ${message.pages} página${message.pages === 1 ? '' : 's'}`
-                            : ''}
-                        </span>
-                      )}
+              <>
+                {decisions.map((decision, index) => (
+                  <div
+                    key={index}
+                    className="run-panel-chat-bubble run-panel-chat-bubble--human"
+                  >
+                    <div className="run-panel-chat-head">
+                      <span className="run-panel-chat-agent">Você</span>
+                      <span className="run-panel-chat-action">
+                        {decision.approved ? 'aprovou' : 'rejeitou'}
+                      </span>
                     </div>
-                  )}
-                  {message.reasoning && (
-                    <div className="run-panel-chat-text">{message.reasoning}</div>
-                  )}
-                </div>
-              ))
+                    {decision.note && (
+                      <div className="run-panel-chat-text">Nota: {decision.note}</div>
+                    )}
+                  </div>
+                ))}
+                {status === 'pending_review' && pendingReview && (
+                  <div className="run-panel-chat-bubble run-panel-chat-bubble--system">
+                    <div className="run-panel-chat-head">
+                      <span className="run-panel-chat-agent">Sistema</span>
+                      <span
+                        className={`run-panel-review-kind run-panel-review-kind--${pendingReview.kind}`}
+                      >
+                        {pendingReview.kind}
+                      </span>
+                    </div>
+                    {pendingReview.context && (
+                      <div className="run-panel-chat-text">{pendingReview.context}</div>
+                    )}
+                    {pendingReview.proposal && (
+                      <pre className="run-panel-review-proposal">
+                        {JSON.stringify(pendingReview.proposal, null, 2)}
+                      </pre>
+                    )}
+                    <textarea
+                      className="run-panel-review-note"
+                      placeholder="Nota (opcional)"
+                      value={reviewNote}
+                      onChange={(e) => setReviewNote(e.target.value)}
+                      rows={2}
+                    />
+                    <div className="run-panel-review-actions">
+                      <button
+                        type="button"
+                        className="run-panel-review-approve"
+                        disabled={reviewing}
+                        onClick={() => {
+                          setReviewNote('');
+                          onReview(true, reviewNote);
+                        }}
+                      >
+                        {reviewing ? 'Enviando…' : 'Aprovar'}
+                      </button>
+                      <button
+                        type="button"
+                        className="run-panel-review-reject"
+                        disabled={reviewing}
+                        onClick={() => {
+                          setReviewNote('');
+                          onReview(false, reviewNote);
+                        }}
+                      >
+                        {reviewing ? 'Enviando…' : 'Rejeitar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -394,25 +367,6 @@ function RunPanel({
                 )}
               </div>
             </details>
-
-            <div className="run-panel-section-title">Trace ({trace.length})</div>
-            {trace.length === 0 ? (
-              <div className="run-panel-empty">Nenhuma etapa registrada.</div>
-            ) : (
-              <div className="run-panel-table">
-                {trace.map((step, index) => (
-                  <div key={index} className="run-panel-trace-row">
-                    <span className="run-panel-trace-node">{step.node ?? '?'}</span>
-                    <span className="run-panel-trace-model">
-                      {[step.provider, step.model].filter(Boolean).join('/') || '—'}
-                    </span>
-                    <span className="run-panel-trace-num">{formatDuration(step.duration_ms)}</span>
-                    <span className="run-panel-trace-num">{step.tokens ?? 0} tok</span>
-                    <span className="run-panel-trace-num">{formatCost(step.cost)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>

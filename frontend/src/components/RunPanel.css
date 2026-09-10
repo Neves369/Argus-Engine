@@ -2,8 +2,8 @@
   position: absolute;
   right: 24px;
   top: 24px;
-  bottom: 96px;
-  z-index: 80;
+  bottom: 140px;
+  z-index: 110;
   width: 380px;
   max-width: calc(100vw - 48px);
   display: flex;
@@ -350,6 +350,16 @@
   padding: 8px 10px;
 }
 
+.run-panel-chat-bubble--system {
+  border-left-color: rgba(170, 59, 255, 0.85);
+  background: rgba(170, 59, 255, 0.14);
+}
+
+.run-panel-chat-bubble--human {
+  border-left-color: rgba(74, 222, 128, 0.7);
+  background: rgba(74, 222, 128, 0.08);
+}
+
 .run-panel-chat-head {
   display: flex;
   align-items: center;
@@ -549,4 +559,47 @@
 
 .run-panel-trace-num {
   color: #cfc0e9;
+}
+
+.run-panel-toggle {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  background: rgba(230, 215, 176, 0.06);
+  border: 1px solid rgba(230, 215, 176, 0.35);
+  border-radius: 6px;
+  color: rgba(230, 215, 176, 0.85);
+  font-family: var(--heading);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.run-panel-toggle:hover {
+  background: rgba(230, 215, 176, 0.12);
+}
+
+.run-panel-toggle.is-open {
+  background: rgba(170, 59, 255, 0.16);
+  border-color: rgba(170, 59, 255, 0.55);
+  color: #e9d5ff;
+}
+
+@media (max-width: 720px) {
+  .run-panel-toggle {
+    top: 16px;
+    left: 16px;
+    height: 32px;
+    font-size: 10px;
+  }
 }

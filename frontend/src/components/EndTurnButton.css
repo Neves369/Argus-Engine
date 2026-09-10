@@ -1,12 +1,14 @@
 .end-turn-button {
   position: absolute;
-  bottom: 24px;
+  bottom: 76px;
   right: 32px;
   z-index: 90;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   height: 46px;
+  width: 220px;
   padding: 0 24px;
   background: linear-gradient(
     180deg,
@@ -92,4 +94,15 @@
   filter: grayscale(0.6);
   transform: none !important;
   box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .end-turn-button {
+    right: 16px;
+    bottom: 80px;
+    height: 36px;
+    width: 190px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
 }

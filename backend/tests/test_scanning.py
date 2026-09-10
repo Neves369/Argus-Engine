@@ -191,6 +191,16 @@ def test_derived_https_falls_back_to_http():
 
 
 @respx.mock
+def test_derived_url_strips_whitespace_from_name():
+    respx.get("https://example.com/").mock(return_value=httpx.Response(200, text="<html>ok</html>"))
+
+    service = ScanService(client=ScanHTTPClient(rate_limit=0), respect_robots=False)
+    report = _run(service.scan({"name": " example.com "}))
+
+    assert [p.url for p in report.pages] == ["https://example.com/"]
+
+
+@respx.mock
 def test_unreachable_target_yields_no_findings_and_note():
     respx.get("http://example.com/").mock(side_effect=httpx.ConnectError("down"))
 

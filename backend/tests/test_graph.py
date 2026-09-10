@@ -21,3 +21,19 @@ def test_graph_runs_to_completion():
     assert final.findings == []
     assert final.tokens_used > 0
     assert final.confidence >= 0.6
+
+
+def test_graph_state_trims_target_whitespace():
+    state = GraphState(
+        target={
+            "name": "  pentest-ground.com  ",
+            "url": " https://pentest-ground.com:4280/ ",
+            "notes": "  lab autorizado  ",
+        }
+    )
+
+    assert state.target == {
+        "name": "pentest-ground.com",
+        "url": "https://pentest-ground.com:4280/",
+        "notes": "lab autorizado",
+    }

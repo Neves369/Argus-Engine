@@ -41,7 +41,7 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText('ex.com')).toBeInTheDocument()
     expect(await screen.findByText(/crit 1/)).toBeInTheDocument()
-    expect(await screen.findByText(/low 2/)).toBeInTheDocument()
+    expect(screen.queryByText(/low 2/)).not.toBeInTheDocument()
     expect(screen.getByText('Ver')).toBeInTheDocument()
   })
 

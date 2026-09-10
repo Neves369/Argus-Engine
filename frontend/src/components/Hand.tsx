@@ -22,6 +22,7 @@ interface HandProps {
   onCardPlayed?: (id: number) => void;
   returnedCard?: number;
   palette?: boolean;
+  playedCards?: number[];
 }
 
 let particleId = 0;
@@ -52,7 +53,7 @@ function makeParticles(): Particle[] {
   return [...flames, ...soot];
 }
 
-function Hand({ onCardPlayed, returnedCard, palette = false }: HandProps) {
+function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [] }: HandProps) {
   const [focused, setFocused] = useState<number | null>(null);
   const [cards, setCards] = useState<number[]>(
     Array.from({ length: CARD_COUNT }, (_, i) => i),
@@ -116,7 +117,9 @@ function Hand({ onCardPlayed, returnedCard, palette = false }: HandProps) {
       className="hand"
       onMouseLeave={() => setFocused(null)}
     >
-      {cards.map((id) => {
+      {cards
+        .filter((id) => !playedCards.includes(id))
+        .map((id) => {
         const offset = id - (CARD_COUNT - 1) / 2;
         const rotation = offset * ARC_ANGLE;
         const tilt = offset * TILT_ANGLE;

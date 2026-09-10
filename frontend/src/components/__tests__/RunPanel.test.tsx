@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import RunPanel from '../RunPanel'
-import type { ChatMessage, PendingReview, RunFinding } from '../../api/client'
+import type { PendingReview, RunDecision, RunFinding } from '../../api/client'
 import { getReportExport, getReportExportBlob } from '../../api/client'
 
 vi.mock('../../api/client')
@@ -11,10 +11,9 @@ const baseProps = {
   status: 'completed' as const,
   running: false,
   log: [],
-  chat: [],
+  decisions: [] as RunDecision[],
   meta: {},
   findings: [] as RunFinding[],
-  trace: [],
   pendingReview: null,
   reviewing: false,
   readonly: false,
@@ -53,7 +52,7 @@ describe('RunPanel', () => {
     expect(screen.getByText('critical')).toBeInTheDocument()
   })
 
-  it('mostra a revisão humana quando pendente e aciona onReview', () => {
+  it('mostra a revisão humana na aba de chat e aciona onReview', () => {
     const pending: PendingReview = {
       id: 'review-1',
       kind: 'destructive_action',
@@ -62,7 +61,8 @@ describe('RunPanel', () => {
     }
     render(<RunPanel {...baseProps} status="pending_review" pendingReview={pending} />)
 
-    expect(screen.getByText('Revisão humana exigida')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Chat/ }))
+    expect(screen.getByText('Sistema')).toBeInTheDocument()
     expect(screen.getByText('Executar ação destrutiva?')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Aprovar'))
@@ -108,34 +108,35 @@ describe('RunPanel', () => {
     expect(getReportExport).not.toHaveBeenCalled()
   })
 
-  it('mostra os metadados do entry (correlações CVE, achados, fontes, scan) no chat', () => {
-    const messages: ChatMessage[] = [
-      {
-        agent: 'hermit',
-        action: 'simulate',
-        reasoning: 'Resumo da investigação.',
-        findings: 3,
-        sources: 2,
-        scanned: true,
-        pages: 5,
-        cve_correlations: 2,
-      },
-      {
-        agent: 'justice',
-        action: 'validate',
-        reasoning: 'Avaliação final.',
-      },
+  it('mostra as decisões humanas como conversa no chat', () => {
+    const decisions: RunDecision[] = [
+      { id: 'review-1', kind: 'destructive_action', context: 'Executar ação?', approved: true, note: 'Ok' },
+      { id: 'review-2', kind: 'destructive_action', approved: false, note: '' },
     ]
-    const { container } = render(<RunPanel {...baseProps} chat={messages} />)
+    render(<RunPanel {...baseProps} decisions={decisions} />)
 
     fireEvent.click(screen.getByRole('button', { name: /^Chat/ }))
-    expect(screen.getByText('2 correlações CVE')).toBeInTheDocument()
-    expect(screen.getByText('3 achados')).toBeInTheDocument()
-    expect(screen.getByText('2 fontes')).toBeInTheDocument()
-    expect(screen.getByText(/scan ativo/)).toBeInTheDocument()
-    expect(screen.getByText(/5 páginas/)).toBeInTheDocument()
-    // entry sem metadados não renderiza a linha de chips
-    const chips = container.querySelectorAll('.run-panel-chat-chip')
-    expect(chips.length).toBe(4)
+    expect(screen.getAllByText('Você').length).toBe(2)
+    expect(screen.getByText('aprovou')).toBeInTheDocument()
+    expect(screen.getByText('rejeitou')).toBeInTheDocument()
+    expect(screen.getByText(/Nota: Ok/)).toBeInTheDocument()
+  })
+
+  it('mostra o log derivado do history (etapas e raciocínio)', () => {
+    render(
+      <RunPanel
+        {...baseProps}
+        log={[
+          { node: 'fool', text: 'explore — Primeira passada no alvo.' },
+          { node: 'magician', text: 'synthesize — Juntando as evidências.' },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /^Log/ }))
+    expect(screen.getByText('fool')).toBeInTheDocument()
+    expect(screen.getByText('explore — Primeira passada no alvo.')).toBeInTheDocument()
+    expect(screen.getByText('magician')).toBeInTheDocument()
+    expect(screen.getByText('synthesize — Juntando as evidências.')).toBeInTheDocument()
   })
 })

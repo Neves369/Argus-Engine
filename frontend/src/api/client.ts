@@ -92,6 +92,14 @@ export interface ChatMessage {
   cve_correlations?: number;
 }
 
+export interface RunDecision {
+  id: string;
+  kind: string;
+  context?: string;
+  approved: boolean;
+  note: string;
+}
+
 export interface RunLogLine {
   node: string;
   text: string;

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 
 class GraphState(BaseModel):
@@ -71,6 +71,20 @@ class GraphState(BaseModel):
     delegate_to: str | None = None
     # Contador de rodadas de supervisão (proteção contra loops infinitos).
     supervisor_rounds: int = Field(default_factory=int)
+
+    @model_validator(mode="after")
+    def _trim_target_fields(self) -> GraphState:
+        """Strip leading/trailing whitespace from the target name/url/notes.
+
+        Covers every entrypoint (runs API, compositions API, CLI) so scan,
+        sources and verification never see a raw name like ``" host"`` (which
+        would generate an invalid URL and break host-based sources).
+        """
+        for key in ("name", "url", "notes"):
+            value = self.target.get(key)
+            if isinstance(value, str):
+                self.target[key] = value.strip()
+        return self
 
     @property
     def sources_service(self) -> Any:

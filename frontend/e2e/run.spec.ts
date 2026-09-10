@@ -8,6 +8,12 @@ test.describe('Run ponta a ponta', () => {
 
     await startRun(page);
 
+    // Sem cartas jogadas, o time padrão vai ao tabuleiro como se o Imperador
+    // o tivesse escalado (fool, hermit, magician + justice como fechador) e
+    // essas cartas somem da mão (nunca nos dois lugares ao mesmo tempo).
+    await expect(page.locator('.card-node')).toHaveCount(4);
+    await expect(page.locator('.hand-card')).toHaveCount(1);
+
     // SSE ao vivo: o painel abre em "Em execução" e o log/chat vão populando.
     await expect(page.locator('.run-panel-status')).toContainText('Em execução');
 
@@ -15,7 +21,6 @@ test.describe('Run ponta a ponta', () => {
     await expect(page.locator('.run-panel-status')).toContainText('Concluído', {
       timeout: 90_000,
     });
-    await expect(page.locator('.run-panel-title')).toContainText('Run #');
 
     // Métricas de negócio: o run concluído (compartilhamos o mesmo backend
     // determinístico entre os specs, então é exatamente 1 run completed) é
@@ -29,7 +34,6 @@ test.describe('Run ponta a ponta', () => {
     await expect(
       page.locator('.run-panel-meta-item', { hasText: 'Alvo: example.com' }),
     ).toBeVisible();
-    await expect(page.locator('.run-panel-section-title', { hasText: 'Trace' })).toBeVisible();
     await expect(page.locator('.run-panel-section-title', { hasText: 'Achados' })).toBeVisible();
     await expect(page.locator('summary', { hasText: 'Observabilidade' })).toBeVisible();
 

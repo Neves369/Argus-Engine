@@ -17,6 +17,8 @@ interface UIState {
   runResult: string | null
   busy: boolean
 
+  openModal: (name: UIModal) => void
+  closeAllModals: () => void
   openPlayer: () => void
   closePlayer: () => void
   setEnemyModalOpen: (open: boolean) => void
@@ -27,6 +29,8 @@ interface UIState {
   setBusy: (busy: boolean) => void
 }
 
+export type UIModal = 'player' | 'enemy' | 'settings' | 'sessions' | 'dashboard'
+
 export const useUIStore = create<UIState>((set) => ({
   playerModalOpen: false,
   enemyModalOpen: false,
@@ -36,6 +40,22 @@ export const useUIStore = create<UIState>((set) => ({
   runResult: null,
   busy: false,
 
+  openModal: (name) =>
+    set({
+      playerModalOpen: name === 'player',
+      enemyModalOpen: name === 'enemy',
+      settingsOpen: name === 'settings',
+      sessionsOpen: name === 'sessions',
+      dashboardOpen: name === 'dashboard',
+    }),
+  closeAllModals: () =>
+    set({
+      playerModalOpen: false,
+      enemyModalOpen: false,
+      settingsOpen: false,
+      sessionsOpen: false,
+      dashboardOpen: false,
+    }),
   openPlayer: () => set({ playerModalOpen: true }),
   closePlayer: () => set({ playerModalOpen: false }),
   setEnemyModalOpen: (open) => set({ enemyModalOpen: open }),

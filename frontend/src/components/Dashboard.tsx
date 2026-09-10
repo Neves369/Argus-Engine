@@ -7,10 +7,6 @@ import {
 } from '../api/client';
 import './Dashboard.css';
 
-function formatCost(cost: number): string {
-  return `$${cost.toFixed(4)}`;
-}
-
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value);
 }
@@ -39,7 +35,9 @@ const SEVERITY_LABELS: Record<string, string> = {
 
 function SeverityChips({ bySeverity }: { bySeverity?: Record<string, number> }) {
   if (!bySeverity) return null;
-  const entries = SEVERITY_ORDER.filter((key) => (bySeverity[key] ?? 0) > 0);
+  const entries = SEVERITY_ORDER.filter(
+    (key) => key === 'critical' && (bySeverity[key] ?? 0) > 0,
+  );
   if (entries.length === 0) return null;
   return (
     <span className="dashboard-sev-chips">
@@ -70,10 +68,6 @@ function Dashboard({ onOpenReport }: DashboardProps) {
     return <div className="dashboard">Erro ao carregar dashboard: {error}</div>;
   }
 
-  const statuses = summary?.runs.by_status ?? {};
-  const severities = summary?.findings.by_severity ?? {};
-  const order = ['critical', 'high', 'medium', 'low', 'info', 'unknown'];
-
   return (
     <div className="dashboard">
       <div className="dashboard-cards">
@@ -95,37 +89,9 @@ function Dashboard({ onOpenReport }: DashboardProps) {
         </div>
         <div className="dashboard-card">
           <div className="dashboard-card-value">
-            {summary ? formatCost(summary.costs.total_cost) : '—'}
-          </div>
-          <div className="dashboard-card-label">Custo total</div>
-        </div>
-        <div className="dashboard-card">
-          <div className="dashboard-card-value">
             {summary ? formatNumber(summary.costs.total_tokens) : '—'}
           </div>
           <div className="dashboard-card-label">Tokens</div>
-        </div>
-      </div>
-
-      <div className="dashboard-section">
-        <div className="dashboard-title">Runs por status</div>
-        <div className="dashboard-chips">
-          {Object.entries(statuses).length === 0 && <span className="dashboard-empty">Sem dados.</span>}
-          {Object.entries(statuses).map(([key, value]) => (
-            <span key={key} className="dashboard-chip">{key}: {value}</span>
-          ))}
-        </div>
-      </div>
-
-      <div className="dashboard-section">
-        <div className="dashboard-title">Findings por severidade</div>
-        <div className="dashboard-chips">
-          {Object.entries(severities).length === 0 && <span className="dashboard-empty">Sem dados.</span>}
-          {order
-            .filter((key) => key in severities)
-            .map((key) => (
-              <span key={key} className="dashboard-chip">{key}: {severities[key]}</span>
-            ))}
         </div>
       </div>
 
@@ -139,7 +105,6 @@ function Dashboard({ onOpenReport }: DashboardProps) {
               <span>Run</span>
               <span>Alvo</span>
               <span>Findings</span>
-              <span>Custo</span>
               <span>Tokens</span>
               <span>Status</span>
               <span>Ações</span>
@@ -152,7 +117,6 @@ function Dashboard({ onOpenReport }: DashboardProps) {
                   {run.findings}
                   <SeverityChips bySeverity={run.by_severity} />
                 </span>
-                <span className="dashboard-mono">{formatCost(run.cost)}</span>
                 <span className="dashboard-mono">{formatNumber(run.tokens)}</span>
                 <span className={`dashboard-status dashboard-status--${run.status}`}>
                   {statusLabel(run.status)}

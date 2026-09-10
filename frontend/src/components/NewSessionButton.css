@@ -1,12 +1,14 @@
 .new-session-button {
   position: absolute;
   bottom: 24px;
-  left: 32px;
+  right: 32px;
   z-index: 90;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  height: 40px;
+  height: 46px;
+  width: 220px;
   padding: 0 18px;
   background: rgba(230, 215, 176, 0.06);
   border: 1px solid rgba(230, 215, 176, 0.35);
@@ -44,10 +46,11 @@
 
 @media (max-width: 720px) {
   .new-session-button {
-    left: 16px;
+    right: 16px;
     bottom: 16px;
     padding: 0 14px;
     height: 36px;
+    width: 190px;
     font-size: 11px;
   }
 }

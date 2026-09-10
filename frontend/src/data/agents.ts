@@ -21,7 +21,7 @@ export const CARD_AGENT_IDS = [
   'hermit',
   'chariot',
   'justice',
-  'mage',
+  'magician',
 ] as const;
 
 export const DEFAULT_SECTIONS: SettingsSection[] = [

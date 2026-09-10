@@ -115,7 +115,7 @@ class ScanService:
 
     def _base_candidates(self, target: dict[str, Any]) -> list[str]:
         """Candidate base URLs: explicit url first, else https then http."""
-        name = str(target.get("name") or "")
+        name = str(target.get("name") or "").strip()
         url = str(target.get("url") or "").strip()
         if url:
             if not url.startswith(("http://", "https://")):

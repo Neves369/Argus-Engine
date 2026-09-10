@@ -22,42 +22,41 @@ import {
   getActiveRun,
   getReport,
   logout,
-  resumeRunStream,
   reviewRun,
   runStream,
   type ActiveRunInfo,
-  type ChatMessage,
   type Composition,
   type HistoryEntry,
   type PendingReview,
   type ReviewPayload,
+  type RunDecision,
   type RunFinding,
   type RunLogLine,
   type RunMeta,
   type StreamEvent,
   type RunEndSignal,
-  type TraceStep,
   type Report,
 } from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
 import { CARD_AGENT_IDS } from "./data/agents";
-import { useUIStore } from "./store/ui";
+import { useUIStore, type UIModal } from "./store/ui";
 import "./App.css";
 
-function formatDuration(ms?: number): string {
-  if (ms === undefined || Number.isNaN(ms)) return "—";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
+const IMPERIAL_TEAM_CARDS: ReadonlyArray<{ id: number; key: string }> = [
+  { id: 0, key: "fool" },
+  { id: 1, key: "hermit" },
+  { id: 4, key: "magician" },
+  { id: 3, key: "justice" },
+];
+const IMPERIAL_TEAM_ARCHETYPES = IMPERIAL_TEAM_CARDS.map((card) => card.key);
 
-function formatTraceStep(step: TraceStep): string {
-  const model = [step.provider, step.model].filter(Boolean).join("/");
+function formatLogEntry(entry: HistoryEntry): string {
   const parts: string[] = [];
-  if (model) parts.push(model);
-  if (step.duration_ms !== undefined) parts.push(formatDuration(step.duration_ms));
-  if (typeof step.tokens === "number") parts.push(`${step.tokens} tok`);
-  if (typeof step.cost === "number") parts.push(`$${step.cost.toFixed(4)}`);
-  return parts.join(" · ");
+  if (entry.action) parts.push(String(entry.action));
+  if (entry.reasoning != null && String(entry.reasoning).trim() !== "") {
+    parts.push(String(entry.reasoning));
+  }
+  return parts.join(" — ");
 }
 
 function App() {
@@ -70,7 +69,8 @@ function App() {
   const runResult = useUIStore((s) => s.runResult);
   const busy = useUIStore((s) => s.busy);
   const {
-    openPlayer,
+    openModal,
+    closeAllModals,
     closePlayer,
     setEnemyModalOpen,
     setSettingsOpen,
@@ -79,12 +79,18 @@ function App() {
     setRunResult,
     setBusy,
   } = useUIStore.getState();
+
+  function openModalExclusive(name: UIModal) {
+    setRunPanelOpen(false);
+    openModal(name);
+  }
   const [connectionsOn, setConnectionsOn] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
   const [activeArchetype, setActiveArchetype] = useState<string | null>(null);
   const [runEnded, setRunEnded] = useState(false);
+  const [runPanelOpen, setRunPanelOpen] = useState(false);
   const [activeRun, setActiveRun] = useState<ActiveRunInfo>({
     active: false,
     run_id: null,
@@ -94,16 +100,13 @@ function App() {
   const [historyRunId, setHistoryRunId] = useState<number | null>(null);
   const [runStatus, setRunStatus] = useState<string | null>(null);
   const [runLog, setRunLog] = useState<RunLogLine[]>([]);
-  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [runDecisions, setRunDecisions] = useState<RunDecision[]>([]);
   const [runMeta, setRunMeta] = useState<RunMeta>({});
   const [runFindings, setRunFindings] = useState<RunFinding[]>([]);
-  const [runTrace, setRunTrace] = useState<TraceStep[]>([]);
   const [runPendingReview, setRunPendingReview] = useState<PendingReview | null>(null);
   const [runReviewing, setRunReviewing] = useState(false);
-  const [runResumable, setRunResumable] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
-  const lastTraceLenRef = useRef(0);
   const lastHistoryLenRef = useRef(0);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CardNodeType>([]);
@@ -226,17 +229,15 @@ function App() {
     setEnemyInfo({ name: '', url: '', notes: '' });
     setRunId(null);
     setHistoryRunId(null);
+    setRunPanelOpen(false);
     setRunStatus(null);
     setRunLog([]);
-    setChat([]);
+    setRunDecisions([]);
     setRunMeta({});
     setRunFindings([]);
-    setRunTrace([]);
     setRunPendingReview(null);
-    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
-    lastTraceLenRef.current = 0;
     lastHistoryLenRef.current = 0;
     try {
       localStorage.removeItem('argus.lastRunId');
@@ -252,39 +253,12 @@ function App() {
 
   function ingestEvent(event: StreamEvent): void {
     const update = event.update ?? {};
-    const trace = (update.trace as TraceStep[] | undefined) ?? [];
-    if (trace.length > lastTraceLenRef.current) {
-      trace.slice(lastTraceLenRef.current).forEach((step) => {
-        setRunLog((prev) => [
-          ...prev,
-          { node: step.node ?? event.node, text: formatTraceStep(step) },
-        ]);
-      });
-      lastTraceLenRef.current = trace.length;
-    }
     const history = (update.history as HistoryEntry[] | undefined) ?? [];
     if (history.length > lastHistoryLenRef.current) {
       history.slice(lastHistoryLenRef.current).forEach((entry) => {
-        const agent = entry.agent;
-        if (!agent) return;
-        setChat((prev) => [
+        setRunLog((prev) => [
           ...prev,
-          {
-            agent,
-            action: entry.action ?? '',
-            reasoning: String(entry.reasoning ?? ''),
-            findings: typeof entry.findings === 'number' ? entry.findings : undefined,
-            sources:
-              typeof entry.sources_consulted === 'number'
-                ? entry.sources_consulted
-                : undefined,
-            scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
-            pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
-            cve_correlations:
-              typeof entry.cve_correlations === 'number'
-                ? entry.cve_correlations
-                : undefined,
-          },
+          { node: entry.agent ?? event.node, text: formatLogEntry(entry) },
         ]);
       });
       lastHistoryLenRef.current = history.length;
@@ -304,22 +278,20 @@ function App() {
   function beginRun() {
     setBusy(true);
     setRunStatus('running');
+    setRunPanelOpen(true);
     setRunId(null);
     setHistoryRunId(null);
     setRunLog([]);
-    setChat([]);
+    setRunDecisions([]);
     setRunMeta({});
     setRunFindings([]);
-    setRunTrace([]);
     setRunPendingReview(null);
     setRunReviewing(false);
-    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
     setConnectionsOn(true);
     setActiveArchetype(null);
     setRunEnded(false);
-    lastTraceLenRef.current = 0;
     lastHistoryLenRef.current = 0;
   }
 
@@ -342,10 +314,8 @@ function App() {
 
   function applyReport(report: Report) {
     setRunFindings(report.findings);
-    setRunTrace(report.trace ?? []);
     setRunError(null);
     setRunStatus(report.status);
-    setRunResumable(Boolean(report.resumable));
     setRunPendingReview(report.pending_review ?? null);
     setRunMeta((prev) => ({
       ...prev,
@@ -358,38 +328,18 @@ function App() {
   }
 function seedReport(report: Report) {
     setRunLog(
-      (report.trace ?? []).map((step) => ({
-        node: step.node ?? '?',
-        text: formatTraceStep(step),
-      })),
-    );
-    setChat(
       (report.history ?? []).map((entry) => ({
-        agent: entry.agent ?? '?',
-        action: entry.action ?? '',
-        reasoning: String(entry.reasoning ?? ''),
-        findings: typeof entry.findings === 'number' ? entry.findings : undefined,
-        sources:
-          typeof entry.sources_consulted === 'number'
-            ? entry.sources_consulted
-            : undefined,
-        scanned: typeof entry.scanned === 'boolean' ? entry.scanned : undefined,
-        pages: typeof entry.pages_observed === 'number' ? entry.pages_observed : undefined,
-        cve_correlations:
-          typeof entry.cve_correlations === 'number'
-            ? entry.cve_correlations
-            : undefined,
+        node: entry.agent ?? '?',
+        text: formatLogEntry(entry),
       })),
     );
-    lastTraceLenRef.current = (report.trace ?? []).length;
     lastHistoryLenRef.current = (report.history ?? []).length;
   }
 
   async function openReport(runNumber: number) {
-    closePlayer();
-    setSessionsOpen(false);
-    setDashboardOpen(false);
+    closeAllModals();
     setHistoryRunId(runNumber);
+    setRunPanelOpen(true);
     try {
       localStorage.setItem('argus.lastRunId', String(runNumber));
     } catch {
@@ -397,12 +347,10 @@ function seedReport(report: Report) {
     }
     setRunStatus(null);
     setRunLog([]);
-    setChat([]);
+    setRunDecisions([]);
     setRunMeta({});
     setRunFindings([]);
-    setRunTrace([]);
     setRunPendingReview(null);
-    setRunResumable(false);
     setRunError(null);
     setRunResult(null);
     setRunEnded(true);
@@ -424,6 +372,16 @@ function seedReport(report: Report) {
         note: note || undefined,
       };
       await reviewRun(runId, payload);
+      setRunDecisions((prev) => [
+        ...prev,
+        {
+          id: runPendingReview.id,
+          kind: runPendingReview.kind,
+          context: runPendingReview.context ?? undefined,
+          approved,
+          note: note || '',
+        },
+      ]);
       const report = await getReport(runId);
       applyReport(report);
     } catch (error) {
@@ -433,8 +391,22 @@ function seedReport(report: Report) {
     }
   }
 
+  function placeImperialTeam() {
+    setActiveArchetype(null);
+    setRunEnded(false);
+    setNodes(
+      IMPERIAL_TEAM_CARDS.map((card, index): CardNodeType => ({
+        id: `card-${card.id}`,
+        type: 'card',
+        position: { x: 80 + index * 60, y: -100 + (card.id % 3) * 20 },
+        data: { id: card.id, onReturn: handleCardReturn },
+      })),
+    );
+  }
+
   async function handleRun() {
     const archetypes = currentArchetypes();
+    const imperialTurn = archetypes.length === 0;
     if (activeRun.active) {
       setRunResult(
         `Aguarde o run #${activeRun.run_id} (${activeRun.status}) concluir antes de iniciar outro.`,
@@ -443,10 +415,12 @@ function seedReport(report: Report) {
     }
     beginRun();
     try {
-      // Supervisor universal: sem cartas o Imperador usa o time completo;
-      // com cartas ele escala apenas as escolhidas (a composição é salva).
-      if (archetypes.length === 0) {
-        setRunResult('Sem cartas — o Imperador usará todas as disponíveis.');
+      // Supervisor universal: sem cartas o Imperador escala o time padrão —
+      // as cartas vão ao tabuleiro como se ele as tivesse jogado. Com cartas
+      // ele escala apenas as escolhidas (a composição é salva).
+      if (imperialTurn) {
+        placeImperialTeam();
+        setRunResult("O Imperador escalou o time padrão para este turno.");
       } else {
         await createComposition({
           name: `Composição ${new Date().toLocaleTimeString('pt-BR')}`,
@@ -462,9 +436,10 @@ function seedReport(report: Report) {
         target: enemyInfo.name,
         devil_mode: String(deathMode),
       });
-      if (archetypes.length > 0) {
-        params.set('archetypes', archetypes.join(','));
-      }
+      params.set(
+        'archetypes',
+        (imperialTurn ? IMPERIAL_TEAM_ARCHETYPES : archetypes).join(','),
+      );
 
       const signal = await runStream(`/runs/stream?${params.toString()}`, ingestEvent, {
         onStart: setRunId,
@@ -481,34 +456,6 @@ function seedReport(report: Report) {
     }
   }
 
-  async function handleResume() {
-    const resumeId = runId ?? historyRunId;
-    if (resumeId == null) return;
-    if (activeRun.active) {
-      setRunResult(
-        `Aguarde o run #${activeRun.run_id} (${activeRun.status}) concluir antes de retomar outro.`,
-      );
-      return;
-    }
-    beginRun();
-    try {
-      const report = await getReport(resumeId);
-      seedReport(report);
-      const signal = await resumeRunStream(resumeId, ingestEvent, {
-        onStart: setRunId,
-      });
-      await finishRun(signal);
-      setRunResult(`Run #${signal.run_id}: ${signal.status}`);
-    } catch (error) {
-      setRunResult(
-        error instanceof Error ? `Erro: ${error.message}` : 'Erro inesperado ao retomar.',
-      );
-    } finally {
-      setBusy(false);
-      void refreshActiveRun();
-    }
-  }
-
   async function executeSession(sessionId: number) {
     if (activeRun.active) {
       throw new Error(
@@ -516,8 +463,7 @@ function seedReport(report: Report) {
       );
     }
     beginRun();
-    closePlayer();
-    setSessionsOpen(false);
+    closeAllModals();
     try {
       const signal = await runStream(`/runs/stream?session_id=${sessionId}`, ingestEvent, {
         onStart: setRunId,
@@ -595,7 +541,7 @@ function seedReport(report: Report) {
   }
 
   const activeRunId = runId ?? historyRunId;
-  const showRunPanel = busy || activeRunId !== null;
+  const showRunPanel = busy || (runPanelOpen && activeRunId !== null);
   const readOnlyReport = runId === null && historyRunId !== null;
   const runLocked =
     !busy && activeRun.active && runId === null;
@@ -616,18 +562,19 @@ function seedReport(report: Report) {
       }}
     >
       <CharacterPanel
-        onPhotoClick={() => openPlayer()}
+        onPhotoClick={() => openModalExclusive('player')}
         image={deathMode ? deathImg : undefined}
       />
       <CharacterPanel
         side="enemy"
         name="Alvo"
-        onPhotoClick={() => setEnemyModalOpen(true)}
+        onPhotoClick={() => openModalExclusive('enemy')}
       />
       <Hand
         palette
         onCardPlayed={handleCardPlayed}
         returnedCard={returnedCard}
+        playedCards={nodes.map((node) => node.data.id)}
       />
       <PlayedArea
         nodes={nodes}
@@ -638,6 +585,34 @@ function seedReport(report: Report) {
         onConnect={() => undefined}
       />
       <DeathOverlay intensity={deathMode ? 'full' : 'light'} />
+      <button
+        type="button"
+        className={`run-panel-toggle${showRunPanel ? ' is-open' : ''}`}
+        aria-pressed={showRunPanel}
+        title="Resultados e logs do run"
+        onClick={() => {
+          if (showRunPanel) {
+            setRunPanelOpen(false);
+            return;
+          }
+          if (activeRunId !== null) {
+            closeAllModals();
+            setRunPanelOpen(true);
+            return;
+          }
+          let last: string | null = null;
+          try {
+            last = localStorage.getItem('argus.lastRunId');
+          } catch {
+            // localStorage indisponível; ignora
+          }
+          if (last && /^\d+$/.test(last)) {
+            void openReport(Number(last));
+          }
+        }}
+      >
+        ☰ Resultados
+      </button>
       <NewSessionButton
         onClick={handleNewSession}
         disabled={busy || runLocked}
@@ -681,22 +656,16 @@ function seedReport(report: Report) {
               status={runStatus}
               running={busy}
               log={runLog}
-              chat={chat}
+              decisions={runDecisions}
               meta={runMeta}
               findings={runFindings}
-              trace={runTrace}
               error={runError}
               pendingReview={runPendingReview}
               reviewing={runReviewing}
-              resumable={runResumable}
               readonly={readOnlyReport}
-              onResume={() => void handleResume()}
               onReview={(approved, note) => void handleReview(approved, note)}
               onCancel={() => void handleCancel()}
-              onClose={() => {
-                setRunId(null);
-                setHistoryRunId(null);
-              }}
+              onClose={() => setRunPanelOpen(false)}
             />
           </motion.div>
         )}
@@ -714,14 +683,10 @@ function seedReport(report: Report) {
         onClose={() => closePlayer()}
       >
         <div className="modal-menu">
-          <button className="modal-menu-item" type="button" onClick={() => {
-            closePlayer();
-            setSessionsOpen(true);
-          }}>Sessões</button>
-          <button className="modal-menu-item" type="button" onClick={() => {
-            closePlayer();
-            setDashboardOpen(true);
-          }}>Dashboard</button>
+          <button className="modal-menu-item" type="button" onClick={() => openModalExclusive('sessions')}>
+            Sessões</button>
+          <button className="modal-menu-item" type="button" onClick={() => openModalExclusive('dashboard')}>
+            Dashboard</button>
           <button
             className="modal-menu-item"
             type="button"
@@ -732,10 +697,7 @@ function seedReport(report: Report) {
           <button
             className="modal-menu-item"
             type="button"
-            onClick={() => {
-              closePlayer();
-              setSettingsOpen(true);
-            }}
+            onClick={() => openModalExclusive('settings')}
           >
             Configurações
           </button>
