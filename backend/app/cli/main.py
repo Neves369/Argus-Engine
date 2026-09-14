@@ -61,14 +61,19 @@ def validate_cmd(
 
 
 def _session_create(
-    name: str, archetypes: list[str], target: str | None, url: str | None, devil: bool
+    name: str, archetypes: list[str], target: str | None, url: str | None, devil: bool, depth: str
 ) -> int:
     from app.db.models import Session
     from app.db.session import async_session_factory
     from app.orchestration.compose import validate_sequence
 
     validate_sequence(archetypes)
-    config: dict = {"archetypes": archetypes, "target": None, "devil_mode": devil}
+    config: dict = {
+        "archetypes": archetypes,
+        "target": None,
+        "devil_mode": devil,
+        "depth": depth,
+    }
     if target:
         config["target"] = {"name": target, "url": url, "notes": None}
 
@@ -90,10 +95,16 @@ def compose_create(
     target: Annotated[str | None, typer.Option("--target", help="Alvo autorizado (scope)")] = None,
     url: Annotated[str | None, typer.Option("--url")] = None,
     devil: Annotated[bool, typer.Option("--devil", help="Modo Diabo")] = False,
+    depth: Annotated[
+        str, typer.Option("--depth", help="Profundidade do run (quick|deep)")
+    ] = "quick",
 ) -> None:
     """Criar e salvar uma composição de grafo."""
+    if depth not in ("quick", "deep"):
+        console.print("[red]--depth deve ser 'quick' ou 'deep'[/red]")
+        raise typer.Exit(code=1)
     try:
-        session_id = _session_create(name, archetypes, target, url, devil)
+        session_id = _session_create(name, archetypes, target, url, devil, depth)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -207,10 +218,19 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                 target_id = new_target.id
                 record.target_id = target_id
 
+            from app.core.config import budget_for_depth, get_settings
+
+            depth = str(config.get("depth") or get_settings().depth_default)
+            if depth not in ("quick", "deep"):
+                raise ValueError("depth deve ser 'quick' ou 'deep'")
+            budget_tokens, budget_cost = budget_for_depth(depth)
             state = GraphState(
                 target=target,
                 devil_mode=bool(config.get("devil_mode", False)),
                 composition=archetypes,
+                depth=depth,
+                budget_tokens=budget_tokens,
+                budget_cost=budget_cost,
             )
             state.set_sources_service(build_sources_service())
             scan_service = build_scan_service()

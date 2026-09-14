@@ -85,6 +85,11 @@ A Justiça (XI) · O Carro (VII) · O Mago (I). O **Diabo (XV)** virou o **Modo 
 | 13 | Integração de Ferramentas Reais | NVD/CISA KEV/CVE.report no pipeline, extractors de OSINT, tools reais | ✅ Concluída |
 | 14 | Supervisor Universal | Imperador rege todo run; cartas = time disponível; Carro safety check | ✅ Concluída |
 | 15 | Execução Real (Carro) | Modo normal: verificação ao vivo + tools do operador (não destrutivas); Modo Diabo segue adiado | ✅ Concluída |
+| 16 | Profundidade de Aplicação — Scan observável (M1) | Findings de aplicação a partir do que a resposta HTTP já mostra (sessão, crawl, detectores) | 🔄 Em andamento |
+| 17 | Tool Registry útil para HTTP/sessão (M2) | Tools reais não destrutivas para o Carro (http_request, session_login, form_discover) | 🔄 Em andamento |
+| 18 | Grafo com `depth=quick\|deep` (M3) | Imperador escolhe a profundidade; labs usam `deep` | 🔄 Em andamento |
+| 19 | Qualidade, Justiça e Relatório por seções (M4) | Relatório separado por Superfície/Configuração/Aplicação/Correlação | 🔄 Em andamento |
+| 20 | Diabo controlado (M5) | Stress controlado em escopo autorizado, com HITL e allowlist | ✅ Concluída |
 
 ---
 
@@ -916,17 +921,161 @@ sem backend destrutivo).
   injetados em todos os pontos de criação do Director (`app/api/v1/runs.py`,
   `app/api/v1/compositions.py`).
 
+---
+
+## Etapas 16–20 — Plano de Melhoria (Profundidade de Aplicação)
+
+As Etapas 16 a 20 executam o **Plano de Melhoria** detalhado em
+[`docs/PLANO_MELHORIA_ARGUS.md`](./PLANO_MELHORIA_ARGUS.md) — que é o **tracker vivo**
+destas etapas (status M1–M5, "Pontos a discutir", checklist por etapa e métricas de
+sucesso). Objetivo: elevar os achados de "recon + higiene HTTP" para cobertura real de
+**aplicação**, sem abandonar evidência observável, governança e uso autorizado.
+
+Ordem recomendada (sequencial, cada uma destravando a próxima):
+
+```
+M1 → M2 → M3 → M4 → M5
+```
+
+### Etapa 16 — Profundidade de Aplicação: Scan observável (M1)
+
+**Status:** `[~]` Em andamento — detectores de aplicação implementados e testados;
+falta validação ao vivo no DVWA (`:4280`).
+
+**Objetivo:** produzir findings de aplicação usando só o que a resposta HTTP já mostra,
+sem payloads nem exploração.
+
+**Entregáveis-chave**
+- [x] Sessão autenticada no `ScanService` (login form já modelado) + reuso de cookie/header no crawl.
+- [x] Crawl ampliado para links internos do mesmo host.
+- [x] Novos detectores em `app/scanning/detectors.py`, sempre baseados em evidência:
+  formulários/campos sensíveis (`select`/`textarea` + password/file/hidden), erros verbosos,
+  parâmetros refletidos, meta-refresh para host externo, directory listing, stack/tecnologia.
+- [x] Finding de **módulos/rotas** descobertos em `app/services/scan_findings.py`.
+- [x] `probe_url` consistente em todo finding de scan.
+
+**Arquivos principais:** `backend/app/scanning/service.py`, `detectors.py`, `parsers.py`,
+`backend/app/services/scan_findings.py`.
+
+**Critério de aceite:** run em DVWA (`:4280`) produz findings de **aplicação**
+(forms/módulos/erros) além de headers/DNS, todos com evidência ligável a request/response
+— pendente de validação ao vivo no lab.
+
+### Etapa 17 — Tool Registry útil para HTTP/sessão (M2)
+
+**Status:** `[~]` Em andamento — tools scanner implementadas e testadas; validação
+ao vivo no lab pendente (compartilhada com M1).
+
+**Objetivo:** dar ao Carro (e depois ao Diabo) tools reais, ainda não destrutivas.
+
+**Entregáveis-chave**
+- [x] Tools no `tools.json` (`kind: scanner`): `http_request`, `session_login`,
+      `form_discover`, `http_header_probe` — todas `destructive: false`.
+- [x] `HttpToolHandler` (`app/tools/http_tools.py`) com cookie jar por host/run e
+      bloqueio fora de escopo (logado); reusa controles `SCAN_*` (rate/timeout/
+      body-cap/UA/cookies/robots).
+- [x] `ToolExecutor` com branch `ToolKind.SCANNER`; credenciais de login via
+      `SCAN_LOGIN_*` (nunca em params/log).
+- [x] Permissões por arquétipo mantidas: Eremita/Louco não invocam tools; Carro
+      invoca só não destrutivas; destrutiva segue gated por `devil_mode`.
+
+**Arquivos principais:** `backend/tools.json`, `backend/app/tools/spec.py`,
+`executor.py`, `http_tools.py`, `backend/app/scanning/login.py`, `backend/app/agents/builtin.py`.
+
+**Critério de aceite:** Carro re-prova `probe_url` e lista forms via manifest; tentativa
+fora de `ALLOWED_SCOPES` é bloqueada e logada — coberto em `tests/test_http_tools.py`.
+
+### Etapa 18 — Grafo com `depth=quick|deep` (M3)
+
+**Status:** `[~]` Em andamento — `depth` implementado e testado; validação ao vivo
+pendente (compartilhada com M1/M2).
+
+**Objetivo:** o Imperador escolhe o quanto aprofundar; labs usam `deep`.
+
+**Entregáveis-chave**
+- [x] `GraphState.depth` (`quick`|`deep`, default seguro `quick`) + settings
+      (`RUN_DEPTH`, `DEEP_SCAN_MAX_PAGES`, `DEEP_BUDGET_TOKENS`/`DEEP_BUDGET_COST`).
+- [x] `quick`: fontes + scan de superfície + Justiça leve (time sem Carro);
+      `deep`: + Carro no time (probes ao vivo + tools) → Justiça.
+- [x] Orçamento de tokens/custo e teto de páginas do crawl distintos por depth
+      (`budget_for_depth`, `ScanService.scan(..., max_pages=...)`).
+- [x] Imperador registra `depth` em cada entry (estado/auditoria).
+- [x] HITL/kill-switch/escopo intactos (depth não relaxa governança).
+- [x] API (`POST /runs`, `GET /runs/stream?depth=`, compositions) + CLI
+      (`compose create --depth`) + schemas `Literal["quick","deep"]`.
+
+**Arquivos principais:** `backend/app/orchestration/graph.py`, `director.py`,
+`state.py`, `backend/app/agents/builtin.py`, `backend/app/scanning/service.py`,
+`backend/app/services/run_executor.py`, `backend/app/api/v1/runs.py`,
+`compositions.py`, `backend/app/cli/main.py`.
+
+**Critério de aceite:** mesmo alvo, `quick` e `deep` geram relatórios claramente
+diferentes (deep inclui o Carro/probes); Imperador registra a decisão de depth —
+coberto em `tests/test_depth.py`.
+
+### Etapa 19 — Qualidade, Justiça e Relatório por seções (M4)
+
+**Status:** `[~]` Em andamento — seções + validação conservadora implementadas e
+testadas; validação ao vivo pendente (compartilhada com M1–M3).
+
+**Objetivo:** o relatório deixar de parecer "lista plana de info".
+
+**Entregáveis-chave**
+- [x] Seções no export (`app/services/export.py`): `finding_section()` →
+      Superfície | Configuração | Aplicação | Correlação CVE (por categoria).
+- [x] `run_report` com `summary.by_section` + `section`/`probe_url` por finding;
+      `run_report_markdown` e `run_report_pdf` agrupados por seção.
+- [x] Justiça conservadora (`app/services/quality.py`): `medium`+ exige HITL;
+      evidência repetível = re-probe confirmado OU evidência anexada; refutado
+      nunca valida.
+- [x] Ruído de lab/CDN (`app/services/false_positives.py::BUILTIN_FP_NOISE`).
+- [x] Finding de módulos/rotas recategorizado para "Aplicação".
+
+**Arquivos principais:** `backend/app/services/export.py`, `judge.py`, `fp_rules.py`,
+`quality.py`, `false_positives.py`, `backend/app/api/v1/findings.py`,
+`backend/app/services/scan_findings.py`.
+
+**Critério de aceite:** relatório DVWA legível por seção (config vs app); taxa de
+`validated` baixa e justificada — coberto em `tests/test_m4_report.py`.
+
+### Etapa 20 — Diabo controlado (M5)
+
+**Status:** `[x]` Concluída (rails de controle; backend destrutivo segue `no_backend`).
+
+**Objetivo:** stress controlado em escopo autorizado, nunca solto.
+
+**Entregáveis-chave**
+- [x] `DevilGuard` (`app/services/devil_guard.py`): allowlist estrita de tools +
+      limites duros (probes/taxa/tempo) + `audit()`.
+- [x] Config `DEVIL_ALLOWED_TOOLS`/`DEVIL_MAX_PROBES`/`DEVIL_MAX_RATE`/
+      `DEVIL_MAX_DURATION_SECONDS`.
+- [x] HITL obrigatório preservado (proposta de aprovação carrega os rails).
+- [x] Trilha de auditoria completa: rails no `proposal` e no entry `no_backend`.
+- [x] Sem `devil_mode` nenhum caminho do Diabo executa probe extra (safety check only).
+
+**Arquivos principais:** `backend/app/services/devil_guard.py`,
+`backend/app/agents/builtin.py`, `backend/app/core/config.py`.
+
+**Critério de aceite:** sem `devil_mode`, nenhum probe extra do Diabo; com
+`devil_mode`, trilha de auditoria completa — coberto em `tests/test_devil_guard.py`.
+
+---
+
 # Próximos passos sugeridos
 
-> Lista revisada — todos os itens de Etapas 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12,
-> 13 e 14 listados aqui foram entregues (ver status de cada etapa acima).
+> Lista revisada — todos os itens de Etapas 1 a 15 foram entregues (ver status de
+> cada etapa acima). As Etapas 16–20 executam o **Plano de Melhoria**
+> (`docs/PLANO_MELHORIA_ARGUS.md`) e estão implementadas: **M5** concluída,
+> **M1–M4** em andamento (código + testes prontos).
 
-Sem pendências de Etapa em aberto: a compressão de histórico por resumo de LLM
-(Etapa 7) foi implementada como lever opt-in (`HISTORY_LLM_SUMMARY`, default
-ligado com a compressão; degrada para determinístico) — ver
-`docs/adr/0010-history-llm-summary.md`. Itens futuros (Modo Diabo com backend
-destrutivo, animações Rive, shadcn/ui) seguem adiados por decisão de produto,
-não por pendência técnica.
+Próximo trabalho: **validação ao vivo no DVWA autorizado** (`pentest-ground.com:4280`)
+— a pendência transversal de M1–M4 — exigindo acesso ao lab + credenciais via
+`SCAN_LOGIN_*`/secret store, com o alvo em `ALLOWED_SCOPES`. O MVP de "relatório
+menos superficial no DVWA" (M1 + M2 + export por seções de M4) já está pronto para
+esse teste; ver `docs/PLANO_MELHORIA_ARGUS.md` §9.
+
+Itens futuros (Modo Diabo com backend destrutivo, animações Rive, shadcn/ui)
+seguem adiados por decisão de produto, não por pendência técnica.
 
 ## Como manter este documento
 

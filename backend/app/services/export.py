@@ -19,6 +19,52 @@ SEVERITY_ORDER = {
     "info": 4,
 }
 
+# Seções do relatório (Etapa M4): o operador identifica de imediato o que é
+# superfície/configuração vs aplicação vs correlação de CVE.
+SECTION_SUPERFICIE = "superficie"
+SECTION_CONFIG = "configuracao"
+SECTION_APP = "aplicacao"
+SECTION_CORRELACAO = "correlacao"
+
+SECTION_LABELS = {
+    SECTION_SUPERFICIE: "Superfície",
+    SECTION_CONFIG: "Configuração",
+    SECTION_APP: "Aplicação",
+    SECTION_CORRELACAO: "Correlação CVE",
+}
+
+_SECTION_ORDER = (
+    SECTION_SUPERFICIE,
+    SECTION_CONFIG,
+    SECTION_APP,
+    SECTION_CORRELACAO,
+)
+
+
+def finding_section(finding: Finding) -> str:
+    """Classifica um finding em uma das quatro seções do relatório.
+
+    Determinístico, baseado na ``category`` (OWASP/categorias já usadas pelos
+    extractors): A06 → correlação CVE; A03/CWE-601 → aplicação; A05/A02 →
+    configuração; o restante (superfície de ataque, reputação de rede, gestão
+    de domínio, leads) → superfície.
+    """
+    category = (finding.category or "").strip().lower()
+    if "a06" in category or "outdated components" in category:
+        return SECTION_CORRELACAO
+    if "a03" in category or "injection" in category or "cwe-601" in category:
+        return SECTION_APP
+    if "aplicação" in category:
+        return SECTION_APP
+    if (
+        "a05" in category
+        or "a02" in category
+        or "misconfiguration" in category
+        or "cryptographic" in category
+    ):
+        return SECTION_CONFIG
+    return SECTION_SUPERFICIE
+
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
@@ -72,6 +118,7 @@ def finding_report(finding: Finding) -> dict[str, Any]:
         "title": finding.title,
         "severity": finding.severity,
         "category": finding.category,
+        "section": finding_section(finding),
         "affected": finding.affected,
         "cvss_score": finding.cvss_score,
         "cvss_vector": finding.cvss_vector,
@@ -79,6 +126,7 @@ def finding_report(finding: Finding) -> dict[str, Any]:
         "known_exploits": finding.known_exploits or [],
         "description": finding.description,
         "evidence": meta.get("evidence"),
+        "probe_url": meta.get("probe_url"),
         "remediation": finding.remediation,
         "references": finding.references or [],
         "confidence": finding.confidence,
@@ -88,11 +136,21 @@ def finding_report(finding: Finding) -> dict[str, Any]:
     }
 
 
+def _section_summary(findings: list[Finding]) -> dict[str, int]:
+    counts: dict[str, int] = {section: 0 for section in _SECTION_ORDER}
+    for finding in findings:
+        section = finding_section(finding)
+        counts[section] = counts.get(section, 0) + 1
+    return counts
+
+
 def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
     """Structured security report: what was found, severity, exploits, remediation.
 
     Observability (tokens/cost) is kept, but in its own appendix rather than as
-    the headline content.
+    the headline content. Findings are also bucketed into the four report
+    sections (Etapa M4) so config vs app vs CVE-correlation is immediately
+    distinguishable.
     """
     result = run.result or {}
     target = (result.get("target") or {}).get("name") or "unknown"
@@ -117,6 +175,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
         "summary": {
             "total_findings": len(findings),
             "by_severity": by_severity,
+            "by_section": _section_summary(findings),
             "pending_review": sum(1 for f in findings if f.requires_human_review),
         },
         "findings": [finding_report(f) for f in _ordered(findings)],
@@ -127,6 +186,44 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "stop_reason": result.get("stop_reason"),
         },
     }
+
+
+def _finding_markdown_lines(finding: Finding) -> list[str]:
+    """Render one finding as Markdown (relatar, não ensinar)."""
+    lines: list[str] = []
+    severity = finding.severity or "n/a"
+    lines.append(f"## [{severity.upper()}] {finding.title}")
+    lines.append("")
+    lines.append(f"- **Gravidade:** {severity}")
+    if finding.category:
+        lines.append(f"- **Categoria:** {finding.category}")
+    if finding.affected:
+        lines.append(f"- **Afetado:** {finding.affected}")
+    if finding.cvss_score is not None:
+        vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
+        lines.append(f"- **CVSS:** {finding.cvss_score}{vector}")
+    if finding.cves:
+        lines.append(f"- **CVEs:** {', '.join(finding.cves)}")
+    if finding.known_exploits:
+        lines.append(f"- **Exploits conhecidos:** {'; '.join(finding.known_exploits)}")
+    lines.append(f"- **Status:** {finding.status}")
+    if finding.description:
+        lines.append("")
+        lines.append(finding.description)
+    evidence = (finding.meta or {}).get("evidence")
+    if evidence:
+        lines.append("")
+        lines.append(f"**Evidência:** {evidence}")
+    if finding.remediation:
+        lines.append("")
+        lines.append(f"**Remediação:** {finding.remediation}")
+    if finding.references:
+        lines.append("")
+        lines.append("**Referências:**")
+        for ref in finding.references:
+            lines.append(f"- {ref}")
+    lines.append("")
+    return lines
 
 
 def run_report_markdown(run: Run, findings: list[Finding]) -> str:
@@ -140,47 +237,28 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         f"- **Status:** {run.status}",
         f"- **Achados:** {len(findings)}",
         "",
-        "## Achados",
-        "",
     ]
 
     if not findings:
         lines.append("Nenhum achado registrado neste run.")
         lines.append("")
 
+    # Achados organizados por seção (Etapa M4): Superfície | Configuração |
+    # Aplicação | Correlação CVE — o operador distingue config de app na hora.
+    by_section: dict[str, list[Finding]] = {section: [] for section in _SECTION_ORDER}
     for finding in _ordered(findings):
-        severity = finding.severity or "n/a"
-        lines.append(f"## [{severity.upper()}] {finding.title}")
+        by_section[finding_section(finding)].append(finding)
+
+    for section in _SECTION_ORDER:
+        bucket = by_section[section]
+        if not bucket:
+            continue
+        lines.append(f"## {SECTION_LABELS[section]}")
         lines.append("")
-        lines.append(f"- **Gravidade:** {severity}")
-        if finding.category:
-            lines.append(f"- **Categoria:** {finding.category}")
-        if finding.affected:
-            lines.append(f"- **Afetado:** {finding.affected}")
-        if finding.cvss_score is not None:
-            vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
-            lines.append(f"- **CVSS:** {finding.cvss_score}{vector}")
-        if finding.cves:
-            lines.append(f"- **CVEs:** {', '.join(finding.cves)}")
-        if finding.known_exploits:
-            lines.append(f"- **Exploits conhecidos:** {'; '.join(finding.known_exploits)}")
-        lines.append(f"- **Status:** {finding.status}")
-        if finding.description:
-            lines.append("")
-            lines.append(finding.description)
-        evidence = (finding.meta or {}).get("evidence")
-        if evidence:
-            lines.append("")
-            lines.append(f"**Evidência:** {evidence}")
-        if finding.remediation:
-            lines.append("")
-            lines.append(f"**Remediação:** {finding.remediation}")
-        if finding.references:
-            lines.append("")
-            lines.append("**Referências:**")
-            for ref in finding.references:
-                lines.append(f"- {ref}")
+        lines.append(f"_{len(bucket)} achado(s)_")
         lines.append("")
+        for finding in bucket:
+            lines.extend(_finding_markdown_lines(finding))
 
     lines.extend(
         [
@@ -418,42 +496,51 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
     if not findings:
         story.append(Paragraph("Nenhum achado registrado neste run.", body))
     else:
+        by_section: dict[str, list[Finding]] = {section: [] for section in _SECTION_ORDER}
         for finding in _ordered(findings):
-            title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
-            story.append(Paragraph(title, h2))
-            pairs: list[tuple[str, str | None]] = [
-                ("Gravidade", finding.severity),
-            ]
-            if finding.category:
-                pairs.append(("Categoria", finding.category))
-            if finding.affected:
-                pairs.append(("Afetado", finding.affected))
-            if finding.cvss_score is not None:
-                vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
-                pairs.append(("CVSS", f"{finding.cvss_score}{vector}"))
-            if finding.cves:
-                pairs.append(("CVEs", ", ".join(finding.cves)))
-            if finding.known_exploits:
-                pairs.append(("Exploits conhecidos", "; ".join(finding.known_exploits)))
-            pairs.append(("Status", finding.status))
-            story.append(_label_pairs(pairs))
-            if finding.description:
-                story.append(Spacer(1, 1 * mm))
-                story.append(Paragraph(_pdf_escape(finding.description), body))
-            evidence = (finding.meta or {}).get("evidence")
-            if evidence:
-                story.append(Spacer(1, 1 * mm))
-                story.append(Paragraph(f"<b>Evidência:</b> {_pdf_escape(str(evidence))}", body))
-            if finding.remediation:
-                story.append(Spacer(1, 1 * mm))
-                remediation = f"<b>Remediação:</b> {_pdf_escape(finding.remediation)}"
-                story.append(Paragraph(remediation, body))
-            if finding.references:
-                story.append(Spacer(1, 1 * mm))
-                story.append(Paragraph("<b>Referências:</b>", body))
-                for ref in finding.references:
-                    story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
-            story.append(Spacer(1, 3 * mm))
+            by_section[finding_section(finding)].append(finding)
+        for section in _SECTION_ORDER:
+            bucket = by_section[section]
+            if not bucket:
+                continue
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph(f"{SECTION_LABELS[section]}", h1))
+            for finding in bucket:
+                title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
+                story.append(Paragraph(title, h2))
+                pairs: list[tuple[str, str | None]] = [
+                    ("Gravidade", finding.severity),
+                ]
+                if finding.category:
+                    pairs.append(("Categoria", finding.category))
+                if finding.affected:
+                    pairs.append(("Afetado", finding.affected))
+                if finding.cvss_score is not None:
+                    vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
+                    pairs.append(("CVSS", f"{finding.cvss_score}{vector}"))
+                if finding.cves:
+                    pairs.append(("CVEs", ", ".join(finding.cves)))
+                if finding.known_exploits:
+                    pairs.append(("Exploits conhecidos", "; ".join(finding.known_exploits)))
+                pairs.append(("Status", finding.status))
+                story.append(_label_pairs(pairs))
+                if finding.description:
+                    story.append(Spacer(1, 1 * mm))
+                    story.append(Paragraph(_pdf_escape(finding.description), body))
+                evidence = (finding.meta or {}).get("evidence")
+                if evidence:
+                    story.append(Spacer(1, 1 * mm))
+                    story.append(Paragraph(f"<b>Evidência:</b> {_pdf_escape(str(evidence))}", body))
+                if finding.remediation:
+                    story.append(Spacer(1, 1 * mm))
+                    remediation = f"<b>Remediação:</b> {_pdf_escape(finding.remediation)}"
+                    story.append(Paragraph(remediation, body))
+                if finding.references:
+                    story.append(Spacer(1, 1 * mm))
+                    story.append(Paragraph("<b>Referências:</b>", body))
+                    for ref in finding.references:
+                        story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
+                story.append(Spacer(1, 3 * mm))
 
     story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("Observabilidade", h2))

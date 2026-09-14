@@ -175,11 +175,35 @@ class Settings(BaseSettings):
     chariot_verify_enabled: bool = True
     chariot_verify_max_probes: int = 10
 
+    # Diabo controlado (Etapa M5): allowlist estrita de tools + limites duros
+    # que regem o caminho do Modo Diabo. O backend de execução destrutiva segue
+    # sem backend (HITL → `no_backend`, decisão de produto — ver ROADMAP Etapa
+    # 2); estes rails são o teto de O QUE e QUANTO o Diabo poderia tocar, e são
+    # registrados na trilha de auditoria. Sem `devil_mode`, nenhum caminho do
+    # Diabo executa probe extra.
+    devil_allowed_tools: list[str] = [
+        "http_request",
+        "form_discover",
+        "http_header_probe",
+        "session_login",
+    ]
+    devil_max_probes: int = 20
+    devil_max_rate: float = 2.0
+    devil_max_duration_seconds: int = 300
+
     # Correlação CVE por fingerprint (Etapa 13 — integração de ferramentas):
     # teto de candidatos devolvidos pelo NVD keyword search por produto/versão.
     # Correlação é lead textual (status="candidate", requires_human_review=True);
     # valor alto só aumenta ruído, não precisão.
     cve_correlate_max_cves: int = 5
+
+    # Profundidade do run (Etapa M3): default seguro `quick`. `deep` adiciona o
+    # Carro ao time (probes ao vivo + tools), amplia o crawl de páginas e o
+    # orçamento de tokens/custo. Env: RUN_DEPTH.
+    depth_default: str = "quick"
+    deep_scan_max_pages: int = 25
+    deep_budget_tokens: int = 200_000
+    deep_budget_cost: float = 2.0
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
@@ -211,3 +235,15 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def budget_for_depth(depth: str) -> tuple[int, float]:
+    """Orçamento (tokens, custo) de um run conforme a profundidade.
+
+    ``deep`` amplia o teto em relação ao default; qualquer valor fora de
+    ``deep`` cai no orçamento padrão (comportamento seguro).
+    """
+    settings = get_settings()
+    if depth == "deep":
+        return settings.deep_budget_tokens, settings.deep_budget_cost
+    return settings.default_budget_tokens, settings.default_budget_cost

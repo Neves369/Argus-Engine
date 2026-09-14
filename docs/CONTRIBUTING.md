@@ -12,7 +12,8 @@ Obrigado pelo interesse em contribuir com o **Argus Engine**.
 
 ## Antes de começar
 
-1. Leia o [ROADMAP.md](./ROADMAP.md) (plano vivo das etapas).
+1. Leia o [ROADMAP.md](./ROADMAP.md) (plano vivo das etapas) e, para as Etapas 16–20,
+   o [PLANO_MELHORIA_ARGUS.md](./PLANO_MELHORIA_ARGUS.md) (tracker vivo M1–M5).
 2. Leia o [SECURITY.md](./SECURITY.md).
 3. Abra uma issue descrevendo a mudança antes de abrir um PR grande.
 

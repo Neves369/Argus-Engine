@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response, Streami
 from sqlalchemy import select
 
 from app.api.deps import DBSession
-from app.core.config import get_settings
+from app.core.config import budget_for_depth, get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Decision, Finding, Run, Target
 from app.db.models import Session as SessionModel
@@ -107,12 +107,15 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     await db.refresh(run)
     record_run_start(run.started_at.timestamp() if run.started_at else None)
 
+    depth = payload.depth or settings.depth_default
+    budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target_dict,
-        budget_tokens=settings.default_budget_tokens,
-        budget_cost=settings.default_budget_cost,
+        budget_tokens=budget_tokens,
+        budget_cost=budget_cost,
         devil_mode=payload.devil_mode,
         composition=archetypes or [],
+        depth=depth,
     )
     services = _runtime_services()
     _inject_runtime(state, services)
@@ -155,13 +158,13 @@ async def stream_run(
     session_id: int | None = None,
     devil_mode: bool = False,
     archetypes: list[str] | None = None,
+    depth: str = "quick",
 ):
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
 
     await _guard_no_active_run(db)
 
-    settings = get_settings()
     session: SessionModel | None = None
     target_meta: dict[str, Any] = {"name": target or ""}
 
@@ -174,6 +177,13 @@ async def stream_run(
             archetypes = cfg.get("archetypes") or None
         target_meta = cfg.get("target") or {}
         devil_mode = bool(cfg.get("devil_mode", devil_mode))
+        depth = str(cfg.get("depth") or depth)
+
+    if depth not in ("quick", "deep"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="depth must be 'quick' or 'deep'",
+        )
 
     target_name = str(target_meta.get("name") or "")
     if not target_name:
@@ -215,12 +225,14 @@ async def stream_run(
     await db.refresh(run)
     record_run_start(run.started_at.timestamp() if run.started_at else None)
 
+    budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target_meta,
-        budget_tokens=settings.default_budget_tokens,
-        budget_cost=settings.default_budget_cost,
+        budget_tokens=budget_tokens,
+        budget_cost=budget_cost,
         devil_mode=devil_mode,
         composition=archetypes or [],
+        depth=depth,
     )
     services = _runtime_services()
     _inject_runtime(state, services)

@@ -10,6 +10,7 @@ from app.agents import get_archetype
 from app.core.security import activate_kill_switch, deactivate_kill_switch
 from app.orchestration.state import GraphState
 from app.scanning.client import ScanError, ScanHTTPClient
+from app.scanning.parsers import parse_html
 from app.scanning.robots import RobotsRules
 from app.scanning.service import ScanBlockedError, ScanReport, ScanService, build_scan_service
 from app.scanning.spec import TargetPage
@@ -299,6 +300,132 @@ def test_server_banner_with_version_yields_server_finding():
     page = _page(headers={"server": "Apache/2.4.49 (Ubuntu)"})
     findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
     assert any("Servidor divulga versão exata" in f["title"] for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Detecção de aplicação (M1): erros verbosos, reflexão, redirect, listing, stack
+# ---------------------------------------------------------------------------
+
+
+def _titles(report: ScanReport) -> set[str]:
+    return {f["title"] for f in derive_findings_from_scan(report)}
+
+
+def test_verbose_error_signature_yields_finding():
+    page = _page(body="<html>Traceback (most recent call last):</html>")
+    assert "Mensagens de erro verbosas expostas na resposta" in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_sql_error_signature_yields_finding():
+    page = _page(body="<html>You have an error in your SQL syntax</html>")
+    assert "Mensagens de erro verbosas expostas na resposta" in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_clean_body_yields_no_verbose_error_finding():
+    page = _page(body="<html><body>tudo ok</body></html>")
+    assert "Mensagens de erro verbosas expostas na resposta" not in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_reflected_query_param_yields_finding():
+    page = _page(url="http://example.com/?name=admin", body="<html>hello admin</html>")
+    assert "Parâmetros de entrada refletidos no corpo da resposta" in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_numeric_or_short_query_param_not_reflected():
+    page = _page(url="http://example.com/?id=1", body="<html>ok 1</html>")
+    assert "Parâmetros de entrada refletidos no corpo da resposta" not in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_meta_refresh_to_external_host_yields_open_redirect():
+    page = _page(
+        body='<html><meta http-equiv="refresh" content="0;url=http://evil.example/"></html>'
+    )
+    assert "Redirecionamento aberto via meta refresh para host externo" in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_meta_refresh_to_same_host_is_not_flagged():
+    page = _page(
+        body='<html><meta http-equiv="refresh" content="0;url=/dashboard"></html>'
+    )
+    assert "Redirecionamento aberto via meta refresh para host externo" not in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_directory_listing_yields_finding():
+    page = _page(body="<html><title>Index of /var/www</title></html>")
+    assert "Listagem de diretório exposta" in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_tech_identified_yields_finding():
+    page = _page(
+        headers={"content-type": "text/html", "x-powered-by": "PHP/8.1"},
+        body="<html><a href='/x.php'>php</a></html>",
+    )
+    titles = _titles(ScanReport(target="example.com", pages=[page]))
+    assert "Stack de tecnologia identificada no alvo" in titles
+
+
+def test_no_tech_markers_yields_no_stack_finding():
+    page = _page(headers={"content-type": "text/html"}, body="<html><body>ok</body></html>")
+    assert "Stack de tecnologia identificada no alvo" not in _titles(
+        ScanReport(target="example.com", pages=[page])
+    )
+
+
+def test_forms_with_select_and_sensitive_fields_are_captured():
+    body = (
+        "<html><body>"
+        '<form action="/x.php" method="post">'
+        '<input type="text" name="id">'
+        '<input type="password" name="pwd">'
+        '<select name="level"><option>low</option></select>'
+        '<textarea name="msg"></textarea>'
+        '<input type="submit" value="go">'
+        "</form>"
+        "</body></html>"
+    )
+    url = "http://example.com/"
+    page = _page(body=body)
+    page.forms = parse_html(url, body)["forms"]
+    findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
+    form_finding = next(
+        f for f in findings if f["title"] == "Formulários com entrada de dados encontrados"
+    )
+    assert "pwd:password" in form_finding["evidence"]
+    assert "level:select" in form_finding["evidence"]
+    assert "msg:textarea" in form_finding["evidence"]
+    assert "sensíveis" in form_finding["evidence"]
+
+
+def test_discovered_routes_yields_finding():
+    pages = [
+        _page(url="http://example.com/", body="<html>home</html>"),
+        _page(url="http://example.com/vulnerabilities/sqli/", body="<html>sqli</html>"),
+        _page(url="http://example.com/vulnerabilities/xss/", body="<html>xss</html>"),
+    ]
+    titles = _titles(ScanReport(target="example.com", pages=pages))
+    assert any("módulo(s)/rota(s) internos descobertos" in t for t in titles)
+
+
+def test_single_page_yields_no_routes_finding():
+    page = _page(url="http://example.com/", body="<html>home</html>")
+    titles = _titles(ScanReport(target="example.com", pages=[page]))
+    assert not any("módulo(s)/rota(s) internos descobertos" in t for t in titles)
 
 
 # ---------------------------------------------------------------------------

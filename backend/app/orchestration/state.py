@@ -38,6 +38,10 @@ class GraphState(BaseModel):
     confidence: float = 0.0
     stop_reason: str | None = None
     next_agent: str | None = None
+    #: Profundidade do run (Etapa M3): ``quick`` = fontes + scan de superfície +
+    #: Justiça leve; ``deep`` = autenticação → crawl de módulos → forms → probes
+    #: do Carro → Justiça. Serializado (persiste em resume). Default seguro.
+    depth: str = "quick"
     #: Etapa 7 (resumo): marca que o trecho intermediário do histórico já foi
     #: resumido via LLM — a partir daí a compressão segue determinística, para
     #: limitar a 1 chamada de resumo por run. Serializado (persiste em resume).

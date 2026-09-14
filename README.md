@@ -51,6 +51,7 @@ frontend.
 - **docs/CONTRIBUTING.md** — convenções e fluxo de desenvolvimento.
 - **docs/MANUAL_DO_USUARIO.md** — como usar a UI.
 - **docs/AGENTS.md** — instruções para agentes de IA trabalhando no código.
+- **docs/PLANO_MELHORIA_ARGUS.md** — plano de melhoria (profundidade de aplicação, etapas M1–M5).
 - **docs/adr/** — registros de decisão de arquitetura.
 
 ## Principais capacidades

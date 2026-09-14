@@ -88,9 +88,10 @@ def _truncate_output(data: bytes, max_bytes: int) -> tuple[str, bool]:
 class ToolExecutor:
     """Executes registered tools with rate limiting, timeouts and mode gating."""
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(self, registry: ToolRegistry, http_handler: Any = None) -> None:
         self._registry = registry
         self._last_invocation: dict[str, float] = {}
+        self._http_handler = http_handler
 
     @property
     def registry(self) -> ToolRegistry:
@@ -126,6 +127,8 @@ class ToolExecutor:
             result = await self._execute_http(tool, params)
         elif tool.kind == ToolKind.CLI:
             result = await self._execute_cli(tool, params)
+        elif tool.kind == ToolKind.SCANNER:
+            result = await self._execute_scanner(tool, params)
         else:
             raise ToolExecutionError(f"Unknown tool kind: {tool.kind}")
 
@@ -142,6 +145,21 @@ class ToolExecutor:
         if get_settings().tool_output_compression:
             result = compact_tool_output(result)
         return result
+
+    async def _execute_scanner(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
+        """Scope-aware HTTP tool (Etapa M2): delegate to the shared handler.
+
+        The handler enforces ``ALLOWED_SCOPES`` + kill-switch, reuses a per-host
+        session cookie jar and the ``SCAN_*`` controls (rate limit, timeout,
+        body cap, robots). Built lazily so the executor stays importable
+        without a settings object (and injectable for tests).
+        """
+        if self._http_handler is None:
+            from app.tools.http_tools import build_http_tool_handler
+
+            self._http_handler = build_http_tool_handler()
+        handler_name = tool.handler or tool.name
+        return await self._http_handler.handle(handler_name, params)
 
     async def _execute_http(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
         if not tool.url:

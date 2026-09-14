@@ -45,5 +45,41 @@
     "rate_limit": 1.0,
     "destructive": false,
     "sandbox_network": true
+  },
+  {
+    "name": "http_request",
+    "description": "Fetch an authorized URL (GET by default; POST when method/data provided). Scope-validated, non-destructive.",
+    "kind": "scanner",
+    "handler": "http_request",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "session_login",
+    "description": "Submit the configured login form with authorized credentials and reuse the session. Credentials come from config, never from params.",
+    "kind": "scanner",
+    "handler": "session_login",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "form_discover",
+    "description": "List the forms (action, method, fields) of an authorized URL.",
+    "kind": "scanner",
+    "handler": "form_discover",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "http_header_probe",
+    "description": "Return the security-relevant response headers of an authorized URL.",
+    "kind": "scanner",
+    "handler": "http_header_probe",
+    "timeout": 10.0,
+    "rate_limit": 1.0,
+    "destructive": false
   }
 ]

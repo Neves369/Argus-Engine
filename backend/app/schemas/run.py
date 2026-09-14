@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -11,6 +11,7 @@ class RunCreate(BaseModel):
     target: dict[str, Any] | None = None
     devil_mode: bool = False
     archetypes: list[str] | None = None
+    depth: Literal["quick", "deep"] = "quick"
 
 
 class RunRead(BaseModel):

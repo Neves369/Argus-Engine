@@ -19,11 +19,12 @@ frontend React (Vite + React Flow) com arquétipos visuais estilo tarô.
 
 ## Documentos obrigatórios de contexto
 
-- `ROADMAP.md` — plano vivo; fonte de verdade das etapas (0 a 15).
+- `ROADMAP.md` — plano vivo; fonte de verdade das etapas (0 a 20).
 - `SECURITY.md` — política de segurança e controles.
 - `CONTRIBUTING.md` — convenções e fluxo.
 - `MANUAL_DO_USUARIO.md` — como o usuário usa a plataforma (UI, cartas, relatório).
 - `RUNBOOK.md` — operação: subir o serviço, config, incidentes.
+- `PLANO_MELHORIA_ARGUS.md` — plano de melhoria (profundidade de aplicação, etapas M1–M5); tracker vivo das Etapas 16–20 do ROADMAP.
 
 ## Estrutura
 
@@ -187,7 +188,8 @@ npm run dev
 
 ## Ao implementar uma etapa
 
-1. Leia a seção correspondente no `ROADMAP.md`.
+1. Leia a seção correspondente no `ROADMAP.md` (para as Etapas 16–20, leia também
+   a etapa M correspondente em `PLANO_MELHORIA_ARGUS.md`, incluindo os "Pontos a discutir").
 2. Implemente seguindo a estrutura e convenções acima.
 3. Rode `ruff` e `pytest` (backend) e `npm run lint`/`build` (frontend).
 4. Atualize o `ROADMAP.md` marcando entregáveis concluídos e o status da etapa.

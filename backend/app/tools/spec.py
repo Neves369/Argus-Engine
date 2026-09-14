@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ToolKind(enum.StrEnum):
     HTTP = "http"
     CLI = "cli"
+    SCANNER = "scanner"
 
 
 class ToolSpec(BaseModel):
@@ -23,6 +24,10 @@ class ToolSpec(BaseModel):
     url: str | None = None
     method: str = "GET"
     command: str | None = None
+    # Tools `kind: scanner` (Etapa M2) dispatch to a scope-aware HTTP handler;
+    # `handler` selects the behaviour (http_request | session_login |
+    # form_discover | http_header_probe).
+    handler: str = ""
     # Sandbox Docker (Etapa 5): overrides opcionais da policy do executor.
     sandbox_image: str | None = None
     sandbox_network: bool = False

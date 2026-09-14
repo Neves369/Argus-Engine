@@ -8,9 +8,10 @@ from urllib.parse import urlencode, urljoin, urlparse
 from app.core.security import is_kill_switch_active, validate_scope
 from app.scanning.client import ScanError, ScanHTTPClient
 from app.scanning.fingerprint import fingerprint
+from app.scanning.login import login_payload, select_login_form
 from app.scanning.parsers import parse_html
 from app.scanning.robots import RobotsRules
-from app.scanning.spec import FormField, HtmlForm, TargetPage
+from app.scanning.spec import TargetPage
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,9 @@ class ScanService:
         self._login_username = login_username
         self._login_password = login_password
 
-    async def scan(self, target: dict[str, Any]) -> ScanReport:
+    async def scan(
+        self, target: dict[str, Any], *, max_pages: int | None = None
+    ) -> ScanReport:
         target_name = str((target or {}).get("name") or "")
         try:
             validate_scope(target_name)
@@ -92,7 +95,7 @@ class ScanService:
         )
         report.auth = await self._authenticate()
         for base_url in candidates:
-            attempt = await self._crawl(base_url)
+            attempt = await self._crawl(base_url, max_pages=max_pages)
             report.pages = attempt.pages
             report.urls_skipped_by_robots += attempt.urls_skipped_by_robots
             if attempt.robots_respected is not None:
@@ -138,12 +141,12 @@ class ScanService:
             logger.warning("scan login: page unreachable", extra={"reason": str(exc)})
             return "login configurado mas página indisponível"
 
-        form = _select_login_form(parse_html(page.url, page.body)["forms"])
+        form = select_login_form(parse_html(page.url, page.body)["forms"])
         if form is None:
             return "login configurado mas nenhum form com campo de senha encontrado"
 
         action = urljoin(page.url, form.action or page.url)
-        data = _login_payload(form, self._login_username, self._login_password)
+        data = login_payload(form, self._login_username, self._login_password)
         try:
             if form.method == "post":
                 response = await self._client.post_page(action, data)
@@ -158,8 +161,10 @@ class ScanService:
             return f"login falhou (status {response.status_code})"
         return "login dinâmico aplicado"
 
-    async def _crawl(self, base_url: str) -> ScanReport:
-        """BFS crawl of same-host pages bounded by ``self._max_pages``."""
+    async def _crawl(self, base_url: str, *, max_pages: int | None = None) -> ScanReport:
+        """BFS crawl of same-host pages bounded by ``max_pages`` (or the
+        instance default when omitted — ``deep`` runs may override per call)."""
+        limit = max(1, int(max_pages)) if max_pages is not None else self._max_pages
         robots = (
             await self._load_robots(base_url) if self._respect_robots else RobotsRules.allow_all()
         )
@@ -171,7 +176,7 @@ class ScanService:
         queue: list[str] = [base_url]
         base_host = urlparse(base_url).netloc
 
-        while queue and len(visited) < self._max_pages:
+        while queue and len(visited) < limit:
             url = queue.pop(0)
             if url in visited:
                 continue
@@ -208,41 +213,6 @@ class ScanService:
         if page.status_code not in (200, 204):
             return RobotsRules.allow_all()
         return RobotsRules.parse(page.body, user_agent=self._client.user_agent)
-
-
-def _select_login_form(forms: list[HtmlForm]) -> HtmlForm | None:
-    """Pick the first form with a password field (the login form candidate)."""
-    for form in forms:
-        if any(fld.type == "password" for fld in form.fields):
-            return form
-    return None
-
-
-def _login_payload(form: HtmlForm, username: str, password: str) -> dict[str, str]:
-    """Map the login form fields to submitted values, deterministically.
-
-    The username goes into the first unfilled text-like field (so prefilled or
-    CSRF-bearing text inputs are left alone); hidden fields keep their value.
-    """
-    data: dict[str, str] = {}
-    text_fields: list[FormField] = []
-    for fld in form.fields:
-        if not fld.name:
-            continue
-        if fld.type == "password":
-            data[fld.name] = password
-        elif fld.type == "hidden":
-            if fld.value:
-                data[fld.name] = fld.value
-        elif fld.type in ("text", "email", "username", "tel", "search"):
-            if fld.value:
-                data[fld.name] = fld.value
-            else:
-                text_fields.append(fld)
-    username_field = text_fields[0] if text_fields else None
-    if username_field is not None:
-        data[username_field.name] = username
-    return data
 
 
 def build_scan_service() -> ScanService:

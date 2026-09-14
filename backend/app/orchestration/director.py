@@ -67,7 +67,9 @@ class Director:
             team = [a for a in base if a not in ("justice", "emperor")]
         else:
             team = ["fool", "hermit", "magician"]
-        if state.devil_mode and "chariot" not in team:
+        # O Carro entra no time no Modo Diabo (HITL exigido) e também em runs
+        # `deep` (probes ao vivo + tools do operador, sem execução destrutiva).
+        if (state.devil_mode or state.depth == "deep") and "chariot" not in team:
             team.append("chariot")
         return team
 

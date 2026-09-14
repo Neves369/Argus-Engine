@@ -55,6 +55,10 @@ class _HtmlPageParser(HTMLParser):
                     value=attr_map.get("value"),
                 )
             )
+        elif tag in ("select", "textarea") and self._current_form is not None:
+            self._current_form.fields.append(
+                FormField(name=attr_map.get("name", ""), type=tag)
+            )
         elif tag == "meta":
             name = (attr_map.get("name") or attr_map.get("property") or "").lower()
             content = attr_map.get("content")

@@ -12,7 +12,11 @@ class ValidationOutcome(enum.StrEnum):
     NEEDS_REVIEW = "needs_review"
 
 
-HIGH_SEVERITY = {"critical", "high"}
+# Severidades que exigem revisão humana (HITL) mesmo com evidência. Desde a
+# Etapa M4, `medium` também entra: só findings de severidade baixa/info podem
+# ser promovidos a `validated` sem aprovação humana — a taxa de `validated`
+# automático fica baixa e justificada.
+REVIEW_SEVERITY = {"critical", "high", "medium"}
 
 _SEVERITY_WEIGHT = {
     "critical": 0.15,
@@ -31,11 +35,17 @@ class QualityScorer:
         return round(min(1.0, confidence * 0.7 + evidence + severity), 3)
 
 
+def _live_verification(finding: Finding) -> dict:
+    return (finding.meta or {}).get("verification") or {}
+
+
 class ValidationPipeline:
     """Decides whether a finding can be promoted to validated.
 
-    Only findings with evidence and a sufficient quality score are validated.
-    High-severity findings and those matching the blacklist are handled specially.
+    Only findings with repeatable evidence (attached evidence or a confirmed
+    live re-probe) and a sufficient quality score are validated. High/medium
+    severity and blacklist/noise matches are handled specially. A finding with
+    a live verification that did NOT confirm is never promoted.
     """
 
     def __init__(
@@ -51,17 +61,31 @@ class ValidationPipeline:
         self.threshold = threshold
         self.judge = judge
 
+    @staticmethod
+    def _has_repeatable_evidence(finding: Finding, evidence_count: int) -> bool:
+        """Evidência repetível: re-probe ao vivo confirmado OU evidência anexada.
+
+        Uma verificação ao vivo presente e NÃO confirmada (refutada/pulada)
+        conta como ausência de evidência repetível — nunca valida um lead que
+        o probe acabou de refutar.
+        """
+        verification = _live_verification(finding)
+        if verification:
+            return bool(verification.get("confirmed"))
+        return evidence_count >= 1
+
     def _rules(self, finding: Finding, evidence_count: int) -> tuple[ValidationOutcome, bool]:
         """Apply hard rules; return (outcome, is_hard_stop).
 
-        Hard stops (blacklist, high severity, missing evidence) must never be
-        overridden by the LLM judge, preserving security/HITL guarantees.
+        Hard stops (blacklist, review-severity, missing repeatable evidence)
+        must never be overridden by the LLM judge, preserving security/HITL
+        guarantees.
         """
         if self.blacklist.matches(finding):
             return ValidationOutcome.FALSE_POSITIVE, True
-        if finding.severity in HIGH_SEVERITY:
+        if finding.severity in REVIEW_SEVERITY:
             return ValidationOutcome.NEEDS_REVIEW, True
-        if evidence_count < 1:
+        if not self._has_repeatable_evidence(finding, evidence_count):
             return ValidationOutcome.NEEDS_REVIEW, True
         if self.scorer.score(finding, evidence_count) >= self.threshold:
             return ValidationOutcome.VALIDATE, False

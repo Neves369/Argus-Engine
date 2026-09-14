@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from app.scanning.parsers import analyze_headers
 from app.scanning.spec import TargetPage
@@ -160,23 +162,30 @@ def _missing_hsts(page: TargetPage) -> dict[str, Any] | None:
     )
 
 
+_IGNORED_FIELD_TYPES = {"submit", "button", "reset", "image"}
+_SENSITIVE_FIELD_TYPES = {"password", "file", "hidden"}
+
+
 def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
-    """A03 passive lead: forms with editable inputs found on the page.
+    """A03 passive lead: forms with editable/sensitive fields found on the page.
 
     Purely observational — no payload is sent. A lead telling the operator
     that user-controlled input surfaces exist and deserve manual review.
     """
     if not page.forms:
         return None
-    inputs = [
-        f"<{f.method} {f.action}>"
-        for f in page.forms
-        if any(
-            fld.type in ("text", "email", "password", "search", "url", "number")
-            for fld in f.fields
-        )
-    ]
-    if not inputs:
+    summarized: list[str] = []
+    for form in page.forms:
+        named = [fld for fld in form.fields if fld.name]
+        if not any(fld.type not in _IGNORED_FIELD_TYPES for fld in named):
+            continue
+        fields = ", ".join(f"{fld.name}:{fld.type}" for fld in named[:8])
+        sensitive = [fld.name for fld in named if fld.type in _SENSITIVE_FIELD_TYPES]
+        label = f"<{form.method.upper()} {form.action or page.url}> fields=[{fields}]"
+        if sensitive:
+            label += f" sensíveis=[{', '.join(sensitive)}]"
+        summarized.append(label)
+    if not summarized:
         return None
     return _finding(
         title="Formulários com entrada de dados encontrados",
@@ -190,14 +199,222 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
         severity="info",
         category="A03:2021 Injection (leads passivos)",
         affected=page.host,
-        evidence=(
-            f"GET {page.url} -> formulários: " + ", ".join(inputs)[:500]
-        ),
+        evidence=f"GET {page.url} -> formulários: " + "; ".join(summarized)[:500],
         remediation=(
             "Revise manualmente o tratamento de entrada destes endpoints "
             "(validação, parametrização e codificação de saída)."
         ),
         confidence=0.5,
+    )
+
+
+_VERBOSE_ERROR_SIGNATURES = (
+    "traceback (most recent call last)",
+    "stack trace:",
+    "undefined index",
+    "undefined variable",
+    "undefined array key",
+    "undefined function",
+    "fatal error:",
+    "parse error:",
+    "syntax error,",
+    "you have an error in your sql syntax",
+    "sqlstate[",
+    "pdoexception",
+    "warning: mysql",
+    "warning: mysqli",
+    "warning: pg_",
+    "notice: undefined",
+    "deprecated:",
+    "microsoft ole db",
+    "odbc error",
+    "java.lang.",
+    "oracle error",
+)
+
+
+def _verbose_errors(page: TargetPage) -> dict[str, Any] | None:
+    """A05 lead: the body discloses verbose error/debug output.
+
+    Purely observational — the response body literally contains a known
+    error-handling signature (stack trace, SQL error, PHP notice, ...). No
+    payload is sent; we only surface what the target already returns.
+    """
+    lower = page.body.lower()
+    matched = [sig for sig in _VERBOSE_ERROR_SIGNATURES if sig in lower]
+    if not matched:
+        return None
+    return _finding(
+        title="Mensagens de erro verbosas expostas na resposta",
+        description=(
+            "O corpo da resposta contém mensagens de erro internas (stack "
+            "trace, erro de SQL, notice de linguagem), o que pode revelar "
+            "estrutura de código, caminhos e detalhes de banco a um atacante. "
+            "Registrado como lead observado; não é uma confirmação de "
+            "vulnerabilidade explorável."
+        ),
+        severity="low",
+        category="A05:2021 Security Misconfiguration",
+        affected=page.host,
+        evidence=f"GET {page.url} -> corpo contém: " + ", ".join(matched),
+        remediation=(
+            "Desative a exibição de erros em produção e devolva páginas de erro "
+            "genéricas, mantendo o detalhamento apenas em logs internos."
+        ),
+        confidence=0.8,
+    )
+
+
+def _reflected_params(page: TargetPage) -> dict[str, Any] | None:
+    """A03 lead: query parameters observed echoed back in the response body.
+
+    Observational only — the URL already carried the parameter when fetched
+    (from a link discovered by the crawl); we never inject a probe value. A
+    value appearing verbatim in the body is a reflection lead worth review.
+    """
+    query = urlparse(page.url).query
+    if not query:
+        return None
+    reflected: list[str] = []
+    for key, values in parse_qs(query).items():
+        for value in values:
+            if len(value) < 4 or not any(c.isalpha() for c in value):
+                continue
+            if value in page.body:
+                reflected.append(f"{key}={value}")
+    if not reflected:
+        return None
+    unique = sorted(set(reflected))[:8]
+    return _finding(
+        title="Parâmetros de entrada refletidos no corpo da resposta",
+        description=(
+            "Um ou mais valores de parâmetro de consulta aparecem literalmente "
+            "no corpo da resposta. Isso indica que a aplicação ecoa entrada do "
+            "usuário sem codificar — superfície que merece revisão manual de "
+            "injeção/reflexão. Nenhum payload foi enviado; a reflexão foi "
+            "observada no conteúdo já retornado."
+        ),
+        severity="info",
+        category="A03:2021 Injection (leads passivos)",
+        affected=page.host,
+        evidence=f"GET {page.url} -> parâmetros refletidos: " + ", ".join(unique),
+        remediation=(
+            "Codifique adequadamente a saída (contexto HTML/atributo/JS/URL) e "
+            "valide a entrada no servidor."
+        ),
+        confidence=0.4,
+    )
+
+
+_META_REFRESH_RE = re.compile(
+    r'<meta[^>]+http-equiv\s*=\s*["\']?refresh["\']?[^>]*>', re.IGNORECASE
+)
+_META_REFRESH_URL_RE = re.compile(r'url\s*=\s*["\']?([^"\'>\s]+)', re.IGNORECASE)
+
+
+def _open_redirect_meta(page: TargetPage) -> dict[str, Any] | None:
+    """CWE-601 lead: a meta-refresh observed pointing at an external host.
+
+    Observational only — the redirect target is read from the markup already
+    returned by the target. No redirect is followed beyond what the client
+    already does.
+    """
+    host = urlparse(page.url).netloc
+    for tag in _META_REFRESH_RE.findall(page.body):
+        match = _META_REFRESH_URL_RE.search(tag)
+        if not match:
+            continue
+        resolved = urljoin(page.url, match.group(1).strip())
+        target_host = urlparse(resolved).netloc
+        if target_host and target_host != host:
+            return _finding(
+                title="Redirecionamento aberto via meta refresh para host externo",
+                description=(
+                    "A página contém um meta refresh apontando para um host "
+                    "diferente do alvo. Se o destino depender de entrada do "
+                    "usuário, pode ser um vetor de redirecionamento aberto "
+                    "(phishing/roubo de sessão). Registrado como lead observado."
+                ),
+                severity="low",
+                category="CWE-601: URL Redirection to Untrusted Site",
+                affected=page.host,
+                evidence=f"GET {page.url} -> meta refresh aponta para {resolved}",
+                remediation=(
+                    "Remova redirecionamentos baseados em URL fornecida pelo "
+                    "usuário ou restrinja a uma allowlist de destinos internos."
+                ),
+                confidence=0.6,
+            )
+    return None
+
+
+_DIRECTORY_LISTING_SIGNATURES = (
+    "index of /",
+    "directory listing for /",
+    "parent directory",
+    "[to parent directory]",
+)
+
+
+def _directory_listing(page: TargetPage) -> dict[str, Any] | None:
+    """A05 lead: the body looks like a generated directory listing."""
+    lower = page.body.lower()
+    matched = [sig for sig in _DIRECTORY_LISTING_SIGNATURES if sig in lower]
+    if not matched:
+        return None
+    return _finding(
+        title="Listagem de diretório exposta",
+        description=(
+            "O corpo da resposta contém a assinatura de uma listagem de "
+            "diretório gerada pelo servidor, expondo a estrutura de arquivos "
+            "do alvo. Registrado como lead observado; vale confirmar o que é "
+            "realmente público versus o que deveria ser restrito."
+        ),
+        severity="low",
+        category="A05:2021 Security Misconfiguration",
+        affected=page.host,
+        evidence=f"GET {page.url} -> corpo contém: " + ", ".join(matched),
+        remediation=(
+            "Desative o autoindex/listing de diretório no servidor web e restrinja "
+            "o acesso a diretórios não destinados a público."
+        ),
+        confidence=0.7,
+    )
+
+
+def _tech_identified(page: TargetPage) -> dict[str, Any] | None:
+    """Stack lead: technology identified beyond the Server banner.
+
+    Reports only corroborated signals — technologies matched by observed header
+    values or literal body fragments (``page.tech``) plus the ``X-Powered-By``
+    header when present. Never a version inferred from nothing.
+    """
+    analysis = analyze_headers(page.headers)
+    signals: list[str] = []
+    if page.tech:
+        signals.append("tecnologias: " + ", ".join(page.tech))
+    if analysis.get("x_powered_by"):
+        signals.append(f"X-Powered-By: {analysis['x_powered_by']}")
+    if not signals:
+        return None
+    return _finding(
+        title="Stack de tecnologia identificada no alvo",
+        description=(
+            "A stack de tecnologia do alvo foi identificada a partir de "
+            "marcadores observados na resposta (header X-Powered-By e/ou "
+            "fragmentos no corpo). É uma pista de superfície para orientar a "
+            "correlação a CVEs — não confirma, por si só, versão vulnerável."
+        ),
+        severity="info",
+        category="Superfície de ataque",
+        affected=page.host,
+        evidence=f"GET {page.url} -> " + "; ".join(signals),
+        remediation=(
+            "Use a stack identificada para priorizar a revisão manual e a "
+            "correlação de versões; minimize a exposição de headers de "
+            "framework quando possível."
+        ),
+        confidence=0.7,
     )
 
 
@@ -234,6 +451,11 @@ _DETECTORS = (
     _missing_hsts,
     _input_vectors,
     _permissive_cors,
+    _verbose_errors,
+    _reflected_params,
+    _open_redirect_meta,
+    _directory_listing,
+    _tech_identified,
 )
 
 

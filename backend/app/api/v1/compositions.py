@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.deps import DBSession
-from app.core.config import get_settings
+from app.core.config import budget_for_depth, get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
@@ -43,6 +43,7 @@ async def create_composition(payload: CompositionCreate, db: DBSession) -> Sessi
             "archetypes": payload.archetypes,
             "target": payload.target,
             "devil_mode": payload.devil_mode,
+            "depth": payload.depth,
         },
     )
     db.add(session)
@@ -126,12 +127,20 @@ async def execute_composition(
         session.target_id = target_id
 
     settings = get_settings()
+    depth = str(config.get("depth") or settings.depth_default)
+    if depth not in ("quick", "deep"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="depth must be 'quick' or 'deep'",
+        )
+    budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target,
         devil_mode=bool(config.get("devil_mode", False)),
-        budget_tokens=settings.default_budget_tokens,
-        budget_cost=settings.default_budget_cost,
+        budget_tokens=budget_tokens,
+        budget_cost=budget_cost,
         composition=archetypes,
+        depth=depth,
     )
     services = (
         build_sources_service(),

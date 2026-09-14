@@ -42,6 +42,37 @@ def _agent_over_budget(settings: Any, agent: str, state: GraphState) -> bool:
     return False
 
 
+def _depth_scan_max_pages(state: GraphState) -> int | None:
+    """Teto de páginas do crawl por profundidade (Etapa M3).
+
+    ``deep`` amplia o crawl (config ``DEEP_SCAN_MAX_PAGES``); ``quick`` usa o
+    default do scanner (``None`` = respeita ``SCAN_MAX_PAGES``).
+    """
+    if state.depth == "deep":
+        from app.core.config import get_settings
+
+        return get_settings().deep_scan_max_pages
+    return None
+
+
+async def _run_scan(state: GraphState) -> ScanReport | None:
+    """Active scan leg (Hermit/Carro): observa o alvo em escopo validado.
+
+    Passa o teto de páginas por profundidade apenas quando ``deep`` — em
+    ``quick`` usa o default do scanner, mantendo a assinatura ``scan(target)``
+    compatível com os serviços injetados nos testes.
+    """
+    if state.scan_service is None:
+        return None
+    try:
+        max_pages = _depth_scan_max_pages(state)
+        if max_pages is not None:
+            return await state.scan_service.scan(state.target, max_pages=max_pages)
+        return await state.scan_service.scan(state.target)
+    except ScanBlockedError:
+        return None
+
+
 async def _correlate_cves(
     state: GraphState, report: ScanReport
 ) -> list[dict[str, Any]]:
@@ -155,6 +186,7 @@ class EmperorAgent(BaseArchetype):
             "agent": self.key,
             "target": state.target.get("name", "unknown"),
             "scope": "authorized",
+            "depth": state.depth,
             "mode": "execute" if state.devil_mode else "simulate",
         }
 
@@ -332,12 +364,7 @@ class HermitAgent(BaseArchetype):
         # ordem dos resultados, então o state update e a contabilidade de tokens
         # ficam idênticos ao fluxo sequencial anterior.
         async def _safe_scan() -> ScanReport | None:
-            if state.scan_service is None:
-                return None
-            try:
-                return await state.scan_service.scan(state.target)
-            except ScanBlockedError:
-                return None
+            return await _run_scan(state)
 
         if get_settings().agent_parallel:
             result, sources, report = await asyncio.gather(
@@ -511,12 +538,7 @@ class ChariotAgent(BaseArchetype):
         started_at = _utcnow()
 
         async def _safe_scan() -> ScanReport | None:
-            if state.scan_service is None:
-                return None
-            try:
-                return await state.scan_service.scan(state.target)
-            except ScanBlockedError:
-                return None
+            return await _run_scan(state)
 
         if get_settings().agent_parallel:
             result, sources, report = await asyncio.gather(
@@ -619,25 +641,42 @@ class ChariotAgent(BaseArchetype):
         executor = state.tool_executor
         if executor is not None:
             target_name = str(state.target.get("name", ""))
+            probe_url = self._scan_probe_url(state, findings)
             for spec in executor.registry.specs():
                 if spec.destructive:
                     continue
-                tool_runs.append(await self._run_tool(executor, spec, target_name))
+                tool_runs.append(await self._run_tool(executor, spec, target_name, probe_url))
         return tool_runs, verified, refuted
 
-    async def _run_tool(self, executor: ToolExecutor, tool, target: str) -> dict[str, Any]:
+    @staticmethod
+    def _scan_probe_url(state: GraphState, findings: list[dict[str, Any]]) -> str:
+        """URL re-probe target for the scanner tools.
+
+        Prefers the ``probe_url`` stamped on the first scan-evidenced finding,
+        then the explicit target URL, then the target name (the handler
+        normalizes it to a scheme-qualified URL).
+        """
+        for finding in findings:
+            url = str(finding.get("probe_url") or "").strip()
+            if url:
+                return url
+        return str(state.target.get("url") or state.target.get("name") or "").strip()
+
+    async def _run_tool(
+        self, executor: ToolExecutor, tool, target: str, url: str
+    ) -> dict[str, Any]:
         """Invoke one non-destructive tool once, recording the auditable outcome.
 
         A falha da tool é registrada (``outcome="failed"``) — jamais torna o
         run inválido; o saída é compactada para caber no histórico.
         """
         started_at = _utcnow()
+        if isinstance(tool.kind, ToolKind) and tool.kind == ToolKind.SCANNER:
+            params = {"url": url}
+        else:
+            params = {"target": target, "url": target}
         try:
-            result = await executor.execute(
-                tool.name,
-                {"target": target, "url": target},
-                devil_mode=False,
-            )
+            result = await executor.execute(tool.name, params, devil_mode=False)
             return {
                 "tool": tool.name,
                 "kind": tool.kind.value if isinstance(tool.kind, ToolKind) else str(tool.kind),
@@ -658,21 +697,37 @@ class ChariotAgent(BaseArchetype):
 
     @staticmethod
     def _compact_tool_result(result: dict[str, Any]) -> dict[str, Any]:
+        compact: dict[str, Any] = {}
         if "status_code" in result:
-            return {
-                "status_code": result.get("status_code"),
-                "body": str(result.get("body", ""))[:400],
-            }
-        return {
-            "returncode": result.get("returncode"),
-            "stdout": str(result.get("stdout", ""))[:400],
-            "stderr": str(result.get("stderr", ""))[:300],
-        }
+            compact["status_code"] = result.get("status_code")
+            if "body" in result:
+                compact["body"] = str(result.get("body", ""))[:400]
+        if "headers" in result and result.get("headers"):
+            compact["headers"] = dict(result["headers"])
+        if "forms" in result:
+            compact["forms"] = result.get("forms")
+        if "note" in result:
+            compact["note"] = str(result.get("note", ""))[:300]
+        if "returncode" in result:
+            compact["returncode"] = result.get("returncode")
+            compact["stdout"] = str(result.get("stdout", ""))[:400]
+            compact["stderr"] = str(result.get("stderr", ""))[:300]
+        return compact or result
 
     async def _controlled_execution(self, state: GraphState) -> dict:
         """Execução controlada (devil mode): ação destrutiva exige aprovação
         humana por ação e, mesmo aprovada, não há backend de execução real
-        plugado nesta instância — registra honestamente que nada rodou."""
+        plugado nesta instância — registra honestamente que nada rodou.
+
+        Desde a Etapa M5 os rails do Diabo (allowlist estrita de tools + limites
+        duros de probes/taxa/tempo) são codificados num ``DevilGuard`` e
+        registrados na proposta de aprovação e no entry — trilha de auditoria
+        completa do que seria permitido e de quanto seria limitado.
+        """
+        from app.services.devil_guard import build_devil_guard
+
+        guard = build_devil_guard()
+        rails = guard.audit()
         started_at = _utcnow()
         target = state.target.get("name", "unknown")
 
@@ -712,8 +767,17 @@ class ChariotAgent(BaseArchetype):
             approval = self._request_approval(
                 state,
                 kind="destructive_action",
-                context=f"Executing an action against '{target}' (devil mode).",
-                proposal={"agent": self.key, "role": self.role, "target": target},
+                context=(
+                    f"Executing an action against '{target}' (devil mode) under "
+                    f"allowlist {', '.join(rails['allowed_tools'])} e limites "
+                    f"{rails['max_probes']} probes / {rails['max_duration_seconds']}s."
+                ),
+                proposal={
+                    "agent": self.key,
+                    "role": self.role,
+                    "target": target,
+                    "devil_guard": rails,
+                },
                 next_node=self.key,
             )
             approval["next_agent"] = self.key
@@ -751,6 +815,8 @@ class ChariotAgent(BaseArchetype):
                 "real está configurado nesta instância — nada foi executado."
             ),
             "findings": 0,
+            "allowed_tools": rails["allowed_tools"],
+            "devil_guard": rails,
         }
         update: dict[str, Any] = {**consumed, "stop_reason": "no_backend"}
         _apply_llm(entry, update, state, result, fallback_tokens=0)

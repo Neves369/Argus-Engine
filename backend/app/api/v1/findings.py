@@ -13,7 +13,7 @@ from app.schemas.evidence import EvidenceRead
 from app.schemas.finding import FindingRead, FindingUpdate
 from app.schemas.fp_rule import FpRuleCreate, FpRuleRead, FpRuleUpdate
 from app.services.evidence import EvidenceStore
-from app.services.false_positives import FalsePositiveBlacklist
+from app.services.false_positives import BUILTIN_FP_NOISE, FalsePositiveBlacklist
 from app.services.fp_rules import FpRuleStore
 from app.services.judge import LLMJudge
 from app.services.quality import QualityScorer, ValidationOutcome, ValidationPipeline
@@ -110,7 +110,9 @@ async def validate_finding(finding_id: int, db: DBSession) -> Finding:
     learned_patterns = await store.enabled_patterns(db)
     pipeline = ValidationPipeline(
         scorer,
-        FalsePositiveBlacklist([*settings.fp_blacklist, *learned_patterns]),
+        FalsePositiveBlacklist(
+            [*BUILTIN_FP_NOISE, *settings.fp_blacklist, *learned_patterns]
+        ),
         threshold=settings.quality_score_threshold,
         judge=LLMJudge(),
     )
