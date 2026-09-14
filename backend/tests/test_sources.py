@@ -112,6 +112,73 @@ def test_cache_hit_avoids_second_fetch(client):
 
 
 @respx.mock
+def test_duplicate_cache_rows_do_not_break_read_and_write_dedupes(client):
+    """Linhas duplicadas (source,key) não podem quebrar a leitura, e a escrita
+    substitui as antigas em vez de acumular (correção de self-heal)."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.db.models.external_data_cache import ExternalDataCache
+    from app.db.session import async_session_factory
+    from app.sources.service import _default_key
+
+    route = respx.get("https://data.test.local/query").mock(
+        return_value=Response(200, json={"id": "dup", "score": 5})
+    )
+    svc = DataSourceService(_registry(HTTP_SOURCE))
+    params = {"q": "dup-key-unique-case2"}
+    key = _default_key(HTTP_SOURCE, params)
+
+    async def _seed():
+        now = datetime.now(UTC)
+        async with async_session_factory() as session:
+            session.add_all(
+                [
+                    ExternalDataCache(
+                        source="http-test",
+                        key=key,
+                        data={"id": "old", "score": 1},
+                        fetched_at=now - timedelta(minutes=5),
+                    ),
+                    ExternalDataCache(
+                        source="http-test",
+                        key=key,
+                        data={"id": "new", "score": 9},
+                        fetched_at=now - timedelta(minutes=1),
+                    ),
+                ]
+            )
+            await session.commit()
+
+    async def _count() -> int:
+        async with async_session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(ExternalDataCache).where(
+                        ExternalDataCache.source == "http-test",
+                        ExternalDataCache.key == key,
+                    )
+                )
+            ).scalars().all()
+            return len(list(rows))
+
+    asyncio.run(_seed())
+
+    result = _run(svc.query("http-test", params))
+    assert result["status"] == "cache"
+    assert result["data"] == {"id": "new", "score": 9}
+    assert route.called == 0
+
+    # Força refetch (TTL zerado): a escrita substitui as duplicatas por uma só.
+    force = DataSourceService(_registry(HTTP_SOURCE.model_copy(update={"ttl": 0})))
+    result = _run(force.query("http-test", params))
+    assert result["status"] == "ok"
+    assert route.called == 1
+    assert asyncio.run(_count()) == 1
+
+
+@respx.mock
 def test_cache_expired_refetches(client):
     expired = HTTP_SOURCE.model_copy(update={"ttl": 0, "name": "http-expired"})
     route = respx.get("https://data.test.local/query").mock(

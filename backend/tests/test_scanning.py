@@ -14,6 +14,7 @@ from app.scanning.parsers import parse_html
 from app.scanning.robots import RobotsRules
 from app.scanning.service import ScanBlockedError, ScanReport, ScanService, build_scan_service
 from app.scanning.spec import TargetPage
+from app.services.export import SECTION_APP, finding_section
 from app.services.scan_findings import derive_findings_from_scan
 
 
@@ -254,7 +255,7 @@ def test_passive_detections_produce_grounded_findings():
     assert "Servidor divulga versão exata no header de resposta" in titles
     assert "Headers de segurança ausentes na resposta" in titles
     assert "Cookies de sessão sem flags de proteção" in titles
-    assert "Formulários com entrada de dados encontrados" in titles
+    assert "Formulários com entrada de dados em /" in titles
     assert "CORS permissivo (Access-Control-Allow-Origin: *)" in titles
     for finding in findings:
         assert finding["status"] == "candidate"
@@ -313,35 +314,35 @@ def _titles(report: ScanReport) -> set[str]:
 
 def test_verbose_error_signature_yields_finding():
     page = _page(body="<html>Traceback (most recent call last):</html>")
-    assert "Mensagens de erro verbosas expostas na resposta" in _titles(
+    assert "Erros verbosos expostos em /" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_sql_error_signature_yields_finding():
     page = _page(body="<html>You have an error in your SQL syntax</html>")
-    assert "Mensagens de erro verbosas expostas na resposta" in _titles(
+    assert "Erros verbosos expostos em /" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_clean_body_yields_no_verbose_error_finding():
     page = _page(body="<html><body>tudo ok</body></html>")
-    assert "Mensagens de erro verbosas expostas na resposta" not in _titles(
+    assert "Erros verbosos expostos" not in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_reflected_query_param_yields_finding():
     page = _page(url="http://example.com/?name=admin", body="<html>hello admin</html>")
-    assert "Parâmetros de entrada refletidos no corpo da resposta" in _titles(
+    assert "Parâmetros de entrada refletidos em /" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_numeric_or_short_query_param_not_reflected():
     page = _page(url="http://example.com/?id=1", body="<html>ok 1</html>")
-    assert "Parâmetros de entrada refletidos no corpo da resposta" not in _titles(
+    assert "Parâmetros de entrada refletidos" not in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
@@ -404,12 +405,48 @@ def test_forms_with_select_and_sensitive_fields_are_captured():
     page.forms = parse_html(url, body)["forms"]
     findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
     form_finding = next(
-        f for f in findings if f["title"] == "Formulários com entrada de dados encontrados"
+        f for f in findings if f["title"] == "Formulários com entrada de dados em /"
     )
     assert "pwd:password" in form_finding["evidence"]
     assert "level:select" in form_finding["evidence"]
     assert "msg:textarea" in form_finding["evidence"]
     assert "sensíveis" in form_finding["evidence"]
+
+
+def test_forms_finding_is_per_endpoint():
+    pages = [
+        _page(
+            url="http://example.com/vulnerabilities/sqli/",
+            body="<html><form action='/x.php' method='post'><input name='q'></form></html>",
+        ),
+        _page(
+            url="http://example.com/vulnerabilities/xss_d/",
+            body="<html><form action='/y.php' method='post'><input name='q'></form></html>",
+        ),
+    ]
+    for page in pages:
+        page.forms = parse_html(page.url, page.body)["forms"]
+    findings = derive_findings_from_scan(ScanReport(target="example.com", pages=pages))
+    form_titles = [f["title"] for f in findings if "Formulários com entrada de dados" in f["title"]]
+    assert len(form_titles) == 2
+    assert any("em /vulnerabilities/sqli" in t for t in form_titles)
+    assert any("em /vulnerabilities/xss_d" in t for t in form_titles)
+
+
+def test_verbose_errors_reclassified_as_application():
+    from app.db.models import Finding
+
+    page = _page(body="<html>Traceback (most recent call last):</html>")
+    findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
+    error_finding = next(f for f in findings if "Erros verbosos" in f["title"])
+    assert error_finding["category"] == "Aplicação (erro verboso)"
+    finding = Finding(
+        title=error_finding["title"],
+        category=error_finding["category"],
+        severity=error_finding["severity"],
+        confidence=error_finding["confidence"],
+    )
+    assert finding_section(finding) == SECTION_APP
 
 
 def test_discovered_routes_yields_finding():

@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.db.models.cve_cache import CveCache
 from app.db.models.external_data_cache import ExternalDataCache
@@ -281,10 +281,13 @@ class DataSourceService:
             key = _default_key(source, params)
             row = (
                 await session.execute(
-                    select(ExternalDataCache).where(
+                    select(ExternalDataCache)
+                    .where(
                         ExternalDataCache.source == source.name,
                         ExternalDataCache.key == key,
                     )
+                    .order_by(ExternalDataCache.fetched_at.desc())
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if row is None:
@@ -310,10 +313,20 @@ class DataSourceService:
                 cve_id = str(params.get("id", _default_key(source, params)))
                 session.add(CveCache(cve_id=cve_id, data=data, cached_at=now, ttl=source.ttl))
             else:
+                key = _default_key(source, params)
+                # Sem UNIQUE (source, key) na tabela: substitui linhas antigas da
+                # mesma (source, key) em vez de acumulá-las — duplicatas fariam a
+                # leitura (`scalar_one_or_none`) quebrar no próximo run.
+                await session.execute(
+                    delete(ExternalDataCache).where(
+                        ExternalDataCache.source == source.name,
+                        ExternalDataCache.key == key,
+                    )
+                )
                 session.add(
                     ExternalDataCache(
                         source=source.name,
-                        key=_default_key(source, params),
+                        key=key,
                         data=data,
                         fetched_at=now,
                     )

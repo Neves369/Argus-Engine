@@ -50,6 +50,11 @@ def _is_https(url: str) -> bool:
     return str(url).lower().startswith("https://")
 
 
+def _page_path(page: TargetPage) -> str:
+    """Caminho normalizado de uma página, usado para findings por endpoint."""
+    return urlparse(page.url).path.rstrip("/") or "/"
+
+
 def _server_banner(page: TargetPage) -> dict[str, Any] | None:
     """A06/A05 lead: the server discloses its exact version banner."""
     from app.scanning.fingerprint import server_version_banner
@@ -188,7 +193,7 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
     if not summarized:
         return None
     return _finding(
-        title="Formulários com entrada de dados encontrados",
+        title=f"Formulários com entrada de dados em {_page_path(page)}",
         description=(
             "Páginas do alvo expõem formulários com campos de entrada "
             "(texto/e-mail/senha) e envio a endpoint da aplicação. Esses são "
@@ -245,7 +250,7 @@ def _verbose_errors(page: TargetPage) -> dict[str, Any] | None:
     if not matched:
         return None
     return _finding(
-        title="Mensagens de erro verbosas expostas na resposta",
+        title=f"Erros verbosos expostos em {_page_path(page)}",
         description=(
             "O corpo da resposta contém mensagens de erro internas (stack "
             "trace, erro de SQL, notice de linguagem), o que pode revelar "
@@ -254,7 +259,7 @@ def _verbose_errors(page: TargetPage) -> dict[str, Any] | None:
             "vulnerabilidade explorável."
         ),
         severity="low",
-        category="A05:2021 Security Misconfiguration",
+        category="Aplicação (erro verboso)",
         affected=page.host,
         evidence=f"GET {page.url} -> corpo contém: " + ", ".join(matched),
         remediation=(
@@ -286,7 +291,7 @@ def _reflected_params(page: TargetPage) -> dict[str, Any] | None:
         return None
     unique = sorted(set(reflected))[:8]
     return _finding(
-        title="Parâmetros de entrada refletidos no corpo da resposta",
+        title=f"Parâmetros de entrada refletidos em {_page_path(page)}",
         description=(
             "Um ou mais valores de parâmetro de consulta aparecem literalmente "
             "no corpo da resposta. Isso indica que a aplicação ecoa entrada do "
