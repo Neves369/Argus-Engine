@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from urllib.parse import urlparse
 
 from app.core.config import get_settings
 
@@ -49,6 +50,24 @@ def is_devil_mode_enabled(devil_mode: bool) -> bool:
     return True
 
 
+def _scope_hostname(target: str) -> str:
+    """Normalize a target down to its hostname for scope matching.
+
+    Scope is declared by domain; a non-standard port (e.g. a lab on ``:4280``)
+    or a full ``scheme://host:port/path`` URL must not defeat matching.
+    """
+    value = (target or "").strip().lower()
+    if not value:
+        return value
+    parsed = urlparse(value)
+    if parsed.hostname:
+        return parsed.hostname
+    host = value.split("/", 1)[0]
+    if host.count(":") == 1 and not host.startswith("["):
+        host = host.rsplit(":", 1)[0]
+    return host
+
+
 def validate_scope(target: str) -> str:
     """Validate that a target falls within the authorized scope.
 
@@ -56,7 +75,7 @@ def validate_scope(target: str) -> str:
     """
     settings = get_settings()
     allowed = [s.strip().lower() for s in settings.allowed_scopes if s.strip()]
-    target_clean = (target or "").strip().lower()
+    target_clean = _scope_hostname(target)
 
     if not target_clean:
         raise ScopeValidationError("Target is empty.")
