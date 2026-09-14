@@ -37,15 +37,21 @@ class BaseArchetype(ABC):
 
     def _context(self, state: GraphState) -> str:
         name = state.target.get("name", "unknown")
-        return (
-            f"Target: {name}\n"
-            f"Findings: {len(state.findings)}\n"
-            f"Evidence: {len(state.evidence)}\n"
-            f"Sources consulted: {len(state.sources)}\n"
-            f"Confidence: {state.confidence:.2f}\n"
-            f"Tokens used so far: {state.tokens_used}\n"
-            f"Mode: {'execute' if state.devil_mode else 'simulate'}"
-        )
+        lines = [
+            f"Target: {name}",
+            f"Findings: {len(state.findings)}",
+            f"Evidence: {len(state.evidence)}",
+            f"Sources consulted: {len(state.sources)}",
+            f"Confidence: {state.confidence:.2f}",
+            f"Tokens used so far: {state.tokens_used}",
+            f"Mode: {'execute' if state.devil_mode else 'simulate'}",
+        ]
+        # Observações do alvo (contexto inicial do operador, texto livre) —
+        # interpretadas pelo time, com o Imperador à frente do planejamento.
+        notes = str(state.target.get("notes") or "").strip()
+        if notes:
+            lines.append(f"Operator observations: {notes}")
+        return "\n".join(lines)
 
     async def _collect_sources(self, state: GraphState) -> list[dict]:
         """Query every configured data source by role, without knowing specific

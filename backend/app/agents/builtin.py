@@ -153,6 +153,8 @@ class EmperorAgent(BaseArchetype):
             "You open the run: state the authorized target and scope, then set a "
             "short, high-level plan for what the other archetypes should establish "
             "(what to investigate, in what order). "
+            "Consider the operator's observations (initial context), if any, when "
+            "forming this plan. "
             "On later calls you decide the next agent to run and may close the run. "
             "Operate only within the authorized scope declared for this run. "
             "Never propose or describe reconnaissance techniques, exploitation "
