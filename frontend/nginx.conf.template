@@ -7,8 +7,11 @@ server {
 
     # API + SSE: repassa para o backend sem bufferizar (keep the stream live)
     # e com timeouts longos (runs longos via /runs/stream e /runs/{id}/resume).
+    # Host do backend via envsubst ($NGINX_BACKEND_HOST): "backend:8000" no
+    # compose local (Docker DNS interno) e "backend.railway.internal:8000" no
+    # Railway (private networking, ver docs/DEPLOY_RAILWAY.md).
     location /api/ {
-        proxy_pass http://backend:8000;
+        proxy_pass http://${NGINX_BACKEND_HOST};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
