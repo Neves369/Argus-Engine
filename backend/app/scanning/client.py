@@ -123,6 +123,20 @@ class ScanHTTPClient:
         """Fetch a single page bypassing rate limiting (used for robots.txt)."""
         return await self._send("GET", url, skip_rate_limit=True)
 
+    def session_cookie_names(self, host: str) -> list[str]:
+        """Cookie names currently in the per-host session jar (no values).
+
+        Used to attest "session authenticated" in the report without ever
+        exposing session values — redaction is a hard requirement.
+        """
+        names: list[str] = []
+        for pair in self._jar.get(host, "").split("; "):
+            if "=" in pair:
+                name, _, _ = pair.partition("=")
+                if name:
+                    names.append(name)
+        return sorted(names)
+
     async def _send(
         self,
         method: str,

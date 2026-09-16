@@ -63,6 +63,46 @@ def _probe_url(finding: dict[str, Any]) -> str | None:
     return url
 
 
+def _probe_urls(finding: dict[str, Any]) -> list[str]:
+    """All per-route URLs a finding can be re-probed against.
+
+    Aggregated M1 findings keep the per-route detail in ``extras``; human the
+    Carro can confirm each observed surface instead of a single host-level
+    probe. Falls back to the single ``probe_url`` for everything else.
+    """
+    extras = finding.get("extras") or {}
+    routes = extras.get("routes") or []
+    urls: list[str] = []
+    for route in routes:
+        url = str(route.get("url") or route.get("probe_url") or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+    if not urls:
+        single = _probe_url(finding)
+        if single:
+            urls.append(single)
+    return urls
+
+
+def _expected_titles(finding: dict[str, Any]) -> set[str] | None:
+    """Detector titles that confirm this finding when re-observed.
+
+    Aggregates confirm when any of their routes still yields the underlying
+    detector signal (forms/reflections); a route map confirms when its routes
+    still answer (any fresh title — the route exists). Everything else
+    confirms when its own title re-appears on the fresh page. ``None`` means
+    "any reachable response confirms".
+    """
+    title = str(finding.get("title") or "")
+    if title.endswith("formulário(s) com entrada de dados observados no crawl"):
+        return {"Formulários com entrada de dados encontrados"}
+    if title.endswith("parâmetro(s) refletido(s) no corpo da resposta"):
+        return {"Parâmetro refletido no corpo da resposta"}
+    if title.endswith("rota(s) de aplicação descobertas"):
+        return None
+    return {title} if title else set()
+
+
 class VerificationService:
     """Coordinates live non-destructive probes under the same controls as
     active scanning (scope, kill-switch, robots, rate limit, timeout, audit)."""
@@ -111,12 +151,10 @@ class VerificationService:
         by_url: dict[str, list[int]] = {}
         urls: list[str] = []
         for idx, finding in enumerate(findings):
-            url = _probe_url(finding)
-            if url is None:
-                continue
-            by_url.setdefault(url, []).append(idx)
-            if url not in urls:
-                urls.append(url)
+            for url in _probe_urls(finding):
+                by_url.setdefault(url, []).append(idx)
+                if url not in urls:
+                    urls.append(url)
 
         if not urls:
             return [None] * len(findings)
@@ -125,9 +163,13 @@ class VerificationService:
         for url in urls[: self._max_probes]:
             probe = await self._probe(url)
             for idx in by_url[url]:
-                title = str(findings[idx].get("title") or "")
+                expected = _expected_titles(findings[idx])
+                if expected is None:
+                    confirmed = bool(probe["titles_confirmed"])
+                else:
+                    confirmed = bool(set(probe["titles_confirmed"] or []) & expected)
                 outcomes[idx] = {
-                    "confirmed": title in probe["titles_confirmed"],
+                    "confirmed": confirmed,
                     "probe": {
                         key: probe[key]
                         for key in (
@@ -222,20 +264,25 @@ class VerificationService:
 _MISSING = object()
 
 
-def build_verification_service() -> VerificationService:
+def build_verification_service(client: ScanHTTPClient | None = None) -> VerificationService:
     """Instantiate the verifier from settings (``CHARIOT_VERIFY_*`` +
-    ``SCAN_*`` controls shared with the active scanner)."""
+    ``SCAN_*`` controls shared with the active scanner).
+
+    ``client`` lets the caller reuse one session jar per run so verification
+    probes follow the same (authenticated) session the scan established.
+    """
     from app.core.config import get_settings
 
     settings = get_settings()
-    client = ScanHTTPClient(
-        rate_limit=settings.scan_rate_limit,
-        timeout=settings.scan_request_timeout,
-        max_body_bytes=settings.scan_max_body_bytes,
-        user_agent=settings.scan_user_agent,
-        extra_headers=settings.scan_extra_headers,
-        cookies=settings.scan_cookies,
-    )
+    if client is None:
+        client = ScanHTTPClient(
+            rate_limit=settings.scan_rate_limit,
+            timeout=settings.scan_request_timeout,
+            max_body_bytes=settings.scan_max_body_bytes,
+            user_agent=settings.scan_user_agent,
+            extra_headers=settings.scan_extra_headers,
+            cookies=settings.scan_cookies,
+        )
     return VerificationService(
         client=client,
         respect_robots=settings.scan_respect_robots,

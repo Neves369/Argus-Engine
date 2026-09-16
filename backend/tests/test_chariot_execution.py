@@ -6,7 +6,7 @@ from app.agents import get_archetype
 from app.orchestration.state import GraphState
 from app.scanning.client import ScanError
 from app.scanning.service import ScanReport
-from app.scanning.spec import TargetPage
+from app.scanning.spec import FormField, HtmlForm, TargetPage
 from app.scanning.verify import VerificationService
 from app.tools.executor import ToolExecutionError
 from app.tools.spec import ToolKind, ToolSpec
@@ -254,6 +254,25 @@ class _FakeExecutor:
         return {"tool": name, "status_code": 200, "body": "ok"}
 
 
+class _OkExecutor:
+    """Fake M2 executor: re-probes always succeed (for reprobe tests)."""
+
+    def __init__(self) -> None:
+        self.registry = _FakeRegistry([])
+        self.invoked: list[str] = []
+
+    async def execute(self, name: str, params: dict | None = None, *, devil_mode: bool = False):
+        self.invoked.append(name)
+        return {
+            "tool": name,
+            "url": (params or {}).get("url", ""),
+            "status_code": 200,
+            "ok": True,
+            "form_count": 1,
+            "observed_at": "2026-01-01T00:00:00+00:00",
+        }
+
+
 def _chariot_state(report: ScanReport | None) -> GraphState:
     state = GraphState(
         target={"name": "example.com", "url": "http://example.com/"},
@@ -370,3 +389,78 @@ def test_chariot_degrades_when_verifier_errors():
     assert entry["action"] == "safety"
     assert entry["findings"] >= 1
     assert not any("verification" in f for f in update["findings"])
+
+
+def _form_page() -> TargetPage:
+    return TargetPage(
+        url="http://example.com/login",
+        status_code=200,
+        headers={"content-type": "text/html"},
+        body=(
+            '<html><form method="post" action="/submit">'
+            '<input type="text" name="user">'
+            '<input type="password" name="pass">'
+            "</form></html>"
+        ),
+        forms=[
+            HtmlForm(
+                action="/submit",
+                method="post",
+                fields=[
+                    FormField(name="user", type="text"),
+                    FormField(name="pass", type="password"),
+                ],
+            )
+        ],
+    )
+
+
+def _deep_report() -> ScanReport:
+    return ScanReport(
+        target="example.com",
+        pages=[_no_security_headers(), _form_page()],
+        depth="deep",
+    )
+
+
+def test_chariot_reprobes_scan_leads_on_deep_run():
+    chariot = get_archetype("chariot")
+    state = _chariot_state(_deep_report())
+    executor = _OkExecutor()
+    state.set_tool_executor(executor)
+
+    update = _run(chariot.run(state))
+
+    entry = update["history"][-1]
+    assert entry["mode"] == "live"
+    assert entry["reprobed"] >= 2, "forms aggregate + rota re-prodadas"
+    assert entry["reprobe_ok"] == entry["reprobed"]
+    assert "http_request" in executor.invoked
+    assert "form_discover" in executor.invoked
+
+    forms = [
+        f for f in update["findings"] if str(f.get("title") or "").startswith("1 formulário(s)")
+    ]
+    assert forms
+    assert forms[0]["reprobe"]["ok"] is True
+    assert forms[0]["reprobe"]["tool"] == "form_discover"
+    assert forms[0]["reprobe"]["url"] == "http://example.com/login"
+    assert forms[0]["confidence"] > 0.5, "re-prova ok sobe confiança"
+    assert all(f["status"] == "candidate" for f in update["findings"]), (
+        "re-prova nunca valida"
+    )
+
+
+def test_chariot_does_not_reprobe_on_quick_run():
+    chariot = get_archetype("chariot")
+    quick = ScanReport(target="example.com", pages=[_no_security_headers(), _form_page()])
+    state = _chariot_state(quick)
+    executor = _OkExecutor()
+    state.set_tool_executor(executor)
+
+    update = _run(chariot.run(state))
+
+    entry = update["history"][-1]
+    assert entry.get("reprobed") is None
+    assert executor.invoked == []
+    assert not any("reprobe" in f for f in update["findings"])

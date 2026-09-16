@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import re
 from typing import Any
+<<<<<<< HEAD
 from urllib.parse import parse_qs, urljoin, urlparse
+=======
+from urllib.parse import parse_qsl, urlparse
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
 from app.scanning.parsers import analyze_headers
 from app.scanning.spec import TargetPage
@@ -18,6 +22,7 @@ def _finding(
     evidence: str,
     remediation: str,
     confidence: float = 0.7,
+    extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a candidate finding in the shared report shape.
 
@@ -26,7 +31,7 @@ def _finding(
     ``candidate`` with ``requires_human_review=True`` — scan results are leads
     for a human, not confirmed vulnerabilities.
     """
-    return {
+    finding = {
         "id": None,
         "title": title,
         "description": description,
@@ -44,6 +49,9 @@ def _finding(
         "status": "candidate",
         "requires_human_review": True,
     }
+    if extras:
+        finding["extras"] = extras
+    return finding
 
 
 def _is_https(url: str) -> bool:
@@ -167,18 +175,39 @@ def _missing_hsts(page: TargetPage) -> dict[str, Any] | None:
     )
 
 
+<<<<<<< HEAD
 _IGNORED_FIELD_TYPES = {"submit", "button", "reset", "image"}
 _SENSITIVE_FIELD_TYPES = {"password", "file", "hidden"}
 
 
 def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
     """A03 passive lead: forms with editable/sensitive fields found on the page.
+=======
+_EDITABLE_TYPES = ("text", "email", "password", "search", "url", "number", "file", "tel")
+_SENSITIVE_TYPES = ("password", "file", "hidden")
+_SENSITIVE_NAME_HINTS = ("token", "csrf", "secret", "apikey", "api_key", "key", "pass", "auth")
+
+
+def _field_is_sensitive(field) -> bool:
+    if field.type in _SENSITIVE_TYPES:
+        return True
+    name = (field.name or "").lower()
+    return any(hint in name for hint in _SENSITIVE_NAME_HINTS)
+
+
+def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
+    """Aplicação passive lead: forms with editable inputs found on the page.
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     Purely observational — no payload is sent. A lead telling the operator
-    that user-controlled input surfaces exist and deserve manual review.
+    that user-controlled input surfaces exist and deserve manual review. The
+    detailed route list (``extras["routes"]``) stays available for the Carro
+    to re-prove each form live (Etapa 15/M2); the report level aggregates
+    everything into a single per-run finding.
     """
     if not page.forms:
         return None
+<<<<<<< HEAD
     summarized: list[str] = []
     for form in page.forms:
         named = [fld for fld in form.fields if fld.name]
@@ -191,7 +220,33 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
             label += f" sensíveis=[{', '.join(sensitive)}]"
         summarized.append(label)
     if not summarized:
+=======
+    routes: list[dict[str, Any]] = []
+    for form in page.forms:
+        if not any(
+            fld.type in _EDITABLE_TYPES or _field_is_sensitive(fld)
+            for fld in form.fields
+        ):
+            continue
+        fields = [fld.name for fld in form.fields if fld.name]
+        sensitive = [fld.name for fld in form.fields if fld.name and _field_is_sensitive(fld)]
+        action = form.action or urlparse(page.url).path
+        routes.append(
+            {
+                "url": page.url,
+                "action": action,
+                "method": form.method.upper(),
+                "fields": fields,
+                "sensitive_fields": sensitive,
+                "probe_url": page.url,
+            }
+        )
+    if not routes:
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         return None
+    preview = "; ".join(
+        f"<{route['method']} {route['action']}>" for route in routes
+    )[:500]
     return _finding(
         title=f"Formulários com entrada de dados em {_page_path(page)}",
         description=(
@@ -199,17 +254,123 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
             "(texto/e-mail/senha) e envio a endpoint da aplicação. Esses são "
             "vetores em que o tratamento de entrada precisa ser revisado "
             "manualmente pelo operador — nenhum teste é executado aqui; é "
-            "apenas um lead observacional de superfície."
+            "apenas um lead observacional de superfície. O relatório agrega "
+            "estes formulários por run; o detalhe por rota fica em extras."
         ),
         severity="info",
-        category="A03:2021 Injection (leads passivos)",
+        category="Aplicação / vetores de entrada",
         affected=page.host,
+<<<<<<< HEAD
         evidence=f"GET {page.url} -> formulários: " + "; ".join(summarized)[:500],
+=======
+        evidence=f"GET {page.url} -> formulários: {preview}",
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         remediation=(
             "Revise manualmente o tratamento de entrada destes endpoints "
             "(validação, parametrização e codificação de saída)."
         ),
         confidence=0.5,
+        extras={"routes": routes},
+    )
+
+
+def _reflected_parameters(page: TargetPage) -> dict[str, Any] | None:
+    """Aplicação passive lead: this page's own URL query params reflecting.
+
+    Only the page's own query string is inspected (never navigation links), so
+    repeated nav links are not a source of false positives. A parameter value
+    is only reported when it appears clearly as a standalone token in the body
+    (word-bounded) and is long enough to be meaningful — a minimum observable
+    signal, no payload involved.
+    """
+    query = urlparse(page.url).query
+    if not query:
+        return None
+    params = [(k, v) for k, v in parse_qsl(query, keep_blank_values=True)]
+    if not params:
+        return None
+    reflected: list[dict[str, Any]] = []
+    for name, value in params:
+        value = (value or "").strip()
+        if len(value) < 3:
+            continue
+        if re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])",
+            page.body,
+        ):
+            reflected.append({"param": name, "value": value})
+    if not reflected:
+        return None
+    summary = "; ".join(f"{r['param']}={r['value']}" for r in reflected)
+    return _finding(
+        title="Parâmetro refletido no corpo da resposta",
+        description=(
+            "O valor de um parâmetro da URL consultada aparece integralmente "
+            "no corpo da resposta. Isso é um sinal observacional de que a "
+            "entrada é refletida sem processamento — um lead para revisão "
+            "manual, não uma confirmação de vulnerabilidade (nenhum payload é "
+            "enviado). O relatório agrega as reflexões por run."
+        ),
+        severity="info",
+        category="Aplicação / reflexão observada",
+        affected=page.host,
+        evidence=f"GET {page.url} -> parâmetro(s) refletido(s): {summary}",
+        remediation=(
+            "Revise manualmente como estes parâmetros são refletidos e "
+            "codifique a saída antes de devolver ao navegador."
+        ),
+        confidence=0.5,
+        extras={"reflections": reflected},
+    )
+
+
+_VERBOSE_ERROR_MARKERS = (
+    "stack trace",
+    "traceback",
+    "sql syntax",
+    "sqlstate",
+    "you have an error in your sql",
+    "warning:",
+    "notice:",
+    "fatal error:",
+    "/var/www/",
+    "c:\\",
+)
+
+
+def _verbose_error(page: TargetPage) -> dict[str, Any] | None:
+    """Aplicação low lead: verbose error markers observed in the response body.
+
+    Classifies what is already in the body (stack trace, SQL syntax errors,
+    PHP warnings/notices, on-disk file paths) — no probing or payload. The
+    observed markers are recorded as evidence for manual triage.
+    """
+    lowered = page.body.lower()
+    markers = [m for m in _VERBOSE_ERROR_MARKERS if m.lower() in lowered]
+    if not markers:
+        return None
+    path = urlparse(page.url).path or "/"
+    return _finding(
+        title=f"Erro verboso exposto em {path}",
+        description=(
+            "A resposta HTTP contém marcadores de erro verboso no corpo "
+            "(stack trace, erro de sintaxe SQL, warnings/notices do runtime ou "
+            "caminhos de arquivo no disco). Isso pode vazar estrutura interna, "
+            "versões de componentes e caminhos do servidor. Classificado aqui "
+            "de forma observacional — nenhum teste é executado e nada é "
+            "explorado."
+        ),
+        severity="low",
+        category="Aplicação / informação sensível em erro",
+        affected=page.host,
+        evidence=f"GET {page.url} -> marcadores: " + ", ".join(markers),
+        remediation=(
+            "Desabilite a exibição de erros detalhados no runtime de produção "
+            "e registre os erros apenas no servidor; trate páginas de erro "
+            "genéricas para o cliente."
+        ),
+        confidence=0.6,
+        extras={"markers": list(markers)},
     )
 
 
@@ -455,6 +616,8 @@ _DETECTORS = (
     _insecure_cookies,
     _missing_hsts,
     _input_vectors,
+    _reflected_parameters,
+    _verbose_error,
     _permissive_cors,
     _verbose_errors,
     _reflected_params,

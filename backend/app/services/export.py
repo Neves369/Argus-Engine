@@ -133,15 +133,85 @@ def finding_report(finding: Finding) -> dict[str, Any]:
         "status": finding.status,
         "requires_human_review": finding.requires_human_review,
         "verification": meta.get("verification"),
+        "reprobe": meta.get("reprobe"),
+        "extras": (meta.get("extras") or {}),
     }
 
 
+<<<<<<< HEAD
 def _section_summary(findings: list[Finding]) -> dict[str, int]:
     counts: dict[str, int] = {section: 0 for section in _SECTION_ORDER}
     for finding in findings:
         section = finding_section(finding)
         counts[section] = counts.get(section, 0) + 1
     return counts
+=======
+def _section_for(category: str | None) -> str:
+    """Map a finding category to one of the report's stable sections.
+
+    ``Aplicação``-prefixed categories (M1 polish) land in "Aplicação"; OWASP
+    Top-10 categories (e.g. A02/A05 misconfig) land in "Configuração";
+    everything else falls back to "Superfície".
+    """
+    cat = (category or "").strip()
+    if cat.startswith("Aplicação"):
+        return "aplicacao"
+    if cat.startswith("A"):
+        return "configuracao"
+    return "superficie"
+
+
+def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
+    """One-glance summary: surface/config config/application + auth/depth.
+
+    ``aplicacao_breakdown`` counts come from the aggregated ``extras``
+    (routes/reflections) so the headline mirrors what the crawl actually
+    observed. ``depth`` and ``auth`` are read from the scan part of the graph
+    result (auth cookies are listed by name only, never by value).
+    """
+    sections: dict[str, list[Finding]] = {"superficie": [], "configuracao": [], "aplicacao": []}
+    for finding in findings:
+        sections[_section_for(finding.category)].append(finding)
+
+    applied = sections["aplicacao"]
+    forms = 0
+    reflections = 0
+    errors = 0
+    routes = 0
+    for finding in applied:
+        extras = (finding.meta or {}).get("extras") or {}
+        category = (finding.category or "")
+        if category == "Aplicação / informação sensível em erro":
+            errors += 1
+        if category == "Aplicação / superfície de rotas":
+            routes += int(extras.get("app_route_count") or 1)
+        forms += int(extras.get("form_count") or 0)
+        reflections += int(extras.get("reflection_count") or 0)
+
+    validated = sum(1 for f in findings if (f.status or "") == "validated")
+    scan = (run.result or {}).get("scan") or []
+    first_scan = scan[0] if scan else {}
+    summary: dict[str, Any] = {
+        "superficie": len(sections["superficie"]),
+        "configuracao": len(sections["configuracao"]),
+        "aplicacao": len(sections["aplicacao"]),
+        "aplicacao_breakdown": {
+            "forms": forms,
+            "reflections": reflections,
+            "verbose_errors": errors,
+            "routes": routes,
+        },
+        "validated": validated,
+        "candidate": len(findings) - validated,
+        "depth": first_scan.get("depth") or "quick",
+        "auth": first_scan.get("auth_status") or "skipped",
+    }
+    if first_scan.get("auth_cookies"):
+        summary["auth_cookie_names"] = list(first_scan["auth_cookies"])
+    if first_scan.get("auth"):
+        summary["auth_note"] = first_scan["auth"]
+    return summary
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
 
 def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
@@ -177,6 +247,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "by_severity": by_severity,
             "by_section": _section_summary(findings),
             "pending_review": sum(1 for f in findings if f.requires_human_review),
+            "executive": _executive_summary(run, findings),
         },
         "findings": [finding_report(f) for f in _ordered(findings)],
         "observability": {
@@ -229,6 +300,10 @@ def _finding_markdown_lines(finding: Finding) -> list[str]:
 def run_report_markdown(run: Run, findings: list[Finding]) -> str:
     result = run.result or {}
     target = (result.get("target") or {}).get("name") or "unknown"
+    execu = _executive_summary(run, findings)
+    auth_line = f"- **Auth:** {execu['auth']}"
+    if execu.get("auth_cookie_names"):
+        auth_line += f" (cookies: {', '.join(execu['auth_cookie_names'])})"
     lines: list[str] = [
         "# Relatório de segurança",
         "",
@@ -237,6 +312,26 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         f"- **Status:** {run.status}",
         f"- **Achados:** {len(findings)}",
         "",
+<<<<<<< HEAD
+=======
+        "## Resumo",
+        "",
+        f"- **Superfície:** {execu['superficie']}",
+        f"- **Configuração:** {execu['configuracao']}",
+        (
+            f"- **Aplicação:** {execu['aplicacao']} "
+            f"(formulários: {execu['aplicacao_breakdown']['forms']}, "
+            f"reflexões: {execu['aplicacao_breakdown']['reflections']}, "
+            f"erros verbosos: {execu['aplicacao_breakdown']['verbose_errors']}, "
+            f"rotas: {execu['aplicacao_breakdown']['routes']})"
+        ),
+        f"- **Validados:** {execu['validated']} | **Candidatos:** {execu['candidate']}",
+        f"- **Profundidade:** {execu['depth']}",
+        auth_line,
+        "",
+        "## Achados",
+        "",
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     ]
 
     if not findings:
@@ -255,7 +350,48 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
             continue
         lines.append(f"## {SECTION_LABELS[section]}")
         lines.append("")
+<<<<<<< HEAD
         lines.append(f"_{len(bucket)} achado(s)_")
+=======
+        lines.append(f"- **Gravidade:** {severity}")
+        if finding.category:
+            lines.append(f"- **Categoria:** {finding.category}")
+        if finding.affected:
+            lines.append(f"- **Afetado:** {finding.affected}")
+        if finding.cvss_score is not None:
+            vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
+            lines.append(f"- **CVSS:** {finding.cvss_score}{vector}")
+        if finding.cves:
+            lines.append(f"- **CVEs:** {', '.join(finding.cves)}")
+        if finding.known_exploits:
+            lines.append(f"- **Exploits conhecidos:** {'; '.join(finding.known_exploits)}")
+        lines.append(f"- **Status:** {finding.status}")
+        if finding.description:
+            lines.append("")
+            lines.append(finding.description)
+        evidence = (finding.meta or {}).get("evidence")
+        if evidence:
+            lines.append("")
+            lines.append(f"**Evidência:** {evidence}")
+        reprobe = (finding.meta or {}).get("reprobe")
+        if reprobe:
+            state = "ok" if reprobe.get("ok") else "falha"
+            lines.append("")
+            lines.append(
+                f"**Re-probe:** {state} "
+                f"({reprobe.get('tool')} -> {reprobe.get('url')}, "
+                f"HTTP {reprobe.get('status_code')}, "
+                f"{reprobe.get('last_probed_at')})"
+            )
+        if finding.remediation:
+            lines.append("")
+            lines.append(f"**Remediação:** {finding.remediation}")
+        if finding.references:
+            lines.append("")
+            lines.append("**Referências:**")
+            for ref in finding.references:
+                lines.append(f"- {ref}")
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         lines.append("")
         for finding in bucket:
             lines.extend(_finding_markdown_lines(finding))
@@ -434,6 +570,7 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
 
     result = run.result or {}
     target = (result.get("target") or {}).get("name") or "unknown"
+    execu = _executive_summary(run, findings)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -469,6 +606,33 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
             ]
         ),
         Spacer(1, 4 * mm),
+        Paragraph("Resumo", h2),
+        _label_pairs(
+            [
+                ("Superfície", str(execu["superficie"])),
+                ("Configuração", str(execu["configuracao"])),
+                (
+                    "Aplicação",
+                    f"{execu['aplicacao']} "
+                    f"(formulários: {execu['aplicacao_breakdown']['forms']}, "
+                    f"reflexões: {execu['aplicacao_breakdown']['reflections']}, "
+                    f"erros verbosos: {execu['aplicacao_breakdown']['verbose_errors']}, "
+                    f"rotas: {execu['aplicacao_breakdown']['routes']})",
+                ),
+                ("Validados / Candidatos", f"{execu['validated']} / {execu['candidate']}"),
+                ("Profundidade", execu["depth"]),
+                (
+                    "Auth",
+                    execu["auth"]
+                    + (
+                        f" (cookies: {', '.join(execu['auth_cookie_names'])})"
+                        if execu.get("auth_cookie_names")
+                        else ""
+                    ),
+                ),
+            ]
+        ),
+        Spacer(1, 4 * mm),
     ]
 
     by_severity: dict[str, int] = {}
@@ -498,6 +662,7 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
     else:
         by_section: dict[str, list[Finding]] = {section: [] for section in _SECTION_ORDER}
         for finding in _ordered(findings):
+<<<<<<< HEAD
             by_section[finding_section(finding)].append(finding)
         for section in _SECTION_ORDER:
             bucket = by_section[section]
@@ -541,6 +706,57 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
                     for ref in finding.references:
                         story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
                 story.append(Spacer(1, 3 * mm))
+=======
+            title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
+            story.append(Paragraph(title, h2))
+            pairs: list[tuple[str, str | None]] = [
+                ("Gravidade", finding.severity),
+            ]
+            if finding.category:
+                pairs.append(("Categoria", finding.category))
+            if finding.affected:
+                pairs.append(("Afetado", finding.affected))
+            if finding.cvss_score is not None:
+                vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
+                pairs.append(("CVSS", f"{finding.cvss_score}{vector}"))
+            if finding.cves:
+                pairs.append(("CVEs", ", ".join(finding.cves)))
+            if finding.known_exploits:
+                pairs.append(("Exploits conhecidos", "; ".join(finding.known_exploits)))
+            pairs.append(("Status", finding.status))
+            story.append(_label_pairs(pairs))
+            if finding.description:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph(_pdf_escape(finding.description), body))
+            evidence = (finding.meta or {}).get("evidence")
+            if evidence:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph(f"<b>Evidência:</b> {_pdf_escape(str(evidence))}", body))
+            reprobe = (finding.meta or {}).get("reprobe")
+            if reprobe:
+                state = "ok" if reprobe.get("ok") else "falha"
+                story.append(Spacer(1, 1 * mm))
+                story.append(
+                    Paragraph(
+                        f"<b>Re-probe:</b> {state} "
+                        f"({_pdf_escape(reprobe.get('tool') or '')} -> "
+                        f"{_pdf_escape(reprobe.get('url') or '')}, "
+                        f"HTTP {_pdf_escape(reprobe.get('status_code') or '')}, "
+                        f"{_pdf_escape(reprobe.get('last_probed_at') or '')})",
+                        body,
+                    )
+                )
+            if finding.remediation:
+                story.append(Spacer(1, 1 * mm))
+                remediation = f"<b>Remediação:</b> {_pdf_escape(finding.remediation)}"
+                story.append(Paragraph(remediation, body))
+            if finding.references:
+                story.append(Spacer(1, 1 * mm))
+                story.append(Paragraph("<b>Referências:</b>", body))
+                for ref in finding.references:
+                    story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
+            story.append(Spacer(1, 3 * mm))
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("Observabilidade", h2))

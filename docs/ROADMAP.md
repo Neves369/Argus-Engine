@@ -921,6 +921,7 @@ sem backend destrutivo).
   injetados em todos os pontos de criação do Director (`app/api/v1/runs.py`,
   `app/api/v1/compositions.py`).
 
+<<<<<<< HEAD
 ---
 
 ## Etapas 16–20 — Plano de Melhoria (Profundidade de Aplicação)
@@ -1060,6 +1061,72 @@ testadas; validação ao vivo pendente (compartilhada com M1–M3).
 `devil_mode`, trilha de auditoria completa — coberto em `tests/test_devil_guard.py`.
 
 ---
+=======
+### Etapa 15.1 — Refino de relatório (M1) + re-prova de leads (M2)
+
+**Status:** `[x]` Concluída
+
+**Fonte:** `SUGESTOES_AJUSTE_POS_RUN7.md` (lições do run #7: ruído de
+formulários repetidos por página, contagem de rotas estáticas, categorias de
+aplicação estáveis, resumo executivo, auth explícito, e re-prova ao vivo dos
+leads pelo Carro).
+
+**Entregáveis (M1 — relatório)**
+- [x] Agregação de formulários: um achado por run
+  (`N formulário(s) com entrada de dados observados no crawl`); o detalhe por
+  rota (URL/método/fields/sensíveis) vai em `extras` e na evidência
+  (`app/services/scan_findings.py`, `app/scanning/detectors.py`).
+- [x] Mapa de rotas: `N rota(s) de aplicação descobertas` (+ `M estático(s)`),
+  separando labs → setup/login/security → estáticos; estáticos só no apêndice.
+- [x] Categorias estáveis de aplicação (`Aplicação / superfície de rotas`,
+  `vetores de entrada`, `reflexão observada`, `informação sensível em erro`);
+  OWASP A05/A02 seguem em "Configuração".
+- [x] Detector de reflexão com sinal mínimo (query params da própria página,
+  `len>=3`, word-boundary — sem falso positivo de nav-link) e detector de erro
+  verboso classificando marcadores (`stack trace`, `SQL syntax/SQLSTATE`,
+  `Warning:/Notice:/Fatal error:`, `/var/www/`, `C:\`).
+- [x] Resumo executivo (`summary.executive` no JSON; bloco `## Resumo` no
+  Markdown/PDF): Superfície/Configuração/Aplicação com breakdown
+  (forms/reflexões/erros verbosos/rotas), Validados/Candidatos, profundidade
+  (`deep`/`quick` via `SCAN_DEPTH` ou derivada de `SCAN_MAX_PAGES>=20`) e
+  sessão (`auth_status`: skipped/attempted/success/failed + nomes de cookie,
+  nunca valores) — `app/scanning/service.py`, `app/scanning/client.py`
+  (`session_cookie_names`), `app/services/export.py`.
+
+**Entregáveis (M2 — tools builtin + re-prova do Carro)**
+- [x] Novas tools no `TOOLS_MANIFEST` (`tools.json`/`.example`): `http_request`,
+  `session_login`, `form_discover`, `header_reprobe` — `kind: "builtin"`,
+  `destructive: false` (`app/tools/spec.py` `ToolKind.BUILTIN`+`handler`,
+  `app/tools/builtins.py`, dispatch no `ToolExecutor`).
+- [x] Sessão por run: um `ScanHTTPClient` compartilhado entre scan, verifier e
+  builtins (`runs.py::_runtime_services`) — `session_login` mantém a sessão
+  autenticada para toda re-prova do run; jar por executor, nunca global; logs/
+  saídas redigidos (nomes de cookie, nunca valores/password).
+- [x] Escopo em todas as builtins: `validate_scope` + kill-switch dentro do
+  handler (fora de escopo → 403/ferramenta bloqueada e registrada).
+- [x] Carro re-prova leads do scan em runs **deep**: erros verbosos/reflexões →
+  `http_request`, formulários → `form_discover`, rotas → amostra ≤
+  `CHARIOT_REPROBE_MAX_URLS` (default 10); `finding["reprobe"]`
+  `{tool,url,status_code,last_probed_at,snippet,ok}`; confiança sobe
+  (`+0.1`, cap 1.0) — **nunca** `validated` (`app/agents/builtin.py`). Runs
+  quick permanecem sem re-prova.
+- [x] `VerificationService` ciente de agregados: confirma forms/reflexões pelos
+  títulos do detector por URL de `extras` (`app/scanning/verify.py`).
+- [x] Evidência de re-prova no relatório (JSON `reprobe`, Markdown/PDF
+  `**Re-probe:** ok/falha (url, status, horário)`); testes
+  `tests/test_m2_tools.py`, `tests/test_report_polish.py` e atualizações em
+  `test_scanning.py`/`test_chariot_execution.py`.
+
+**Critérios de aceite**
+- [x] `ruff check app tests` verde; `pytest -q`: subsets relevantes verdes.
+- [x] Lead de formulário agregado em um achado com rota(s) em `extras`;
+  reflexão e erro verboso só quando sinal observado; mapa de rotas sempre
+  presente quando há páginas.
+- [x] `http_request` fora de escopo bloqueado; `session_login` retorna apenas
+  nomes de cookie; jar não vaza entre executores.
+- [x] Run deep re-prova formulários/rotas e sobe confiança mantendo
+  `candidate`; run quick não dispara re-prova.
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
 # Próximos passos sugeridos
 

@@ -142,6 +142,10 @@ class Settings(BaseSettings):
     scan_request_timeout: float = 10.0
     # Número máximo de páginas crawleadas por scan (`SCAN_MAX_PAGES`).
     scan_max_pages: int = 10
+    # Profundidade efetiva do scan (`SCAN_DEPTH`, "deep"|"quick"). Vazio =
+    # derivado do orçamento de páginas (deep se `SCAN_MAX_PAGES >= 20`). O
+    # Carro re-prova leads ao vivo apenas em runs deep (Etapa 15/M2).
+    scan_depth: str = ""
     # Teto de bytes do corpo de cada resposta (`SCAN_MAX_BODY_BYTES`).
     scan_max_body_bytes: int = 512_000
     # Respeitar robots.txt (self-imposed restriction) (`SCAN_RESPECT_ROBOTS`).
@@ -174,6 +178,10 @@ class Settings(BaseSettings):
     # do scan continuam valendo para cada sonda.
     chariot_verify_enabled: bool = True
     chariot_verify_max_probes: int = 10
+    # M2 — re-prova de leads pelo Carro em runs deep: teto de URLs re-prodadas
+    # via tools builtin (http_request/form_discover). Re-prova é sondagem
+    # NÃO destrutiva dentro do escopo; subir confiança, nunca validar.
+    chariot_reprobe_max_urls: int = 10
 
     # Diabo controlado (Etapa M5): allowlist estrita de tools + limites duros
     # que regem o caminho do Modo Diabo. O backend de execução destrutiva segue

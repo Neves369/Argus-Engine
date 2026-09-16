@@ -255,8 +255,25 @@ def test_passive_detections_produce_grounded_findings():
     assert "Servidor divulga versão exata no header de resposta" in titles
     assert "Headers de segurança ausentes na resposta" in titles
     assert "Cookies de sessão sem flags de proteção" in titles
+<<<<<<< HEAD
     assert "Formulários com entrada de dados em /" in titles
+=======
+    assert "1 formulário(s) com entrada de dados observados no crawl" in titles
+    assert "1 rota(s) de aplicação descobertas" in titles
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     assert "CORS permissivo (Access-Control-Allow-Origin: *)" in titles
+    forms = next(
+        f
+        for f in findings
+        if f["title"] == "1 formulário(s) com entrada de dados observados no crawl"
+    )
+    assert forms["category"] == "Aplicação / vetores de entrada"
+    assert forms["extras"]["form_count"] == 1
+    route = forms["extras"]["routes"][0]
+    assert route["method"] == "POST"
+    assert route["action"] == "/login"
+    assert route["fields"] == ["user", "pass"]
+    assert route["sensitive_fields"] == ["pass"]
     for finding in findings:
         assert finding["status"] == "candidate"
         assert finding["requires_human_review"] is True
@@ -265,7 +282,7 @@ def test_passive_detections_produce_grounded_findings():
 
 
 @respx.mock
-def test_clean_page_yields_no_findings():
+def test_clean_page_yields_only_route_map_finding():
     respx.get("http://example.com/").mock(
         return_value=httpx.Response(
             200,
@@ -287,7 +304,11 @@ def test_clean_page_yields_no_findings():
             {"name": "example.com", "url": "http://example.com/"}
         )
     )
-    assert derive_findings_from_scan(report) == []
+
+    findings = derive_findings_from_scan(report)
+    assert len(findings) == 1
+    assert findings[0]["category"] == "Aplicação / superfície de rotas"
+    assert findings[0]["title"] == "1 rota(s) de aplicação descobertas"
 
 
 def test_server_banner_requires_digit_no_finding():

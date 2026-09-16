@@ -30,6 +30,9 @@ class ScanReport:
     urls_skipped_by_robots: int = 0
     note: str | None = None
     auth: str | None = None
+    auth_status: str | None = None
+    auth_cookies: list[str] = field(default_factory=list)
+    depth: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +41,9 @@ class ScanReport:
             "urls_skipped_by_robots": self.urls_skipped_by_robots,
             "note": self.note,
             "auth": self.auth,
+            "auth_status": self.auth_status,
+            "auth_cookies": list(self.auth_cookies),
+            "depth": self.depth,
             "pages": [p.to_dict() for p in self.pages],
         }
 
@@ -63,6 +69,7 @@ class ScanService:
         client: ScanHTTPClient | None = None,
         respect_robots: bool = True,
         max_pages: int = 10,
+        depth: str | None = None,
         login_url: str = "",
         login_username: str = "",
         login_password: str = "",
@@ -70,13 +77,30 @@ class ScanService:
         self._client = client or ScanHTTPClient()
         self._respect_robots = respect_robots
         self._max_pages = max(1, int(max_pages))
+        self._depth = self._resolve_depth(depth)
         self._login_url = login_url
         self._login_username = login_username
         self._login_password = login_password
 
+<<<<<<< HEAD
     async def scan(
         self, target: dict[str, Any], *, max_pages: int | None = None
     ) -> ScanReport:
+=======
+    def _resolve_depth(self, depth: str | None) -> str:
+        """Effective scan depth: explicit value wins, else derived from scope.
+
+        ``deep`` when the page budget is large enough for a full crawl of a
+        mid-size application; otherwise ``quick``. Kept on the report so the
+        operator knows what kind of run produced it (M2 gating: the Carro
+        re-probes leads on ``deep`` runs).
+        """
+        if depth:
+            return "deep" if str(depth).lower().startswith("deep") else "quick"
+        return "deep" if self._max_pages >= 20 else "quick"
+
+    async def scan(self, target: dict[str, Any]) -> ScanReport:
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         target_name = str((target or {}).get("name") or "")
         try:
             validate_scope(target_name)
@@ -92,8 +116,9 @@ class ScanService:
         report = ScanReport(
             target=target_name,
             robots_respected=self._respect_robots,
+            depth=self._depth,
         )
-        report.auth = await self._authenticate()
+        await self._authenticate(report)
         for base_url in candidates:
             attempt = await self._crawl(base_url, max_pages=max_pages)
             report.pages = attempt.pages
@@ -126,24 +151,32 @@ class ScanService:
             return [url.rstrip("/") + "/"]
         return [f"https://{name}/", f"http://{name}/"]
 
-    async def _authenticate(self) -> str | None:
+    async def _authenticate(self, report: ScanReport) -> None:
         """Submit the target's login form once and reuse the session cookies.
 
-        Returns a short note for ``ScanReport.auth`` (or ``None`` when login is
-        not configured). A failed/partial login does NOT block the scan — the
-        crawl proceeds unauthenticated and the outcome is recorded/auditable.
+        Fills ``report.auth`` (note), ``report.auth_status``
+        (``skipped|attempted|success|failed``) and ``report.auth_cookies``
+        (cookie *names* only — never values, so the report stays auditable and
+        redacted). A failed/partial login does NOT block the scan — the crawl
+        proceeds unauthenticated and the outcome is recorded/auditable.
         """
         if not (self._login_url and self._login_username and self._login_password):
-            return None
+            report.auth_status = "skipped"
+            return
+        report.auth_status = "attempted"
         try:
             page = await self._client.get_page(self._login_url)
         except ScanError as exc:  # noqa: BLE001 - transcribed into the report
             logger.warning("scan login: page unreachable", extra={"reason": str(exc)})
-            return "login configurado mas página indisponível"
+            report.auth_status = "failed"
+            report.auth = "login configurado mas página indisponível"
+            return
 
         form = select_login_form(parse_html(page.url, page.body)["forms"])
         if form is None:
-            return "login configurado mas nenhum form com campo de senha encontrado"
+            report.auth_status = "failed"
+            report.auth = "login configurado mas nenhum form com campo de senha encontrado"
+            return
 
         action = urljoin(page.url, form.action or page.url)
         data = login_payload(form, self._login_username, self._login_password)
@@ -155,11 +188,19 @@ class ScanService:
                 response = await self._client.get_page(joined)
         except ScanError as exc:  # noqa: BLE001
             logger.warning("scan login: submission failed", extra={"reason": str(exc)})
-            return "login configurado mas a submissão falhou"
+            report.auth_status = "failed"
+            report.auth = "login configurado mas a submissão falhou"
+            return
 
         if response.status_code >= 400:
-            return f"login falhou (status {response.status_code})"
-        return "login dinâmico aplicado"
+            report.auth_status = "failed"
+            report.auth = f"login falhou (status {response.status_code})"
+            return
+        report.auth_status = "success"
+        report.auth = "login dinâmico aplicado"
+        report.auth_cookies = self._client.session_cookie_names(
+            urlparse(self._login_url).netloc
+        )
 
     async def _crawl(self, base_url: str, *, max_pages: int | None = None) -> ScanReport:
         """BFS crawl of same-host pages bounded by ``max_pages`` (or the
@@ -215,23 +256,69 @@ class ScanService:
         return RobotsRules.parse(page.body, user_agent=self._client.user_agent)
 
 
+<<<<<<< HEAD
 def build_scan_service() -> ScanService:
     """Instantiate the scanner from settings (``SCAN_*`` env vars)."""
+=======
+def _select_login_form(forms: list[HtmlForm]) -> HtmlForm | None:
+    """Pick the first form with a password field (the login form candidate)."""
+    for form in forms:
+        if any(fld.type == "password" for fld in form.fields):
+            return form
+    return None
+
+
+def _login_payload(form: HtmlForm, username: str, password: str) -> dict[str, str]:
+    """Map the login form fields to submitted values, deterministically.
+
+    The username goes into the first unfilled text-like field (so prefilled or
+    CSRF-bearing text inputs are left alone); hidden fields keep their value.
+    """
+    data: dict[str, str] = {}
+    text_fields: list[FormField] = []
+    for fld in form.fields:
+        if not fld.name:
+            continue
+        if fld.type == "password":
+            data[fld.name] = password
+        elif fld.type == "hidden":
+            if fld.value:
+                data[fld.name] = fld.value
+        elif fld.type in ("text", "email", "username", "tel", "search"):
+            if fld.value:
+                data[fld.name] = fld.value
+            else:
+                text_fields.append(fld)
+    username_field = text_fields[0] if text_fields else None
+    if username_field is not None:
+        data[username_field.name] = username
+    return data
+
+
+def build_scan_service(client: ScanHTTPClient | None = None) -> ScanService:
+    """Instantiate the scanner from settings (``SCAN_*`` env vars).
+
+    ``client`` lets the caller reuse one session jar per run (the Carro's M2
+    re-probes authenticate with the same session the scan established).
+    """
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     from app.core.config import get_settings
 
     settings = get_settings()
-    client = ScanHTTPClient(
-        rate_limit=settings.scan_rate_limit,
-        timeout=settings.scan_request_timeout,
-        max_body_bytes=settings.scan_max_body_bytes,
-        user_agent=settings.scan_user_agent,
-        extra_headers=settings.scan_extra_headers,
-        cookies=settings.scan_cookies,
-    )
+    if client is None:
+        client = ScanHTTPClient(
+            rate_limit=settings.scan_rate_limit,
+            timeout=settings.scan_request_timeout,
+            max_body_bytes=settings.scan_max_body_bytes,
+            user_agent=settings.scan_user_agent,
+            extra_headers=settings.scan_extra_headers,
+            cookies=settings.scan_cookies,
+        )
     return ScanService(
         client=client,
         respect_robots=settings.scan_respect_robots,
         max_pages=settings.scan_max_pages,
+        depth=settings.scan_depth or None,
         login_url=settings.scan_login_url,
         login_username=settings.scan_login_username,
         login_password=settings.scan_login_password,

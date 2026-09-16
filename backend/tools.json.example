@@ -28,5 +28,41 @@
     "timeout": 10.0,
     "rate_limit": 1.0,
     "destructive": false
+  },
+  {
+    "name": "http_request",
+    "description": "Re-faz o GET de uma URL em escopo (re-prova não destrutiva de leads do scan).",
+    "kind": "builtin",
+    "handler": "http_request",
+    "timeout": 10.0,
+    "rate_limit": 5.0,
+    "destructive": false
+  },
+  {
+    "name": "session_login",
+    "description": "Submete o form de login do alvo uma vez e mantém a sessão do run (retorna só nomes de cookie, nunca valores).",
+    "kind": "builtin",
+    "handler": "session_login",
+    "timeout": 15.0,
+    "rate_limit": 1.0,
+    "destructive": false
+  },
+  {
+    "name": "form_discover",
+    "description": "Descobre formulários editáveis em uma URL em escopo (re-prova de vetores de entrada).",
+    "kind": "builtin",
+    "handler": "form_discover",
+    "timeout": 10.0,
+    "rate_limit": 5.0,
+    "destructive": false
+  },
+  {
+    "name": "header_reprobe",
+    "description": "Re-faz o GET de uma URL em escopo e reporta cabeçalhos de segurança (re-prova de misconfig).",
+    "kind": "builtin",
+    "handler": "header_reprobe",
+    "timeout": 10.0,
+    "rate_limit": 5.0,
+    "destructive": false
   }
 ]

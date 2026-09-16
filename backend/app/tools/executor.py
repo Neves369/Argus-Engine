@@ -14,6 +14,8 @@ import httpx
 
 from app.core.config import get_settings
 from app.llm.compress import compact_tool_output
+from app.scanning.client import ScanError, ScanHTTPClient
+from app.tools.builtins import BuiltinToolError, BuiltinTools
 from app.tools.registry import ToolRegistry
 from app.tools.spec import ToolKind, ToolSpec
 
@@ -25,16 +27,21 @@ except ImportError:  # pragma: no cover - non-POSIX platforms (e.g. Windows)
 logger = logging.getLogger(__name__)
 
 
-def build_tool_executor() -> ToolExecutor:
+def build_tool_executor(client: ScanHTTPClient | None = None) -> ToolExecutor:
     """Instantiate the executor from the operator-provided tools manifest
     (``TOOLS_MANIFEST``). An empty/absent manifest yields an empty registry —
-    the Chariot degrades to its built-in probes, never failing the run."""
+    the Chariot degrades to its built-in probes, never failing the run.
+
+    ``client`` is the shared scan session (per-run jar). M2 builtin tools
+    reuse it so that a ``session_login`` from an earlier step keeps its
+    authenticated session for later re-probes.
+    """
     from app.core.config import get_settings
     from app.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
     registry.load(get_settings().tools_manifest)
-    return ToolExecutor(registry)
+    return ToolExecutor(registry, client=client)
 
 
 class ToolExecutionError(RuntimeError):
@@ -88,10 +95,25 @@ def _truncate_output(data: bytes, max_bytes: int) -> tuple[str, bool]:
 class ToolExecutor:
     """Executes registered tools with rate limiting, timeouts and mode gating."""
 
+<<<<<<< HEAD
     def __init__(self, registry: ToolRegistry, http_handler: Any = None) -> None:
         self._registry = registry
         self._last_invocation: dict[str, float] = {}
         self._http_handler = http_handler
+=======
+    def __init__(self, registry: ToolRegistry, client: ScanHTTPClient | None = None) -> None:
+        self._registry = registry
+        self._last_invocation: dict[str, float] = {}
+        self._builtin_client = client
+        self._builtins: BuiltinTools | None = None
+
+    @property
+    def builtins(self) -> BuiltinTools:
+        """Lazily built in-scope tools sharing the per-run session jar."""
+        if self._builtins is None:
+            self._builtins = BuiltinTools(self._builtin_client)
+        return self._builtins
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     @property
     def registry(self) -> ToolRegistry:
@@ -127,8 +149,13 @@ class ToolExecutor:
             result = await self._execute_http(tool, params)
         elif tool.kind == ToolKind.CLI:
             result = await self._execute_cli(tool, params)
+<<<<<<< HEAD
         elif tool.kind == ToolKind.SCANNER:
             result = await self._execute_scanner(tool, params)
+=======
+        elif tool.kind == ToolKind.BUILTIN:
+            result = await self._execute_builtin(tool, params)
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         else:
             raise ToolExecutionError(f"Unknown tool kind: {tool.kind}")
 
@@ -146,6 +173,7 @@ class ToolExecutor:
             result = compact_tool_output(result)
         return result
 
+<<<<<<< HEAD
     async def _execute_scanner(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
         """Scope-aware HTTP tool (Etapa M2): delegate to the shared handler.
 
@@ -160,6 +188,19 @@ class ToolExecutor:
             self._http_handler = build_http_tool_handler()
         handler_name = tool.handler or tool.name
         return await self._http_handler.handle(handler_name, params)
+=======
+    async def _execute_builtin(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch an M2 builtin tool (in-scope, non-destructive re-probes)."""
+        handler = tool.handler or tool.name
+        try:
+            return await self.builtins.run(handler, params)
+        except (BuiltinToolError, ScanError) as exc:
+            raise ToolExecutionError(f"Tool {tool.name} blocked: {exc}") from exc
+        except KeyError as exc:
+            raise ToolExecutionError(
+                f"Tool {tool.name} has no registered builtin handler: {handler}"
+            ) from exc
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     async def _execute_http(self, tool: ToolSpec, params: dict[str, Any]) -> dict[str, Any]:
         if not tool.url:

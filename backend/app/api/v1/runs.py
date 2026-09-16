@@ -47,12 +47,29 @@ def _utcnow() -> datetime:
 
 def _runtime_services() -> tuple[Any, Any, Any, Any]:
     """Build the four runtime-only dependencies for a run (sources, scan,
-    verification probes, tool executor); safe to call inside a request."""
+    verification probes, tool executor); safe to call inside a request.
+
+    A single ``ScanHTTPClient`` (per-run session jar) is shared by the
+    scanner, the verifier and the M2 builtin tools — so a ``session_login``
+    stay authenticated for every later re-probe in the same run.
+    """
+    from app.core.config import get_settings
+    from app.scanning.client import ScanHTTPClient
+
+    settings = get_settings()
+    client = ScanHTTPClient(
+        rate_limit=settings.scan_rate_limit,
+        timeout=settings.scan_request_timeout,
+        max_body_bytes=settings.scan_max_body_bytes,
+        user_agent=settings.scan_user_agent,
+        extra_headers=settings.scan_extra_headers,
+        cookies=settings.scan_cookies,
+    )
     return (
         build_sources_service(),
-        build_scan_service(),
-        build_verification_service(),
-        build_tool_executor(),
+        build_scan_service(client=client),
+        build_verification_service(client=client),
+        build_tool_executor(client=client),
     )
 
 

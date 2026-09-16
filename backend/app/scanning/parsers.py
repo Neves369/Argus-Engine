@@ -25,11 +25,15 @@ class _HtmlPageParser(HTMLParser):
         self.forms: list[HtmlForm] = []
         self.meta: dict[str, str] = {}
         self.scripts: list[str] = []
+        self.title: str = ""
         self._current_form: HtmlForm | None = None
+        self._in_title = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
-        if tag in ("a", "link"):
+        if tag == "title":
+            self._in_title = True
+        elif tag in ("a", "link"):
             href = attr_map.get("href")
             if (
                 href
@@ -68,15 +72,21 @@ class _HtmlPageParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "form":
             self._current_form = None
+        elif tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self.title = self.title + data
 
 
 def parse_html(url: str, body: str) -> dict[str, Any]:
-    """Parse an HTML body into links/forms/scripts/meta with absolute URLs."""
+    """Parse an HTML body into links/forms/scripts/meta/title with absolute URLs."""
     parser = _HtmlPageParser()
     try:
         parser.feed(body)
     except Exception:  # noqa: BLE001 — malformed markup must not abort the scan
-        return {"links": [], "forms": [], "scripts": [], "meta": {}}
+        return {"links": [], "forms": [], "scripts": [], "meta": {}, "title": ""}
 
     def _absolute(target: str) -> str:
         try:
@@ -94,6 +104,7 @@ def parse_html(url: str, body: str) -> dict[str, Any]:
         "forms": parser.forms,
         "scripts": [_absolute(s) for s in parser.scripts],
         "meta": dict(parser.meta),
+        "title": parser.title.strip(),
     }
 
 

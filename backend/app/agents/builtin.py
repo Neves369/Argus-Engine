@@ -17,7 +17,11 @@ from app.core.config import get_settings
 from app.orchestration.hitl import consume, is_answered, is_approved
 from app.orchestration.state import GraphState
 from app.scanning.service import ScanBlockedError, ScanReport
-from app.services.scan_findings import derive_findings_from_scan
+from app.services.scan_findings import (
+    AGGREGATE_FORM_TITLE,
+    AGGREGATE_REFLECTION_TITLE,
+    derive_findings_from_scan,
+)
 from app.services.source_findings import derive_findings_from_sources
 from app.tools.executor import ToolExecutor
 from app.tools.spec import ToolKind
@@ -567,10 +571,12 @@ class ChariotAgent(BaseArchetype):
             findings.append(finding)
 
         # Execução real não destrutiva: verificação ao vivo + tools do operador.
-        tool_runs, verified, refuted = await self._live_execution(state, findings, report)
+        tool_runs, verified, refuted, reprobes = await self._live_execution(
+            state, findings, report
+        )
 
         new_confidence = min(1.0, state.confidence + 0.2)
-        live = bool(verified or refuted or tool_runs)
+        live = bool(verified or refuted or tool_runs or reprobes)
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "safety",
@@ -587,6 +593,9 @@ class ChariotAgent(BaseArchetype):
             entry["tools_tried"] = len(tool_runs)
         if tool_runs:
             entry["tool_runs"] = tool_runs
+        if reprobes:
+            entry["reprobed"] = len(reprobes)
+            entry["reprobe_ok"] = sum(1 for r in reprobes if r and r.get("ok"))
         update: dict[str, Any] = {
             "findings": [*state.findings, *findings],
             "confidence": new_confidence,
@@ -607,15 +616,20 @@ class ChariotAgent(BaseArchetype):
         state: GraphState,
         findings: list[dict[str, Any]],
         report: ScanReport | None,
-    ) -> tuple[list[dict[str, Any]], int, int]:
+    ) -> tuple[list[dict[str, Any]], int, int, list[dict[str, Any]]]:
         """Layer de execução real NÃO destrutiva de um run normal (Etapa 15).
 
         1. **Verificação ao vivo:** re-prova os achados vindos do scan contra
            o alvo (sondas GET no escopo/robots/rate-limit) e anexa
            ``finding["verification"]`` (confirmado ou refutado com evidência
            presencial).
-        2. **Tools do operador:** invoca uma vez cada tool NÃO destrutiva do
-           `TOOLS_MANIFEST` (gating `destructive` da Etapa 5 respeitado).
+        2. **Re-prova de leads (M2, runs deep):** os agregados de aplicação
+           (forms/reflexões/erros verbosos/rotas) são re-prodados via builtins
+           ``form_discover``/``http_request``; ``finding["reprobe"]`` ganha o
+           resultado e a confiança sobe (nunca valida).
+        3. **Tools do operador:** invoca uma vez cada tool NÃO destrutiva do
+           `TOOLS_MANIFEST` (gating `destructive` da Etapa 5 respeitado);
+           builtins ficam fora deste passo (são dirigidos pela re-prova).
 
         Determinístico offline: sem verifier/executor injetados nada roda e as
         contagens ficam zero. Qualquer falha degrada para registro, nunca
@@ -630,7 +644,8 @@ class ChariotAgent(BaseArchetype):
                 )
             except Exception:  # noqa: BLE001 - execução nunca derruba o run
                 outcomes = [None] * len(findings)
-            for finding, outcome in zip(findings, outcomes, strict=True):
+            for idx, finding in enumerate(findings):
+                outcome = outcomes[idx] if idx < len(outcomes) else None
                 if outcome is None:
                     continue
                 finding["verification"] = outcome
@@ -640,15 +655,132 @@ class ChariotAgent(BaseArchetype):
                     refuted += 1
 
         tool_runs: list[dict[str, Any]] = []
+        reprobes: list[dict[str, Any]] = []
         executor = state.tool_executor
         if executor is not None:
+            reprobes = await self._reprobe_leads(executor, findings, report)
             target_name = str(state.target.get("name", ""))
             probe_url = self._scan_probe_url(state, findings)
             for spec in executor.registry.specs():
-                if spec.destructive:
+                if spec.destructive or spec.kind == ToolKind.BUILTIN:
                     continue
+<<<<<<< HEAD
                 tool_runs.append(await self._run_tool(executor, spec, target_name, probe_url))
         return tool_runs, verified, refuted
+=======
+                tool_runs.append(await self._run_tool(executor, spec, target_name))
+        return tool_runs, verified, refuted, reprobes
+
+    async def _reprobe_leads(
+        self,
+        executor: ToolExecutor,
+        findings: list[dict[str, Any]],
+        report: ScanReport | None,
+    ) -> list[dict[str, Any]]:
+        """M2: re-prove scan leads on deep runs via builtin tools.
+
+        Only runs when the scan was ``deep`` (derived or explicit) and the
+        executor is available. Each re-probe is one in-scope, non-destructive
+        GET/discovery; the outcome lands on ``finding["reprobe"]`` and — when
+        positive — bumps the finding's confidence (capped, never ``validated``;
+        only a human can validate).
+        """
+        if report is None or (report.depth or "quick") != "deep":
+            return []
+        budget = get_settings().chariot_reprobe_max_urls
+        if budget <= 0:
+            return []
+        probes: list[dict[str, Any]] = []
+        sampled: list[str] = []
+
+        for finding in findings:
+            title = str(finding.get("title") or "")
+            extras = finding.get("extras") or {}
+            if title.startswith("Erro verboso exposto"):
+                url = str(finding.get("probe_url") or "").strip()
+                if url:
+                    rec = await self._probe_one(executor, "http_request", url)
+                    probes.append(rec)
+                    self._record_reprobe(finding, rec)
+                    budget -= 1
+            elif title.endswith(AGGREGATE_FORM_TITLE):
+                for route in (extras.get("routes") or [])[:budget]:
+                    url = str(route.get("url") or route.get("probe_url") or "").strip()
+                    if not url:
+                        continue
+                    rec = await self._probe_one(executor, "form_discover", url)
+                    probes.append(rec)
+                    self._record_reprobe(finding, rec)
+                    budget -= 1
+            elif title.endswith(AGGREGATE_REFLECTION_TITLE):
+                for ref in (extras.get("reflections") or [])[:budget]:
+                    url = str(ref.get("url") or ref.get("probe_url") or "").strip()
+                    if not url:
+                        continue
+                    rec = await self._probe_one(executor, "http_request", url)
+                    probes.append(rec)
+                    self._record_reprobe(finding, rec)
+                    budget -= 1
+            if budget <= 0:
+                break
+
+        if budget > 0:
+            for finding in findings:
+                extras = finding.get("extras") or {}
+                if not str(finding.get("title") or "").endswith(
+                    "rota(s) de aplicação descobertas"
+                ):
+                    continue
+                for route in (extras.get("routes") or [])[:budget]:
+                    if route.get("static"):
+                        continue
+                    url = str(route.get("url") or route.get("probe_url") or "").strip()
+                    if not url or url in sampled:
+                        continue
+                    sampled.append(url)
+                    rec = await self._probe_one(executor, "http_request", url)
+                    probes.append(rec)
+                    self._record_reprobe(finding, rec)
+                    budget -= 1
+                    if budget <= 0:
+                        break
+                break
+        return probes
+
+    async def _probe_one(
+        self, executor: ToolExecutor, tool: str, url: str
+    ) -> dict[str, Any]:
+        """One builtin re-probe, degraded to a recorded failure on any error."""
+        try:
+            result = await executor.execute(tool, {"url": url}, devil_mode=False)
+        except Exception as exc:  # noqa: BLE001 - degrada, nunca derruba o run
+            return {
+                "tool": tool,
+                "url": url,
+                "ok": False,
+                "status_code": None,
+                "note": str(exc)[:200],
+                "last_probed_at": _utcnow(),
+            }
+        status = result.get("status_code")
+        ok = bool(result.get("ok")) and status is not None and int(status) < 400
+        return {
+            "tool": tool,
+            "url": result.get("url") or url,
+            "ok": ok,
+            "status_code": status,
+            "snippet": str(result.get("snippet") or result.get("form_count") or "")[:200],
+            "last_probed_at": result.get("observed_at") or _utcnow(),
+        }
+
+    @staticmethod
+    def _record_reprobe(finding: dict[str, Any], rec: dict[str, Any]) -> None:
+        finding["reprobe"] = rec
+        if rec.get("ok"):
+            finding["confidence"] = min(
+                1.0, float(finding.get("confidence") or 0.5) + 0.1
+            )
+>>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     @staticmethod
     def _scan_probe_url(state: GraphState, findings: list[dict[str, Any]]) -> str:
