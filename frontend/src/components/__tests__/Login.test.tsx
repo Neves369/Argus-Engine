@@ -17,6 +17,14 @@ describe('Login', () => {
     expect(screen.queryByText('Argus Engine')).not.toBeInTheDocument()
   })
 
+  it('entra direto com sessão já válida (authenticated=true)', async () => {
+    vi.spyOn(client, 'getMe').mockResolvedValue({ authenticated: true, ui_enabled: true })
+    const onLogin = vi.fn()
+    render(<Login onLogin={onLogin} />)
+    await waitFor(() => expect(onLogin).toHaveBeenCalled())
+    expect(screen.queryByText('Argus Engine')).not.toBeInTheDocument()
+  })
+
   it('mostra o formulário em modo protegido', async () => {
     vi.spyOn(client, 'getMe').mockResolvedValue({ authenticated: false, ui_enabled: true })
     render(<Login onLogin={vi.fn()} />)

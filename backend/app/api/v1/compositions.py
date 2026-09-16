@@ -111,6 +111,9 @@ async def execute_composition(
     if target_name:
         try:
             validate_scope(target_name)
+            target_url = str(target.get("url") or "")
+            if target_url.strip():
+                validate_scope(target_url)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 

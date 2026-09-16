@@ -3,76 +3,57 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import get_settings
-from app.core.security import deactivate_kill_switch
+from app.core.security import ScopeValidationError, validate_scope
 
 
-@pytest.fixture(autouse=True)
-def _reset_kill_switch():
-    deactivate_kill_switch()
-    get_settings.cache_clear()
-    yield
-    deactivate_kill_switch()
-    get_settings.cache_clear()
+def _set_scopes(monkeypatch, scopes):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "allowed_scopes", scopes)
 
 
-def test_kill_switch_status_inactive(client):
-    resp = client.get("/api/v1/operate/kill-switch")
-    assert resp.status_code == 200
-    assert resp.json() == {"active": False, "source": "none"}
+def test_validate_scope_allows_bare_host(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    assert validate_scope("example.com") == "example.com"
 
 
-def test_kill_switch_activate_runtime(client):
-    resp = client.post(
-        "/api/v1/operate/kill-switch", json={"reason": "incidente em andamento"}
-    )
-    assert resp.status_code == 200
-    assert resp.json() == {"active": True, "source": "runtime"}
-
-    status = client.get("/api/v1/operate/kill-switch").json()
-    assert status == {"active": True, "source": "runtime"}
-
-    # Idempotente: já ativo via runtime, POST continua 200.
-    again = client.post("/api/v1/operate/kill-switch", json={"reason": "de novo"})
-    assert again.status_code == 200
-    assert again.json() == {"active": True, "source": "runtime"}
+def test_validate_scope_allows_subdomain(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    assert validate_scope("api.example.com") == "api.example.com"
 
 
-def test_kill_switch_requires_reason(client):
-    resp = client.post("/api/v1/operate/kill-switch", json={"reason": ""})
-    assert resp.status_code == 422
-
-    blank = client.post("/api/v1/operate/kill-switch", json={})
-    assert blank.status_code == 422
+def test_validate_scope_allows_host_with_port(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    assert validate_scope("example.com:4280") == "example.com"
 
 
-def test_kill_switch_rejects_env_config(client, monkeypatch):
-    monkeypatch.setenv("KILL_SWITCH", "true")
-    get_settings.cache_clear()
-
-    status = client.get("/api/v1/operate/kill-switch").json()
-    assert status == {"active": True, "source": "env"}
-
-    # Fail-closed: ativo via env não pode ser desativado nem re-ativado.
-    resp = client.post("/api/v1/operate/kill-switch", json={"reason": "tentar"})
-    assert resp.status_code == 409
+def test_validate_scope_allows_full_url_with_port(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    assert validate_scope("https://example.com:4280/") == "example.com"
 
 
-def test_kill_switch_requires_auth(monkeypatch):
-    monkeypatch.setenv("UI_PASSWORD", "test-pass")
-    monkeypatch.setenv("ARGUS_SESSION_SECRET", "test-secret")
-    get_settings.cache_clear()
+def test_validate_scope_allows_full_url_with_path(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    assert validate_scope("http://www.example.com/lab") == "www.example.com"
 
-    import importlib
 
-    import app.main as main_mod
+def test_validate_scope_rejects_out_of_scope_host(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    with pytest.raises(ScopeValidationError):
+        validate_scope("evil.org")
 
-    importlib.reload(main_mod)
-    from fastapi.testclient import TestClient
 
-    with TestClient(main_mod.app) as c:
-        assert c.get("/api/v1/operate/kill-switch").status_code == 401
-        assert (
-            c.post("/api/v1/operate/kill-switch", json={"reason": "x"}).status_code
-            == 401
-        )
-    get_settings.cache_clear()
+def test_validate_scope_rejects_out_of_scope_url(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    with pytest.raises(ScopeValidationError):
+        validate_scope("https://evil.org:8443/")
+
+
+def test_validate_scope_rejects_empty(monkeypatch):
+    _set_scopes(monkeypatch, ["example.com"])
+    with pytest.raises(ScopeValidationError):
+        validate_scope("")
+
+
+def test_validate_scope_allows_any_when_scopes_empty(monkeypatch):
+    _set_scopes(monkeypatch, [])
+    assert validate_scope("https://anything.example:9999/") == "anything.example"

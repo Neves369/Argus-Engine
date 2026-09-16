@@ -48,55 +48,24 @@
   },
   {
     "name": "http_request",
-<<<<<<< HEAD
-    "description": "Fetch an authorized URL (GET by default; POST when method/data provided). Scope-validated, non-destructive.",
-    "kind": "scanner",
-    "handler": "http_request",
-    "timeout": 10.0,
-    "rate_limit": 1.0,
-=======
     "description": "Re-fetch one in-scope URL (GET by default), non-destructive re-probe of scan leads.",
     "kind": "builtin",
     "handler": "http_request",
     "timeout": 10.0,
     "rate_limit": 5.0,
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     "destructive": false
   },
   {
     "name": "session_login",
-<<<<<<< HEAD
-    "description": "Submit the configured login form with authorized credentials and reuse the session. Credentials come from config, never from params.",
-    "kind": "scanner",
-    "handler": "session_login",
-    "timeout": 10.0,
-=======
     "description": "Submit the target login form once and keep the authenticated session for the run (returns only cookie names, never values).",
     "kind": "builtin",
     "handler": "session_login",
     "timeout": 15.0,
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     "rate_limit": 1.0,
     "destructive": false
   },
   {
     "name": "form_discover",
-<<<<<<< HEAD
-    "description": "List the forms (action, method, fields) of an authorized URL.",
-    "kind": "scanner",
-    "handler": "form_discover",
-    "timeout": 10.0,
-    "rate_limit": 1.0,
-    "destructive": false
-  },
-  {
-    "name": "http_header_probe",
-    "description": "Return the security-relevant response headers of an authorized URL.",
-    "kind": "scanner",
-    "handler": "http_header_probe",
-    "timeout": 10.0,
-    "rate_limit": 1.0,
-=======
     "description": "Discover editable forms on an in-scope URL (input-vector re-probe).",
     "kind": "builtin",
     "handler": "form_discover",
@@ -111,7 +80,6 @@
     "handler": "header_reprobe",
     "timeout": 10.0,
     "rate_limit": 5.0,
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     "destructive": false
   }
 ]

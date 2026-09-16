@@ -71,18 +71,19 @@ def _scope_hostname(target: str) -> str:
 def validate_scope(target: str) -> str:
     """Validate that a target falls within the authorized scope.
 
-    Returns the normalized target on success, raises ScopeValidationError otherwise.
+    Accepts a bare host (``example.com``), ``host:port`` or a full
+    ``https://host[:port]/path`` URL; the host is what is checked against
+    ``ALLOWED_SCOPES``. Returns the normalized host on success, raises
+    ``ScopeValidationError`` otherwise.
     """
     settings = get_settings()
     allowed = [s.strip().lower() for s in settings.allowed_scopes if s.strip()]
-    target_clean = _scope_hostname(target)
+    host = _scope_hostname(target)
 
-    if not target_clean:
+    if not host:
         raise ScopeValidationError("Target is empty.")
 
-    if allowed and not any(
-        target_clean == scope or target_clean.endswith("." + scope) for scope in allowed
-    ):
+    if allowed and not any(host == scope or host.endswith("." + scope) for scope in allowed):
         raise ScopeValidationError(f"Target '{target}' is not in the authorized scope.")
 
-    return target_clean
+    return host

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
 import { AnimatePresence, motion } from "framer-motion";
 import backgroundImage from "./assets/backgrounds/Background1.png";
@@ -61,6 +61,7 @@ function formatLogEntry(entry: HistoryEntry): string {
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const handleLogin = useCallback(() => setLoggedIn(true), []);
   const playerModalOpen = useUIStore((s) => s.playerModalOpen);
   const enemyModalOpen = useUIStore((s) => s.enemyModalOpen);
   const settingsOpen = useUIStore((s) => s.settingsOpen);
@@ -85,6 +86,7 @@ function App() {
     openModal(name);
   }
   const [connectionsOn, setConnectionsOn] = useState(false);
+  const [handHidden, setHandHidden] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
@@ -238,6 +240,7 @@ function App() {
     setRunPendingReview(null);
     setRunError(null);
     setRunResult(null);
+    setHandHidden(false);
     lastHistoryLenRef.current = 0;
     try {
       localStorage.removeItem('argus.lastRunId');
@@ -292,6 +295,7 @@ function App() {
     setConnectionsOn(true);
     setActiveArchetype(null);
     setRunEnded(false);
+    setHandHidden(true);
     lastHistoryLenRef.current = 0;
   }
 
@@ -436,6 +440,9 @@ function seedReport(report: Report) {
         target: enemyInfo.name,
         devil_mode: String(deathMode),
       });
+      if (enemyInfo.url.trim()) {
+        params.set('url', enemyInfo.url.trim());
+      }
       params.set(
         'archetypes',
         (imperialTurn ? IMPERIAL_TEAM_ARCHETYPES : archetypes).join(','),
@@ -537,7 +544,7 @@ function seedReport(report: Report) {
   }
 
   if (!loggedIn) {
-    return <Login onLogin={() => setLoggedIn(true)} />;
+    return <Login onLogin={handleLogin} />;
   }
 
   const activeRunId = runId ?? historyRunId;
@@ -575,6 +582,7 @@ function seedReport(report: Report) {
         onCardPlayed={handleCardPlayed}
         returnedCard={returnedCard}
         playedCards={nodes.map((node) => node.data.id)}
+        hidden={handHidden}
       />
       <PlayedArea
         nodes={nodes}

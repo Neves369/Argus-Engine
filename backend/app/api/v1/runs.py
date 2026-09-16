@@ -106,6 +106,9 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
 
     try:
         validate_scope(target_dict.get("name", ""))
+        target_url = str(target_dict.get("url") or "")
+        if target_url.strip():
+            validate_scope(target_url)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
@@ -172,6 +175,7 @@ async def list_runs(db: DBSession) -> list[Run]:
 async def stream_run(
     db: DBSession,
     target: str | None = None,
+    url: str | None = None,
     session_id: int | None = None,
     devil_mode: bool = False,
     archetypes: list[str] | None = None,
@@ -184,6 +188,8 @@ async def stream_run(
 
     session: SessionModel | None = None
     target_meta: dict[str, Any] = {"name": target or ""}
+    if url:
+        target_meta["url"] = url
 
     if session_id is not None:
         session = await db.get(SessionModel, session_id)
@@ -211,6 +217,9 @@ async def stream_run(
 
     try:
         validate_scope(target_name)
+        target_url = str(target_meta.get("url") or "")
+        if target_url.strip():
+            validate_scope(target_url)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 

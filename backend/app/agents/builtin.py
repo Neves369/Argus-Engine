@@ -660,14 +660,9 @@ class ChariotAgent(BaseArchetype):
         if executor is not None:
             reprobes = await self._reprobe_leads(executor, findings, report)
             target_name = str(state.target.get("name", ""))
-            probe_url = self._scan_probe_url(state, findings)
             for spec in executor.registry.specs():
                 if spec.destructive or spec.kind == ToolKind.BUILTIN:
                     continue
-<<<<<<< HEAD
-                tool_runs.append(await self._run_tool(executor, spec, target_name, probe_url))
-        return tool_runs, verified, refuted
-=======
                 tool_runs.append(await self._run_tool(executor, spec, target_name))
         return tool_runs, verified, refuted, reprobes
 
@@ -780,24 +775,9 @@ class ChariotAgent(BaseArchetype):
             finding["confidence"] = min(
                 1.0, float(finding.get("confidence") or 0.5) + 0.1
             )
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
-
-    @staticmethod
-    def _scan_probe_url(state: GraphState, findings: list[dict[str, Any]]) -> str:
-        """URL re-probe target for the scanner tools.
-
-        Prefers the ``probe_url`` stamped on the first scan-evidenced finding,
-        then the explicit target URL, then the target name (the handler
-        normalizes it to a scheme-qualified URL).
-        """
-        for finding in findings:
-            url = str(finding.get("probe_url") or "").strip()
-            if url:
-                return url
-        return str(state.target.get("url") or state.target.get("name") or "").strip()
 
     async def _run_tool(
-        self, executor: ToolExecutor, tool, target: str, url: str
+        self, executor: ToolExecutor, tool, target: str
     ) -> dict[str, Any]:
         """Invoke one non-destructive tool once, recording the auditable outcome.
 
@@ -805,10 +785,7 @@ class ChariotAgent(BaseArchetype):
         run inválido; o saída é compactada para caber no histórico.
         """
         started_at = _utcnow()
-        if isinstance(tool.kind, ToolKind) and tool.kind == ToolKind.SCANNER:
-            params = {"url": url}
-        else:
-            params = {"target": target, "url": target}
+        params = {"target": target, "url": target}
         try:
             result = await executor.execute(tool.name, params, devil_mode=False)
             return {

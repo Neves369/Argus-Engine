@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import loginBg from '../assets/backgrounds/login.jpeg';
 import { ApiError, getMe, login } from '../api/client';
 import './Login.css';
@@ -21,6 +21,11 @@ function Login({ onLogin }: LoginProps) {
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const [entered, setEntered] = useState(false);
+  const onLoginRef = useRef(onLogin);
+
+  useEffect(() => {
+    onLoginRef.current = onLogin;
+  }, [onLogin]);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -29,8 +34,10 @@ function Login({ onLogin }: LoginProps) {
     getMe()
       .then((me) => {
         if (cancelled) return;
-        if (!me.ui_enabled) {
-          onLogin?.();
+        // Sessão já válida ou modo aberto: entra direto, sem precisar digitar
+        // a senha de novo.
+        if (me.authenticated || !me.ui_enabled) {
+          onLoginRef.current?.();
           setEntered(true);
         }
       })
@@ -44,7 +51,7 @@ function Login({ onLogin }: LoginProps) {
     return () => {
       cancelled = true;
     };
-  }, [onLogin]);
+  }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleSubmit(event: React.FormEvent) {

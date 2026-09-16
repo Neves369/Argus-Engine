@@ -17,4 +17,11 @@ describe('Hand', () => {
     const { container } = render(<Hand palette playedCards={[2]} />)
     expect(container.querySelectorAll('.hand-card')).toHaveLength(4)
   })
+
+  it('esconde a mão inteira quando hidden', () => {
+    const { container } = render(<Hand palette hidden />)
+    const hand = container.querySelector('.hand')
+    expect(hand).toHaveClass('is-hidden')
+    expect(hand?.querySelectorAll('.hand-card')).toHaveLength(5)
+  })
 })

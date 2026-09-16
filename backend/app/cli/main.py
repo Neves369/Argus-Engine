@@ -104,6 +104,11 @@ def compose_create(
         console.print("[red]--depth deve ser 'quick' ou 'deep'[/red]")
         raise typer.Exit(code=1)
     try:
+        if target and ":" in target and not url:
+            console.print(
+                "[yellow]aviso[/yellow]: '--target' contém uma porta; envie a porta em '--url' "
+                "(ex.: --url https://host:4280/) — o nome deve ser o host/domínio do escopo."
+            )
         session_id = _session_create(name, archetypes, target, url, devil, depth)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")

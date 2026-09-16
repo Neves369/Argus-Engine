@@ -119,12 +119,6 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
                 continue
             seen.add(title)
             findings.append(finding)
-<<<<<<< HEAD
-    routes = _discovered_routes_finding(report)
-    if routes is not None and routes["title"] not in seen:
-        findings.append(routes)
-    return findings
-=======
 
     aggregates: list[dict[str, Any]] = []
     if form_routes:
@@ -314,4 +308,3 @@ def _reflections_host(reflections: list[dict[str, Any]]) -> str:
         if host:
             return host
     return "unknown"
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))

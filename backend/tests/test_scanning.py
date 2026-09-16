@@ -10,7 +10,6 @@ from app.agents import get_archetype
 from app.core.security import activate_kill_switch, deactivate_kill_switch
 from app.orchestration.state import GraphState
 from app.scanning.client import ScanError, ScanHTTPClient
-from app.scanning.parsers import parse_html
 from app.scanning.robots import RobotsRules
 from app.scanning.service import ScanBlockedError, ScanReport, ScanService, build_scan_service
 from app.scanning.spec import TargetPage
@@ -255,12 +254,8 @@ def test_passive_detections_produce_grounded_findings():
     assert "Servidor divulga versão exata no header de resposta" in titles
     assert "Headers de segurança ausentes na resposta" in titles
     assert "Cookies de sessão sem flags de proteção" in titles
-<<<<<<< HEAD
-    assert "Formulários com entrada de dados em /" in titles
-=======
     assert "1 formulário(s) com entrada de dados observados no crawl" in titles
     assert "1 rota(s) de aplicação descobertas" in titles
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     assert "CORS permissivo (Access-Control-Allow-Origin: *)" in titles
     forms = next(
         f
@@ -409,51 +404,6 @@ def test_no_tech_markers_yields_no_stack_finding():
     )
 
 
-def test_forms_with_select_and_sensitive_fields_are_captured():
-    body = (
-        "<html><body>"
-        '<form action="/x.php" method="post">'
-        '<input type="text" name="id">'
-        '<input type="password" name="pwd">'
-        '<select name="level"><option>low</option></select>'
-        '<textarea name="msg"></textarea>'
-        '<input type="submit" value="go">'
-        "</form>"
-        "</body></html>"
-    )
-    url = "http://example.com/"
-    page = _page(body=body)
-    page.forms = parse_html(url, body)["forms"]
-    findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
-    form_finding = next(
-        f for f in findings if f["title"] == "Formulários com entrada de dados em /"
-    )
-    assert "pwd:password" in form_finding["evidence"]
-    assert "level:select" in form_finding["evidence"]
-    assert "msg:textarea" in form_finding["evidence"]
-    assert "sensíveis" in form_finding["evidence"]
-
-
-def test_forms_finding_is_per_endpoint():
-    pages = [
-        _page(
-            url="http://example.com/vulnerabilities/sqli/",
-            body="<html><form action='/x.php' method='post'><input name='q'></form></html>",
-        ),
-        _page(
-            url="http://example.com/vulnerabilities/xss_d/",
-            body="<html><form action='/y.php' method='post'><input name='q'></form></html>",
-        ),
-    ]
-    for page in pages:
-        page.forms = parse_html(page.url, page.body)["forms"]
-    findings = derive_findings_from_scan(ScanReport(target="example.com", pages=pages))
-    form_titles = [f["title"] for f in findings if "Formulários com entrada de dados" in f["title"]]
-    assert len(form_titles) == 2
-    assert any("em /vulnerabilities/sqli" in t for t in form_titles)
-    assert any("em /vulnerabilities/xss_d" in t for t in form_titles)
-
-
 def test_verbose_errors_reclassified_as_application():
     from app.db.models import Finding
 
@@ -468,22 +418,6 @@ def test_verbose_errors_reclassified_as_application():
         confidence=error_finding["confidence"],
     )
     assert finding_section(finding) == SECTION_APP
-
-
-def test_discovered_routes_yields_finding():
-    pages = [
-        _page(url="http://example.com/", body="<html>home</html>"),
-        _page(url="http://example.com/vulnerabilities/sqli/", body="<html>sqli</html>"),
-        _page(url="http://example.com/vulnerabilities/xss/", body="<html>xss</html>"),
-    ]
-    titles = _titles(ScanReport(target="example.com", pages=pages))
-    assert any("módulo(s)/rota(s) internos descobertos" in t for t in titles)
-
-
-def test_single_page_yields_no_routes_finding():
-    page = _page(url="http://example.com/", body="<html>home</html>")
-    titles = _titles(ScanReport(target="example.com", pages=[page]))
-    assert not any("módulo(s)/rota(s) internos descobertos" in t for t in titles)
 
 
 # ---------------------------------------------------------------------------

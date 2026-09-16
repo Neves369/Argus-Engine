@@ -10,6 +10,10 @@
   z-index: 100;
 }
 
+.hand.is-hidden {
+  display: none;
+}
+
 .hand-card {
   margin-left: -30px;
   position: relative;

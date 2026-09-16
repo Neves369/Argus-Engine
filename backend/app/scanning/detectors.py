@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
-<<<<<<< HEAD
-from urllib.parse import parse_qs, urljoin, urlparse
-=======
-from urllib.parse import parse_qsl, urlparse
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
+from urllib.parse import parse_qs, parse_qsl, urljoin, urlparse
 
 from app.scanning.parsers import analyze_headers
 from app.scanning.spec import TargetPage
@@ -175,14 +171,6 @@ def _missing_hsts(page: TargetPage) -> dict[str, Any] | None:
     )
 
 
-<<<<<<< HEAD
-_IGNORED_FIELD_TYPES = {"submit", "button", "reset", "image"}
-_SENSITIVE_FIELD_TYPES = {"password", "file", "hidden"}
-
-
-def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
-    """A03 passive lead: forms with editable/sensitive fields found on the page.
-=======
 _EDITABLE_TYPES = ("text", "email", "password", "search", "url", "number", "file", "tel")
 _SENSITIVE_TYPES = ("password", "file", "hidden")
 _SENSITIVE_NAME_HINTS = ("token", "csrf", "secret", "apikey", "api_key", "key", "pass", "auth")
@@ -197,7 +185,6 @@ def _field_is_sensitive(field) -> bool:
 
 def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
     """Aplicação passive lead: forms with editable inputs found on the page.
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     Purely observational — no payload is sent. A lead telling the operator
     that user-controlled input surfaces exist and deserve manual review. The
@@ -207,20 +194,6 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
     """
     if not page.forms:
         return None
-<<<<<<< HEAD
-    summarized: list[str] = []
-    for form in page.forms:
-        named = [fld for fld in form.fields if fld.name]
-        if not any(fld.type not in _IGNORED_FIELD_TYPES for fld in named):
-            continue
-        fields = ", ".join(f"{fld.name}:{fld.type}" for fld in named[:8])
-        sensitive = [fld.name for fld in named if fld.type in _SENSITIVE_FIELD_TYPES]
-        label = f"<{form.method.upper()} {form.action or page.url}> fields=[{fields}]"
-        if sensitive:
-            label += f" sensíveis=[{', '.join(sensitive)}]"
-        summarized.append(label)
-    if not summarized:
-=======
     routes: list[dict[str, Any]] = []
     for form in page.forms:
         if not any(
@@ -242,13 +215,12 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
             }
         )
     if not routes:
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         return None
     preview = "; ".join(
         f"<{route['method']} {route['action']}>" for route in routes
     )[:500]
     return _finding(
-        title=f"Formulários com entrada de dados em {_page_path(page)}",
+        title="Formulários com entrada de dados encontrados",
         description=(
             "Páginas do alvo expõem formulários com campos de entrada "
             "(texto/e-mail/senha) e envio a endpoint da aplicação. Esses são "
@@ -260,11 +232,7 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
         severity="info",
         category="Aplicação / vetores de entrada",
         affected=page.host,
-<<<<<<< HEAD
-        evidence=f"GET {page.url} -> formulários: " + "; ".join(summarized)[:500],
-=======
         evidence=f"GET {page.url} -> formulários: {preview}",
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         remediation=(
             "Revise manualmente o tratamento de entrada destes endpoints "
             "(validação, parametrização e codificação de saída)."

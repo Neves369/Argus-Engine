@@ -138,14 +138,6 @@ def finding_report(finding: Finding) -> dict[str, Any]:
     }
 
 
-<<<<<<< HEAD
-def _section_summary(findings: list[Finding]) -> dict[str, int]:
-    counts: dict[str, int] = {section: 0 for section in _SECTION_ORDER}
-    for finding in findings:
-        section = finding_section(finding)
-        counts[section] = counts.get(section, 0) + 1
-    return counts
-=======
 def _section_for(category: str | None) -> str:
     """Map a finding category to one of the report's stable sections.
 
@@ -211,7 +203,14 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
     if first_scan.get("auth"):
         summary["auth_note"] = first_scan["auth"]
     return summary
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
+
+
+def _section_summary(findings: list[Finding]) -> dict[str, int]:
+    counts: dict[str, int] = {section: 0 for section in _SECTION_ORDER}
+    for finding in findings:
+        section = finding_section(finding)
+        counts[section] = counts.get(section, 0) + 1
+    return counts
 
 
 def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
@@ -285,6 +284,16 @@ def _finding_markdown_lines(finding: Finding) -> list[str]:
     if evidence:
         lines.append("")
         lines.append(f"**Evidência:** {evidence}")
+    reprobe = (finding.meta or {}).get("reprobe")
+    if reprobe:
+        state = "ok" if reprobe.get("ok") else "falha"
+        lines.append("")
+        lines.append(
+            f"**Re-probe:** {state} "
+            f"({reprobe.get('tool')} -> {reprobe.get('url')}, "
+            f"HTTP {reprobe.get('status_code')}, "
+            f"{reprobe.get('last_probed_at')})"
+        )
     if finding.remediation:
         lines.append("")
         lines.append(f"**Remediação:** {finding.remediation}")
@@ -312,8 +321,6 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         f"- **Status:** {run.status}",
         f"- **Achados:** {len(findings)}",
         "",
-<<<<<<< HEAD
-=======
         "## Resumo",
         "",
         f"- **Superfície:** {execu['superficie']}",
@@ -331,7 +338,6 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         "",
         "## Achados",
         "",
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     ]
 
     if not findings:
@@ -349,49 +355,6 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         if not bucket:
             continue
         lines.append(f"## {SECTION_LABELS[section]}")
-        lines.append("")
-<<<<<<< HEAD
-        lines.append(f"_{len(bucket)} achado(s)_")
-=======
-        lines.append(f"- **Gravidade:** {severity}")
-        if finding.category:
-            lines.append(f"- **Categoria:** {finding.category}")
-        if finding.affected:
-            lines.append(f"- **Afetado:** {finding.affected}")
-        if finding.cvss_score is not None:
-            vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
-            lines.append(f"- **CVSS:** {finding.cvss_score}{vector}")
-        if finding.cves:
-            lines.append(f"- **CVEs:** {', '.join(finding.cves)}")
-        if finding.known_exploits:
-            lines.append(f"- **Exploits conhecidos:** {'; '.join(finding.known_exploits)}")
-        lines.append(f"- **Status:** {finding.status}")
-        if finding.description:
-            lines.append("")
-            lines.append(finding.description)
-        evidence = (finding.meta or {}).get("evidence")
-        if evidence:
-            lines.append("")
-            lines.append(f"**Evidência:** {evidence}")
-        reprobe = (finding.meta or {}).get("reprobe")
-        if reprobe:
-            state = "ok" if reprobe.get("ok") else "falha"
-            lines.append("")
-            lines.append(
-                f"**Re-probe:** {state} "
-                f"({reprobe.get('tool')} -> {reprobe.get('url')}, "
-                f"HTTP {reprobe.get('status_code')}, "
-                f"{reprobe.get('last_probed_at')})"
-            )
-        if finding.remediation:
-            lines.append("")
-            lines.append(f"**Remediação:** {finding.remediation}")
-        if finding.references:
-            lines.append("")
-            lines.append("**Referências:**")
-            for ref in finding.references:
-                lines.append(f"- {ref}")
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
         lines.append("")
         for finding in bucket:
             lines.extend(_finding_markdown_lines(finding))
@@ -660,53 +623,7 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
     if not findings:
         story.append(Paragraph("Nenhum achado registrado neste run.", body))
     else:
-        by_section: dict[str, list[Finding]] = {section: [] for section in _SECTION_ORDER}
         for finding in _ordered(findings):
-<<<<<<< HEAD
-            by_section[finding_section(finding)].append(finding)
-        for section in _SECTION_ORDER:
-            bucket = by_section[section]
-            if not bucket:
-                continue
-            story.append(Spacer(1, 2 * mm))
-            story.append(Paragraph(f"{SECTION_LABELS[section]}", h1))
-            for finding in bucket:
-                title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
-                story.append(Paragraph(title, h2))
-                pairs: list[tuple[str, str | None]] = [
-                    ("Gravidade", finding.severity),
-                ]
-                if finding.category:
-                    pairs.append(("Categoria", finding.category))
-                if finding.affected:
-                    pairs.append(("Afetado", finding.affected))
-                if finding.cvss_score is not None:
-                    vector = f" ({finding.cvss_vector})" if finding.cvss_vector else ""
-                    pairs.append(("CVSS", f"{finding.cvss_score}{vector}"))
-                if finding.cves:
-                    pairs.append(("CVEs", ", ".join(finding.cves)))
-                if finding.known_exploits:
-                    pairs.append(("Exploits conhecidos", "; ".join(finding.known_exploits)))
-                pairs.append(("Status", finding.status))
-                story.append(_label_pairs(pairs))
-                if finding.description:
-                    story.append(Spacer(1, 1 * mm))
-                    story.append(Paragraph(_pdf_escape(finding.description), body))
-                evidence = (finding.meta or {}).get("evidence")
-                if evidence:
-                    story.append(Spacer(1, 1 * mm))
-                    story.append(Paragraph(f"<b>Evidência:</b> {_pdf_escape(str(evidence))}", body))
-                if finding.remediation:
-                    story.append(Spacer(1, 1 * mm))
-                    remediation = f"<b>Remediação:</b> {_pdf_escape(finding.remediation)}"
-                    story.append(Paragraph(remediation, body))
-                if finding.references:
-                    story.append(Spacer(1, 1 * mm))
-                    story.append(Paragraph("<b>Referências:</b>", body))
-                    for ref in finding.references:
-                        story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
-                story.append(Spacer(1, 3 * mm))
-=======
             title = f"[{finding.severity or 'N/A'}] {_pdf_escape(finding.title)}"
             story.append(Paragraph(title, h2))
             pairs: list[tuple[str, str | None]] = [
@@ -756,7 +673,6 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
                 for ref in finding.references:
                     story.append(Paragraph(f"- {_pdf_escape(ref)}", small))
             story.append(Spacer(1, 3 * mm))
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
 
     story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("Observabilidade", h2))

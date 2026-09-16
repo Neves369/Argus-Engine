@@ -23,6 +23,7 @@ interface HandProps {
   returnedCard?: number;
   palette?: boolean;
   playedCards?: number[];
+  hidden?: boolean;
 }
 
 let particleId = 0;
@@ -53,7 +54,7 @@ function makeParticles(): Particle[] {
   return [...flames, ...soot];
 }
 
-function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [] }: HandProps) {
+function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [], hidden = false }: HandProps) {
   const [focused, setFocused] = useState<number | null>(null);
   const [cards, setCards] = useState<number[]>(
     Array.from({ length: CARD_COUNT }, (_, i) => i),
@@ -114,7 +115,7 @@ function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [] }:
 
   return (
     <div
-      className="hand"
+      className={`hand${hidden ? ' is-hidden' : ''}`}
       onMouseLeave={() => setFocused(null)}
     >
       {cards

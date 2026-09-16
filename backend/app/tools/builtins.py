@@ -20,8 +20,8 @@ from urllib.parse import urlencode, urljoin, urlparse
 from app.core.config import get_settings
 from app.core.security import is_kill_switch_active, validate_scope
 from app.scanning.client import ScanError, ScanHTTPClient
+from app.scanning.login import login_payload, select_login_form
 from app.scanning.parsers import analyze_headers, parse_html
-from app.scanning.service import _login_payload, _select_login_form
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ async def _session_login(builtins: BuiltinTools, params: dict[str, Any]) -> dict
         page = await builtins.client.get_page(login_url)
     except ScanError as exc:
         return {"tool": "session_login", "ok": False, "reason": f"login page unreachable: {exc}"}
-    form = _select_login_form(parse_html(page.url, page.body)["forms"])
+    form = select_login_form(parse_html(page.url, page.body)["forms"])
     if form is None:
         return {
             "tool": "session_login",
@@ -139,7 +139,7 @@ async def _session_login(builtins: BuiltinTools, params: dict[str, Any]) -> dict
             "reason": "no login form with password field found",
         }
     action = urljoin(page.url, form.action or page.url)
-    data = _login_payload(form, username, password)
+    data = login_payload(form, username, password)
     try:
         if form.method == "post":
             response = await builtins.client.post_page(action, data)

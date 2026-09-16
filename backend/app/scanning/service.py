@@ -82,11 +82,6 @@ class ScanService:
         self._login_username = login_username
         self._login_password = login_password
 
-<<<<<<< HEAD
-    async def scan(
-        self, target: dict[str, Any], *, max_pages: int | None = None
-    ) -> ScanReport:
-=======
     def _resolve_depth(self, depth: str | None) -> str:
         """Effective scan depth: explicit value wins, else derived from scope.
 
@@ -99,11 +94,15 @@ class ScanService:
             return "deep" if str(depth).lower().startswith("deep") else "quick"
         return "deep" if self._max_pages >= 20 else "quick"
 
-    async def scan(self, target: dict[str, Any]) -> ScanReport:
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
+    async def scan(
+        self, target: dict[str, Any], *, max_pages: int | None = None
+    ) -> ScanReport:
         target_name = str((target or {}).get("name") or "")
+        target_url = str((target or {}).get("url") or "")
         try:
             validate_scope(target_name)
+            if target_url.strip():
+                validate_scope(target_url)
         except ValueError as exc:
             raise ScanBlockedError(str(exc)) from exc
 
@@ -119,8 +118,9 @@ class ScanService:
             depth=self._depth,
         )
         await self._authenticate(report)
+        override = self._max_pages if max_pages is None else max(1, int(max_pages))
         for base_url in candidates:
-            attempt = await self._crawl(base_url, max_pages=max_pages)
+            attempt = await self._crawl(base_url, max_pages=override)
             report.pages = attempt.pages
             report.urls_skipped_by_robots += attempt.urls_skipped_by_robots
             if attempt.robots_respected is not None:
@@ -256,52 +256,12 @@ class ScanService:
         return RobotsRules.parse(page.body, user_agent=self._client.user_agent)
 
 
-<<<<<<< HEAD
-def build_scan_service() -> ScanService:
-    """Instantiate the scanner from settings (``SCAN_*`` env vars)."""
-=======
-def _select_login_form(forms: list[HtmlForm]) -> HtmlForm | None:
-    """Pick the first form with a password field (the login form candidate)."""
-    for form in forms:
-        if any(fld.type == "password" for fld in form.fields):
-            return form
-    return None
-
-
-def _login_payload(form: HtmlForm, username: str, password: str) -> dict[str, str]:
-    """Map the login form fields to submitted values, deterministically.
-
-    The username goes into the first unfilled text-like field (so prefilled or
-    CSRF-bearing text inputs are left alone); hidden fields keep their value.
-    """
-    data: dict[str, str] = {}
-    text_fields: list[FormField] = []
-    for fld in form.fields:
-        if not fld.name:
-            continue
-        if fld.type == "password":
-            data[fld.name] = password
-        elif fld.type == "hidden":
-            if fld.value:
-                data[fld.name] = fld.value
-        elif fld.type in ("text", "email", "username", "tel", "search"):
-            if fld.value:
-                data[fld.name] = fld.value
-            else:
-                text_fields.append(fld)
-    username_field = text_fields[0] if text_fields else None
-    if username_field is not None:
-        data[username_field.name] = username
-    return data
-
-
 def build_scan_service(client: ScanHTTPClient | None = None) -> ScanService:
     """Instantiate the scanner from settings (``SCAN_*`` env vars).
 
     ``client`` lets the caller reuse one session jar per run (the Carro's M2
     re-probes authenticate with the same session the scan established).
     """
->>>>>>> b73867b (feat(scan,report,tools): refinar relatório do scan (M1) e re-provar leads pelo Carro (M2))
     from app.core.config import get_settings
 
     settings = get_settings()

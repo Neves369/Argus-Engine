@@ -17,6 +17,8 @@ function EnemyForm({ value, onSave, onClose }: EnemyFormProps) {
   const [url, setUrl] = useState(value.url);
   const [notes, setNotes] = useState(value.notes);
 
+  const hasPortInName = /:\d+/.test(name.trim());
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     onSave({ name, url, notes });
@@ -34,6 +36,11 @@ function EnemyForm({ value, onSave, onClose }: EnemyFormProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        {hasPortInName && (
+          <p className="modal-hint">
+            A porta deve ir no campo URL (ex.: https://example.com:4280), não no Nome.
+          </p>
+        )}
       </div>
       <div className="modal-field">
         <label className="modal-label" htmlFor="enemy-url">URL</label>
