@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import parse_qs, parse_qsl, urljoin, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse
 
 from app.scanning.parsers import analyze_headers
 from app.scanning.spec import TargetPage
@@ -52,11 +52,6 @@ def _finding(
 
 def _is_https(url: str) -> bool:
     return str(url).lower().startswith("https://")
-
-
-def _page_path(page: TargetPage) -> str:
-    """Caminho normalizado de uma página, usado para findings por endpoint."""
-    return urlparse(page.url).path.rstrip("/") or "/"
 
 
 def _server_banner(page: TargetPage) -> dict[str, Any] | None:
@@ -303,6 +298,18 @@ _VERBOSE_ERROR_MARKERS = (
     "fatal error:",
     "/var/www/",
     "c:\\",
+    "undefined index",
+    "undefined variable",
+    "undefined array key",
+    "undefined function",
+    "parse error:",
+    "syntax error,",
+    "pdoexception",
+    "deprecated:",
+    "microsoft ole db",
+    "odbc error",
+    "java.lang.",
+    "oracle error",
 )
 
 
@@ -339,104 +346,6 @@ def _verbose_error(page: TargetPage) -> dict[str, Any] | None:
         ),
         confidence=0.6,
         extras={"markers": list(markers)},
-    )
-
-
-_VERBOSE_ERROR_SIGNATURES = (
-    "traceback (most recent call last)",
-    "stack trace:",
-    "undefined index",
-    "undefined variable",
-    "undefined array key",
-    "undefined function",
-    "fatal error:",
-    "parse error:",
-    "syntax error,",
-    "you have an error in your sql syntax",
-    "sqlstate[",
-    "pdoexception",
-    "warning: mysql",
-    "warning: mysqli",
-    "warning: pg_",
-    "notice: undefined",
-    "deprecated:",
-    "microsoft ole db",
-    "odbc error",
-    "java.lang.",
-    "oracle error",
-)
-
-
-def _verbose_errors(page: TargetPage) -> dict[str, Any] | None:
-    """A05 lead: the body discloses verbose error/debug output.
-
-    Purely observational — the response body literally contains a known
-    error-handling signature (stack trace, SQL error, PHP notice, ...). No
-    payload is sent; we only surface what the target already returns.
-    """
-    lower = page.body.lower()
-    matched = [sig for sig in _VERBOSE_ERROR_SIGNATURES if sig in lower]
-    if not matched:
-        return None
-    return _finding(
-        title=f"Erros verbosos expostos em {_page_path(page)}",
-        description=(
-            "O corpo da resposta contém mensagens de erro internas (stack "
-            "trace, erro de SQL, notice de linguagem), o que pode revelar "
-            "estrutura de código, caminhos e detalhes de banco a um atacante. "
-            "Registrado como lead observado; não é uma confirmação de "
-            "vulnerabilidade explorável."
-        ),
-        severity="low",
-        category="Aplicação (erro verboso)",
-        affected=page.host,
-        evidence=f"GET {page.url} -> corpo contém: " + ", ".join(matched),
-        remediation=(
-            "Desative a exibição de erros em produção e devolva páginas de erro "
-            "genéricas, mantendo o detalhamento apenas em logs internos."
-        ),
-        confidence=0.8,
-    )
-
-
-def _reflected_params(page: TargetPage) -> dict[str, Any] | None:
-    """A03 lead: query parameters observed echoed back in the response body.
-
-    Observational only — the URL already carried the parameter when fetched
-    (from a link discovered by the crawl); we never inject a probe value. A
-    value appearing verbatim in the body is a reflection lead worth review.
-    """
-    query = urlparse(page.url).query
-    if not query:
-        return None
-    reflected: list[str] = []
-    for key, values in parse_qs(query).items():
-        for value in values:
-            if len(value) < 4 or not any(c.isalpha() for c in value):
-                continue
-            if value in page.body:
-                reflected.append(f"{key}={value}")
-    if not reflected:
-        return None
-    unique = sorted(set(reflected))[:8]
-    return _finding(
-        title=f"Parâmetros de entrada refletidos em {_page_path(page)}",
-        description=(
-            "Um ou mais valores de parâmetro de consulta aparecem literalmente "
-            "no corpo da resposta. Isso indica que a aplicação ecoa entrada do "
-            "usuário sem codificar — superfície que merece revisão manual de "
-            "injeção/reflexão. Nenhum payload foi enviado; a reflexão foi "
-            "observada no conteúdo já retornado."
-        ),
-        severity="info",
-        category="A03:2021 Injection (leads passivos)",
-        affected=page.host,
-        evidence=f"GET {page.url} -> parâmetros refletidos: " + ", ".join(unique),
-        remediation=(
-            "Codifique adequadamente a saída (contexto HTML/atributo/JS/URL) e "
-            "valide a entrada no servidor."
-        ),
-        confidence=0.4,
     )
 
 
@@ -587,8 +496,6 @@ _DETECTORS = (
     _reflected_parameters,
     _verbose_error,
     _permissive_cors,
-    _verbose_errors,
-    _reflected_params,
     _open_redirect_meta,
     _directory_listing,
     _tech_identified,

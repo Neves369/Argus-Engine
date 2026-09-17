@@ -579,6 +579,7 @@ function seedReport(report: Report) {
       />
       <Hand
         palette
+        deathMode={deathMode}
         onCardPlayed={handleCardPlayed}
         returnedCard={returnedCard}
         playedCards={nodes.map((node) => node.data.id)}

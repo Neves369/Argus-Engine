@@ -24,4 +24,16 @@ describe('Hand', () => {
     expect(hand).toHaveClass('is-hidden')
     expect(hand?.querySelectorAll('.hand-card')).toHaveLength(5)
   })
+
+  it('dá aura de chamas à carta do Carro em Modo Death', () => {
+    const { container } = render(<Hand palette deathMode />)
+    const chariot = Array.from(container.querySelectorAll('.hand-card'))[2]
+    expect(chariot).toHaveClass('is-death-aura')
+    expect(chariot?.querySelectorAll('.particle--flame-loop')).toHaveLength(14)
+  })
+
+  it('não dá aura de chamas à carta do Carro fora do Modo Death', () => {
+    const { container } = render(<Hand palette />)
+    expect(container.querySelector('.is-death-aura')).toBeNull()
+  })
 })

@@ -8,6 +8,7 @@ const ARC_ANGLE = 8;
 const ARC_LIFT = 16;
 const TILT_ANGLE = 6;
 const BURN_DURATION = 2000;
+const CHARIOT_INDEX = 2;
 
 interface Particle {
   id: number;
@@ -24,6 +25,7 @@ interface HandProps {
   palette?: boolean;
   playedCards?: number[];
   hidden?: boolean;
+  deathMode?: boolean;
 }
 
 let particleId = 0;
@@ -54,7 +56,16 @@ function makeParticles(): Particle[] {
   return [...flames, ...soot];
 }
 
-function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [], hidden = false }: HandProps) {
+const AURA_PARTICLES: Particle[] = Array.from({ length: 14 }, () => ({
+  id: particleId++,
+  type: 'flame' as const,
+  x: random(-45, 45),
+  size: random(3, 6),
+  delay: -random(0, 900),
+  duration: random(900, 1500),
+}));
+
+function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [], hidden = false, deathMode = false }: HandProps) {
   const [focused, setFocused] = useState<number | null>(null);
   const [cards, setCards] = useState<number[]>(
     Array.from({ length: CARD_COUNT }, (_, i) => i),
@@ -129,11 +140,12 @@ function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [], h
         const isAppearing = appearing.has(id);
         const particles = burning.get(id);
         const burnSide = offset < 0 ? 'left' : offset > 0 ? 'right' : 'center';
+        const hasDeathAura = deathMode && id === CHARIOT_INDEX && !isBurning;
 
         return (
           <div
             key={id}
-            className={`hand-card${focused === id ? ' is-focused' : ''}${isBurning ? ' is-burning' : ''}`}
+            className={`hand-card${focused === id ? ' is-focused' : ''}${isBurning ? ' is-burning' : ''}${hasDeathAura ? ' is-death-aura' : ''}`}
             style={
               {
                 '--rotation': `${rotation}deg`,
@@ -150,6 +162,21 @@ function Hand({ onCardPlayed, returnedCard, palette = false, playedCards = [], h
                 <span
                   key={particle.id}
                   className={`particle particle--${particle.type}`}
+                  style={
+                    {
+                      '--x': `${particle.x}px`,
+                      '--size': `${particle.size}px`,
+                      '--delay': `${particle.delay}ms`,
+                      '--duration': `${particle.duration}ms`,
+                    } as React.CSSProperties
+                  }
+                />
+              ))}
+            {hasDeathAura &&
+              AURA_PARTICLES.map((particle) => (
+                <span
+                  key={particle.id}
+                  className="particle particle--flame particle--flame-loop"
                   style={
                     {
                       '--x': `${particle.x}px`,

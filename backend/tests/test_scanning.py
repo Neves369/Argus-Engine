@@ -330,35 +330,35 @@ def _titles(report: ScanReport) -> set[str]:
 
 def test_verbose_error_signature_yields_finding():
     page = _page(body="<html>Traceback (most recent call last):</html>")
-    assert "Erros verbosos expostos em /" in _titles(
+    assert "Erro verboso exposto em /" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_sql_error_signature_yields_finding():
     page = _page(body="<html>You have an error in your SQL syntax</html>")
-    assert "Erros verbosos expostos em /" in _titles(
+    assert "Erro verboso exposto em /" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_clean_body_yields_no_verbose_error_finding():
     page = _page(body="<html><body>tudo ok</body></html>")
-    assert "Erros verbosos expostos" not in _titles(
+    assert "Erro verboso exposto" not in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_reflected_query_param_yields_finding():
     page = _page(url="http://example.com/?name=admin", body="<html>hello admin</html>")
-    assert "Parâmetros de entrada refletidos em /" in _titles(
+    assert "1 parâmetro(s) refletido(s) no corpo da resposta" in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
 
 def test_numeric_or_short_query_param_not_reflected():
     page = _page(url="http://example.com/?id=1", body="<html>ok 1</html>")
-    assert "Parâmetros de entrada refletidos" not in _titles(
+    assert "parâmetro(s) refletido(s) no corpo da resposta" not in _titles(
         ScanReport(target="example.com", pages=[page])
     )
 
@@ -404,13 +404,13 @@ def test_no_tech_markers_yields_no_stack_finding():
     )
 
 
-def test_verbose_errors_reclassified_as_application():
+def test_verbose_error_reclassified_as_application():
     from app.db.models import Finding
 
     page = _page(body="<html>Traceback (most recent call last):</html>")
     findings = derive_findings_from_scan(ScanReport(target="example.com", pages=[page]))
-    error_finding = next(f for f in findings if "Erros verbosos" in f["title"])
-    assert error_finding["category"] == "Aplicação (erro verboso)"
+    error_finding = next(f for f in findings if "Erro verboso exposto" in f["title"])
+    assert error_finding["category"] == "Aplicação / informação sensível em erro"
     finding = Finding(
         title=error_finding["title"],
         category=error_finding["category"],

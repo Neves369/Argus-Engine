@@ -46,3 +46,60 @@
   pointer-events: none;
   z-index: 20;
 }
+
+.hand-card.is-death-aura::before {
+  content: '';
+  position: absolute;
+  inset: -18px;
+  border-radius: 18px;
+  background:
+    radial-gradient(60% 45% at 50% 85%, rgba(255, 120, 30, 0.85), rgba(200, 40, 0, 0.35) 55%, transparent 75%),
+    radial-gradient(45% 35% at 20% 90%, rgba(255, 180, 60, 0.7), transparent 70%),
+    radial-gradient(45% 35% at 80% 90%, rgba(255, 180, 60, 0.7), transparent 70%);
+  filter: blur(2px);
+  pointer-events: none;
+  z-index: -1;
+  animation: death-aura-flicker 1.4s ease-in-out infinite;
+}
+
+.hand-card.is-death-aura::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: radial-gradient(80% 55% at 50% 100%, rgba(255, 150, 40, 0.5), transparent 70%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: death-aura-flicker 1.4s ease-in-out infinite;
+}
+
+.hand-card.is-death-aura .card {
+  box-shadow:
+    0 6px 22px rgba(240, 90, 20, 0.65),
+    0 0 18px rgba(255, 120, 20, 0.55);
+  border-color: rgba(255, 140, 40, 0.75);
+}
+
+.particle--flame-loop {
+  animation-iteration-count: infinite;
+}
+
+@keyframes death-aura-flicker {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.03);
+  }
+  55% {
+    opacity: 0.85;
+    transform: translateY(0) scale(0.99);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.02);
+  }
+}
