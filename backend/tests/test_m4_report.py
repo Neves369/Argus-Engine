@@ -86,6 +86,7 @@ def test_run_report_summary_by_section():
         "superficie": 1,
         "configuracao": 1,
         "aplicacao": 1,
+        "comportamento": 0,
         "correlacao": 1,
     }
     sections = {f["section"] for f in report["findings"]}

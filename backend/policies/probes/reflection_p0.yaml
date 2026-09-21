@@ -1,0 +1,44 @@
+# Política de probe P0 — Reflexão não codificada (Etapa M6).
+#
+# Pré-condição: o crawl observou um parâmetro refletido integralmente no corpo
+# (aggregate de reflexão da fase M1). O probe re-faz a requisição observada
+# (apenas o valor que o scan JÁ viu — nenhum payload ou valor inventado) e
+# avalia se o eco persiste na resposta fresca.
+#
+# Sinal positivo: o valor observado reaparece escrito no corpo (reflects_param),
+# sem payload — só re-prova do que foi observado.
+# Sinal negativo: nenhum. Falsos positivos são tratados pela camada de Justiça
+# (Etapa M4) com o contexto do eco (script/atributo/texto).
+#
+# default_enabled: true → entra no allowlist P0 (probe_classes_default=p0).
+id: reflection_p0
+version: "1.0.0"
+name: Reflexão não codificada reproduzida
+priority: "P0"
+class_label: "Reflexão não codificada"
+description: >
+  Um parâmetro observado refletido integralmente no corpo da resposta ainda
+  aparece em contexto observável na re-prova ao vivo. Sinal observacional de
+  reflexão sem tratamento de saída — lead para revisão manual (ex.: XSS), sem
+  payload e sem qualquer teste de exploração.
+precondition:
+  lead: reflection
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 2
+  respect_robots: true
+positive_signal:
+  - kind: reflects_param
+negative_signal: []
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} reflexão(ões) reproduzível(is) sob política"
+  remediation: >
+    Codifique a saída antes de devolver qualquer parâmetro ao navegador;
+    valide a entrada (data types, comprimento, formato e whitelist sintática).
+  references:
+    - https://owasp.org/www-project-top-ten/2017/A7_2017-Cross-Site_Scripting
+  confidence: 0.6

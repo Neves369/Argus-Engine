@@ -36,6 +36,7 @@ async def execute_run(
     scan_service: Any | None = None,
     verification_service: Any | None = None,
     tool_executor: Any | None = None,
+    probe_engine: Any | None = None,
 ) -> GraphState:
     """Execute a graph run, finalizing it or halting for a human decision."""
     director = Director(
@@ -44,6 +45,7 @@ async def execute_run(
         scan_service=scan_service,
         verification_service=verification_service,
         tool_executor=tool_executor,
+        probe_engine=probe_engine,
     )
     final = await director.run(state)
     if is_awaiting_review(final):
@@ -64,12 +66,12 @@ async def resume_run(
     *,
     sources_service: Any | None = None,
     scan_service: Any | None = None,
-    services: tuple[Any, Any, Any, Any] | None = None,
+    services: tuple[Any, Any, Any, Any, Any] | None = None,
 ) -> GraphState:
     """Apply a human decision to a pending review and resume the run.
 
-    ``services`` é o pacote ``(sources, scan, verification, tools)`` já
-    montado pelo router; do contrário injeta o que for passado explicitamente.
+    ``services`` é o pacote ``(sources, scan, verification, tools, probes)``
+    já montado pelo router; do contrário injeta o que for passado explicitamente.
     Raises ``ValueError`` with a user-facing message when the run is not
     awaiting the supplied approval.
     """
@@ -94,11 +96,12 @@ async def resume_run(
 
     composition = state.composition or None
     if services is not None:
-        sources, scan, verification, tools = services
+        sources, scan, verification, tools, probe = services
     else:
-        sources, scan, verification, tools = (
+        sources, scan, verification, tools, probe = (
             sources_service or build_sources_service(),
             scan_service,
+            None,
             None,
             None,
         )
@@ -108,6 +111,7 @@ async def resume_run(
         scan_service=scan,
         verification_service=verification,
         tool_executor=tools,
+        probe_engine=probe,
     )
     entry = state.next_agent or (composition[0] if composition else "emperor")
     final = await director.run_from(state, entry)
@@ -128,12 +132,12 @@ def state_from_run(
     *,
     sources_service: Any | None = None,
     scan_service: Any | None = None,
-    services: tuple[Any, Any, Any, Any] | None = None,
+    services: tuple[Any, Any, Any, Any, Any] | None = None,
 ) -> GraphState:
     """Reconstruir o estado persistido de um run para retomá-lo.
 
-    ``services`` é o pacote ``(sources, scan, verification, tools)`` já
-    montado pelo router; do contrário injeta o que for passado explicitamente.
+    ``services`` é o pacote ``(sources, scan, verification, tools, probes)``
+    já montado pelo router; do contrário injeta o que for passado explicitamente.
     Levanta ``ValueError`` quando o run não guardou estado resumível.
     """
     if not run.result:
@@ -148,12 +152,13 @@ def state_from_run(
     return state
 
 
-def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any]) -> None:
-    sources, scan, verification, tools = services
+def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any, Any]) -> None:
+    sources, scan, verification, tools, probe = services
     state.set_sources_service(sources)
     state.set_scan_service(scan)
     state.set_verification_service(verification)
     state.set_tool_executor(tools)
+    state.set_probe_engine(probe)
 
 
 async def stream_run_events(

@@ -24,12 +24,14 @@ SEVERITY_ORDER = {
 SECTION_SUPERFICIE = "superficie"
 SECTION_CONFIG = "configuracao"
 SECTION_APP = "aplicacao"
+SECTION_BEHAVIOR = "comportamento"
 SECTION_CORRELACAO = "correlacao"
 
 SECTION_LABELS = {
     SECTION_SUPERFICIE: "Superfície",
     SECTION_CONFIG: "Configuração",
     SECTION_APP: "Aplicação",
+    SECTION_BEHAVIOR: "Comportamento",
     SECTION_CORRELACAO: "Correlação CVE",
 }
 
@@ -37,19 +39,23 @@ _SECTION_ORDER = (
     SECTION_SUPERFICIE,
     SECTION_CONFIG,
     SECTION_APP,
+    SECTION_BEHAVIOR,
     SECTION_CORRELACAO,
 )
 
 
 def finding_section(finding: Finding) -> str:
-    """Classifica um finding em uma das quatro seções do relatório.
+    """Classifica um finding em uma das seções do relatório.
 
     Determinístico, baseado na ``category`` (OWASP/categorias já usadas pelos
     extractors): A06 → correlação CVE; A03/CWE-601 → aplicação; A05/A02 →
-    configuração; o restante (superfície de ataque, reputação de rede, gestão
-    de domínio, leads) → superfície.
+    configuração; prefixo "Comportamento" (Etapa M6) → seção Comportamento; o
+    restante (superfície de ataque, reputação de rede, gestão de domínio,
+    leads) → superfície.
     """
     category = (finding.category or "").strip().lower()
+    if category.startswith("comportamento"):
+        return SECTION_BEHAVIOR
     if "a06" in category or "outdated components" in category:
         return SECTION_CORRELACAO
     if "a03" in category or "injection" in category or "cwe-601" in category:
@@ -143,9 +149,12 @@ def _section_for(category: str | None) -> str:
 
     ``Aplicação``-prefixed categories (M1 polish) land in "Aplicação"; OWASP
     Top-10 categories (e.g. A02/A05 misconfig) land in "Configuração";
-    everything else falls back to "Superfície".
+    "Comportamento" (Etapa M6) lands in "Comportamento"; everything else falls
+    back to "Superfície".
     """
     cat = (category or "").strip()
+    if cat.startswith("Comportamento"):
+        return "comportamento"
     if cat.startswith("Aplicação"):
         return "aplicacao"
     if cat.startswith("A"):
@@ -154,14 +163,19 @@ def _section_for(category: str | None) -> str:
 
 
 def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
-    """One-glance summary: surface/config config/application + auth/depth.
+    """One-glance summary: surface/config/application/behavior + auth/depth.
 
     ``aplicacao_breakdown`` counts come from the aggregated ``extras``
     (routes/reflections) so the headline mirrors what the crawl actually
     observed. ``depth`` and ``auth`` are read from the scan part of the graph
     result (auth cookies are listed by name only, never by value).
     """
-    sections: dict[str, list[Finding]] = {"superficie": [], "configuracao": [], "aplicacao": []}
+    sections: dict[str, list[Finding]] = {
+        "superficie": [],
+        "configuracao": [],
+        "aplicacao": [],
+        "comportamento": [],
+    }
     for finding in findings:
         sections[_section_for(finding.category)].append(finding)
 
@@ -187,6 +201,7 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
         "superficie": len(sections["superficie"]),
         "configuracao": len(sections["configuracao"]),
         "aplicacao": len(sections["aplicacao"]),
+        "comportamento": len(sections["comportamento"]),
         "aplicacao_breakdown": {
             "forms": forms,
             "reflections": reflections,

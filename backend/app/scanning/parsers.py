@@ -49,6 +49,7 @@ class _HtmlPageParser(HTMLParser):
             self._current_form = HtmlForm(
                 action=attr_map.get("action", ""),
                 method=attr_map.get("method", "get").lower(),
+                enctype=attr_map.get("enctype") or None,
             )
             self.forms.append(self._current_form)
         elif tag == "input" and self._current_form is not None:
@@ -57,6 +58,7 @@ class _HtmlPageParser(HTMLParser):
                     name=attr_map.get("name", ""),
                     type=attr_map.get("type", "text"),
                     value=attr_map.get("value"),
+                    accept=attr_map.get("accept") or None,
                 )
             )
         elif tag in ("select", "textarea") and self._current_form is not None:

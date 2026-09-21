@@ -12,6 +12,7 @@ from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
+from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
 from app.schemas.composition import CompositionCreate, CompositionExecute, CompositionRead
@@ -150,12 +151,14 @@ async def execute_composition(
         build_scan_service(),
         build_verification_service(),
         build_tool_executor(),
+        build_probe_engine(),
     )
-    sources, scan, verification, tools = services
+    sources, scan, verification, tools, probe_engine = services
     state.set_sources_service(sources)
     state.set_scan_service(scan)
     state.set_verification_service(verification)
     state.set_tool_executor(tools)
+    state.set_probe_engine(probe_engine)
     run = Run(target_id=target_id, session_id=session.id, status="running", started_at=_utcnow())
     db.add(run)
     await db.flush()
@@ -172,6 +175,7 @@ async def execute_composition(
             scan,
             verification,
             tools,
+            probe_engine,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"

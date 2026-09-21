@@ -575,8 +575,18 @@ class ChariotAgent(BaseArchetype):
             state, findings, report
         )
 
+        # Probes de comportamento sob política (Etapa M6): o ProbeEngine do run
+        # aplica só o catálogo policies/probes/*.yaml aos leads já observados —
+        # sem payload; gera findings "Comportamento / ..." candidate + trilha
+        # de probe. Degrada para registro em qualquer falha, nunca derruba o run.
+        behavior_count, behavior_records = await self._behavior_probes(
+            state, findings, report, existing_titles
+        )
+
         new_confidence = min(1.0, state.confidence + 0.2)
-        live = bool(verified or refuted or tool_runs or reprobes)
+        live = bool(
+            verified or refuted or tool_runs or reprobes or behavior_count
+        )
         entry: dict[str, Any] = {
             "agent": self.key,
             "action": "safety",
@@ -591,6 +601,9 @@ class ChariotAgent(BaseArchetype):
             entry["verified"] = verified
             entry["refuted"] = refuted
             entry["tools_tried"] = len(tool_runs)
+        if behavior_count:
+            entry["behavior_signals"] = behavior_count
+            entry["behavior_probes"] = len(behavior_records)
         if tool_runs:
             entry["tool_runs"] = tool_runs
         if reprobes:
@@ -665,6 +678,42 @@ class ChariotAgent(BaseArchetype):
                     continue
                 tool_runs.append(await self._run_tool(executor, spec, target_name))
         return tool_runs, verified, refuted, reprobes
+
+    async def _behavior_probes(
+        self,
+        state: GraphState,
+        findings: list[dict[str, Any]],
+        report: ScanReport | None,
+        existing_titles: set[str],
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Etapa M6: aplica o catálogo de políticas versionadas aos leads do scan.
+
+        O ``ProbeEngine`` injetado no run transforma leads observacionais
+        (reflexão, erro verboso) em sinais *reproduzíveis sob política* —
+        sempre somente-leitura, no escopo, com robots/rate-limit/teto de probes.
+        Os findings "Comportamento / ..." retornam já como ``candidate`` com
+        ``requires_human_review`` e a evidência de probe em ``extras``.
+
+        Degrada para registro em qualquer falha (nunca derruba o run). Retorna
+        ``(num_findings, registros_de_probe)``.
+        """
+        engine = state.probe_engine
+        if engine is None or report is None or not report.pages:
+            return 0, []
+        try:
+            behavior, records = await engine.run(
+                report=report, findings=findings, target=state.target
+            )
+        except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
+            return 0, []
+        added = 0
+        for bf in behavior:
+            if bf["title"] in existing_titles:
+                continue
+            bf["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(bf)
+            added += 1
+        return added, records
 
     async def _reprobe_leads(
         self,

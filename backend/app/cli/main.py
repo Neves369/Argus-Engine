@@ -188,6 +188,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
     from app.db.session import async_session_factory
     from app.orchestration.compose import validate_sequence
     from app.orchestration.state import GraphState
+    from app.probing.engine import build_probe_engine
     from app.scanning.service import build_scan_service
     from app.scanning.verify import build_verification_service
     from app.services.run_executor import execute_run
@@ -246,6 +247,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
             tool_executor = build_tool_executor()
             state.set_verification_service(verification_service)
             state.set_tool_executor(tool_executor)
+            state.set_probe_engine(build_probe_engine())
             run = Run(
                 target_id=target_id,
                 session_id=record.id,
@@ -272,6 +274,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                     scan_service,
                     verification_service,
                     tool_executor,
+                    build_probe_engine(),
                 )
             except Exception as exc:  # noqa: BLE001
                 run.status = "failed"

@@ -63,6 +63,9 @@ class GraphState(BaseModel):
     # operator-provided tool executor (Etapa 15 — Carro execução real).
     _verification_service: Any = PrivateAttr(default=None)
     _tool_executor: Any = PrivateAttr(default=None)
+    # Runtime-only injectable (not serialized): motor de probes sob política
+    # (Etapa M6) — aplica o catálogo policies/probes/*.yaml aos leads do scan.
+    _probe_engine: Any = PrivateAttr(default=None)
 
     # Time de agentes disponíveis para este run (cartas ou time padrão).
     team: list[str] = Field(default_factory=list)
@@ -117,3 +120,10 @@ class GraphState(BaseModel):
 
     def set_tool_executor(self, executor: Any) -> None:
         self._tool_executor = executor
+
+    @property
+    def probe_engine(self) -> Any:
+        return self._probe_engine
+
+    def set_probe_engine(self, engine: Any) -> None:
+        self._probe_engine = engine

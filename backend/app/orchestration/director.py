@@ -23,12 +23,14 @@ class Director:
         scan_service: Any = None,
         verification_service: Any = None,
         tool_executor: Any = None,
+        probe_engine: Any = None,
     ) -> None:
         self._archetypes = archetypes
         self._sources_service = sources_service
         self._scan_service = scan_service
         self._verification_service = verification_service
         self._tool_executor = tool_executor
+        self._probe_engine = probe_engine
 
         def provision(state: GraphState) -> None:
             if sources_service is not None:
@@ -39,6 +41,8 @@ class Director:
                 state.set_verification_service(verification_service)
             if tool_executor is not None:
                 state.set_tool_executor(tool_executor)
+            if probe_engine is not None:
+                state.set_probe_engine(probe_engine)
             # O time do supervisor (quem o Imperador pode delegar) é resolvido
             # na primeira passada. Nunca sobrescreve um team já persistido
             # (resume de run HITL mantém o time original). O estado persistido

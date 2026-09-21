@@ -1,0 +1,76 @@
+# Política de probe P0 — Erro verboso / info leak (Etapa M6).
+#
+# Pré-condição: o crawl observou marcadores de erro verboso em uma resposta
+# (title "Erro verboso exposto ..."). O probe re-faz a mesma requisição (GET,
+# sem payload) e avalia se o detalhe interno estável persiste ao vivo.
+#
+# Sinal positivo: a resposta fresca contém qualquer um dos marcadores de erro
+# verboso (subconjunto curado de `_VERBOSE_ERROR_MARKERS` — versão em política).
+# Sinal negativo: nenhum. Páginas genéricas de erro e CDN são descartadas pela
+# camada de Justiça (Etapa M4) / FP rules.
+#
+# default_enabled: true → entra no allowlist P0 (probe_classes_default=p0).
+id: verbose_error_p0
+version: "1.0.0"
+name: Erro verboso reproduzido
+priority: "P0"
+class_label: "Erro verboso / info leak"
+description: >
+  O detalhe interno observado no crawl (stack trace, erro de sintaxe SQL,
+  warnings/notices do runtime ou caminho de arquivo no disco) persiste na
+  resposta ao vivo do probe. Sinal observacional de vazamento de informação —
+  lead para revisão manual, sem payload e sem exploração.
+precondition:
+  lead: verbose_error
+  title_contains: "Erro verboso exposto"
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 2
+  respect_robots: true
+positive_signal:
+  - kind: body_contains
+    value: stack trace
+  - kind: body_contains
+    value: traceback
+  - kind: body_contains
+    value: sql syntax
+  - kind: body_contains
+    value: sqlstate
+  - kind: body_contains
+    value: you have an error in your sql
+  - kind: body_contains
+    value: "warning:"
+  - kind: body_contains
+    value: "fatal error:"
+  - kind: body_contains
+    value: undefined index
+  - kind: body_contains
+    value: undefined variable
+  - kind: body_contains
+    value: "parse error:"
+  - kind: body_contains
+    value: "syntax error,"
+  - kind: body_contains
+    value: pdoexception
+  - kind: body_contains
+    value: "deprecated:"
+  - kind: body_contains
+    value: java.lang.
+  - kind: body_contains
+    value: oracle error
+  - kind: body_contains
+    value: microsoft ole db
+negative_signal: []
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} resposta(s) com erro verboso reproduzido(s) sob política"
+  remediation: >
+    Desabilite a exibição de erros detalhados no runtime de produção e registre
+    os erros apenas no servidor; sirva páginas de erro genéricas ao cliente.
+  references:
+    - https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure
+    - https://owasp.org/www-project-web-security-testing-guide/
+  confidence: 0.6

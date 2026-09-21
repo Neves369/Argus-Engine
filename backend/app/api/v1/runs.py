@@ -16,6 +16,7 @@ from app.metrics import record_run_start, record_run_terminal
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.state import GraphState
+from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
 from app.schemas.decision import DecisionRead
@@ -45,9 +46,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _runtime_services() -> tuple[Any, Any, Any, Any]:
-    """Build the four runtime-only dependencies for a run (sources, scan,
-    verification probes, tool executor); safe to call inside a request.
+def _runtime_services() -> tuple[Any, Any, Any, Any, Any]:
+    """Build the five runtime-only dependencies for a run (sources, scan,
+    verification probes, tool executor, M6 probe engine); safe to call inside
+    a request.
 
     A single ``ScanHTTPClient`` (per-run session jar) is shared by the
     scanner, the verifier and the M2 builtin tools — so a ``session_login``
@@ -70,15 +72,17 @@ def _runtime_services() -> tuple[Any, Any, Any, Any]:
         build_scan_service(client=client),
         build_verification_service(client=client),
         build_tool_executor(client=client),
+        build_probe_engine(client=client),
     )
 
 
-def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any]) -> None:
-    sources, scan, verification, tools = services
+def _inject_runtime(state: GraphState, services: tuple[Any, Any, Any, Any, Any]) -> None:
+    sources, scan, verification, tools, probe_engine = services
     state.set_sources_service(sources)
     state.set_scan_service(scan)
     state.set_verification_service(verification)
     state.set_tool_executor(tools)
+    state.set_probe_engine(probe_engine)
 
 
 async def _guard_no_active_run(db: DBSession) -> None:
@@ -139,7 +143,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     )
     services = _runtime_services()
     _inject_runtime(state, services)
-    sources, scan, verification, tools = services
+    sources, scan, verification, tools, probe_engine = services
 
     try:
         await execute_run(
@@ -152,6 +156,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
             scan,
             verification,
             tools,
+            probe_engine,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -262,13 +267,14 @@ async def stream_run(
     )
     services = _runtime_services()
     _inject_runtime(state, services)
-    sources, scan, verification, tools = services
+    sources, scan, verification, tools, probe_engine = services
     director = Director(
         archetypes,
         sources_service=sources,
         scan_service=scan,
         verification_service=verification,
         tool_executor=tools,
+        probe_engine=probe_engine,
     )
     return StreamingResponse(
         stream_run_events(db, run, state, director),
@@ -313,13 +319,14 @@ async def resume_run_stream(run_id: int, db: DBSession):
     # gate HITL por um pending_review/decision legado do estado persistido.
     state.pending_review = None
     state.human_decision = None
-    sources, scan, verification, tools = services
+    sources, scan, verification, tools, probe_engine = services
     director = Director(
         composition,
         sources_service=sources,
         scan_service=scan,
         verification_service=verification,
         tool_executor=tools,
+        probe_engine=probe_engine,
     )
     entry = director.resume_agent(state)
 

@@ -183,6 +183,19 @@ class Settings(BaseSettings):
     # NÃO destrutiva dentro do escopo; subir confiança, nunca validar.
     chariot_reprobe_max_urls: int = 10
 
+    # Probes de comportamento sob política (Etapa M6): o ProbeEngine só roda
+    # políticas versadas do catálogo (policies/probes/*.yaml), sem payload —
+    # sinais avaliados sobre a resposta fresca do probe. Default seguro =
+    # classes P0 apenas; P1+ exigem allowlist explícita do operador. Same
+    # guards do scan (escopo/kill-switch/robots/rate-limit) valem aqui.
+    # Env: PROBE_ENABLED / PROBE_MAX_PER_RUN / PROBE_MAX_PER_ENDPOINT /
+    # PROBE_RESPECT_ROBOTS / PROBE_CLASSES_DEFAULT.
+    probe_enabled: bool = True
+    probe_max_per_run: int = 10
+    probe_max_per_endpoint: int = 2
+    probe_respect_robots: bool = True
+    probe_classes_default: str = "p0"
+
     # Diabo controlado (Etapa M5): allowlist estrita de tools + limites duros
     # que regem o caminho do Modo Diabo. O backend de execução destrutiva segue
     # sem backend (HITL → `no_backend`, decisão de produto — ver ROADMAP Etapa

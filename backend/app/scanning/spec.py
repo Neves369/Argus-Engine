@@ -8,6 +8,7 @@ class FormField:
     name: str
     type: str
     value: str | None = None
+    accept: str | None = None
 
 
 @dataclass
@@ -15,6 +16,7 @@ class HtmlForm:
     action: str
     method: str
     fields: list[FormField] = field(default_factory=list)
+    enctype: str | None = None
 
 
 @dataclass
@@ -55,8 +57,14 @@ class TargetPage:
                 {
                     "action": f.action,
                     "method": f.method,
+                    "enctype": f.enctype,
                     "fields": [
-                        {"name": fld.name, "type": fld.type, "value": fld.value}
+                        {
+                            "name": fld.name,
+                            "type": fld.type,
+                            "value": fld.value,
+                            "accept": fld.accept,
+                        }
                         for fld in f.fields
                     ],
                 }
