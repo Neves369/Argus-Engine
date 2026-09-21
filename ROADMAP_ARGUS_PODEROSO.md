@@ -8,6 +8,7 @@
 - M1 validado no DVWA (run #7): superfície, config, forms, rotas, reflexão, erros verbosos, relatório por seções.
 - Próximo imediato: polish de relatório + M2 (tools HTTP/sessão + re-probe do Carro).
 - M3–M5 do plano anterior continuam válidos; este documento **estende** o horizonte.
+- **M6 P0 entregue (set/2026):** proactive probes de comportamento sob política no run (ver seção M6).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -44,7 +45,7 @@ O Argus poderoso entrega, em um run autorizado:
 [Curto]        M3  depth=quick|deep
 [Médio]        M4  Justiça, FP, relatório maduro
 [Médio]        M5  Diabo controlado (HITL)
-[Poder]        M6  Probes de comportamento por classe (controlados)
+[Poder]        M6  Probes de comportamento por classe (controlados) — P0 pronto, P1+ pendente
 [Poder]        M7  Sessão, papéis e fluxos multi-step
 [Poder]        M8  APIs e superfícies modernas
 [Escala]       M9  Qualidade, baseline, multi-alvo, CI
@@ -93,7 +94,7 @@ O Argus poderoso entrega, em um run autorizado:
 |-------|----------------|
 | `quick` | Sources + scan config/superfície + sample mínimo de app |
 | `deep` | Auth + crawl amplo + forms/rotas + re-probe Carro |
-| `deep+` (depois M6) | Inclui probes de comportamento dentro da política |
+| `deep+` (após M6 P1+) | Inclui probes de comportamento dentro da política |
 
 **Aceite**
 - Default seguro = `quick`.
@@ -135,6 +136,8 @@ O Argus poderoso entrega, em um run autorizado:
 ## Fase M6 — Probes de comportamento (o salto de “poder”)
 
 **Meta:** passar de “há um form em /sqli” para “há comportamento anômalo **reproduzível** sob política”, ainda sem virar exploit kit.
+
+**Status (set/2026):** **M6 P0 entregue** — reflexão e erro verboso sob política versada (`backend/policies/probes/reflection_p0.yaml` + `verbose_error_p0.yaml`), sem payload, com os guardrails da 6.3; findings na seção **Comportamento** do relatório e auditoria “qual regra gerou este finding?” (commit `54e638e`, 15 testes em `test_probing_m6.py`). P1–P3 da tabela 6.2 seguem pendentes.
 
 ### 6.1 Ideia central
 
@@ -279,7 +282,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Profundidade explícita (M3)
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
-- [ ] Comportamento sob política (M6) ← **principal salto de poder**
+- [x] Comportamento sob política (M6) — **P0 entregue** (reflexão + erro verboso); P1–P2 pendentes ← **principal salto de poder**
 - [ ] Contexto de sessão/papéis (M7)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
@@ -298,7 +301,8 @@ Com M9–M10, vira **produto operável em time**.
 | Agora | M1b + M2 | Relatório limpo + leads revalidados |
 | +1 ciclo | M3 + M4 | Depth e confiança profissionais |
 | +1 ciclo | M5 | Stress opt-in |
-| +2 ciclos | M6 (P0→P1) | Seção Comportamento de verdade |
+| Feito | M6 P0 | Seção Comportamento (reflexão + erro verboso sob política) |
+| +2 ciclos | M6 (P1→P3) | Expandir classes sob política |
 | +2 ciclos | M7 | Authz/sessão |
 | Depois | M8–M10 | API, escala, produto |
 
@@ -341,7 +345,7 @@ Com M9–M10, vira **produto operável em time**.
 
 1. Fechar **M1b + M2** (já especificados).  
 2. Implementar **M3 + M4** para profissionalizar depth e validação.  
-3. Abrir design formal da **M6 P0** (reflexão + erro verboso sob política), com catálogo de regras vazio de exploração livre e cheio de guardrails.  
-4. Só então expandir P1 e M7–M8.
+3. ~~Abrir design formal da **M6 P0**~~ — **P0 entregue** (reflexão + erro verboso sob política). Próximo: design formal da **M6 P1** (injeção em entrada de dados + upload), ainda dentro dos guardrails da 6.3.  
+4. Só então expandir P2/P3 e M7–M8.
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.
