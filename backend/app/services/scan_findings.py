@@ -54,7 +54,7 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
     the Carro can re-probe each lead. Verbose errors keep their URL-specific
     titles; misconfig findings are deduped by title (one per host).
     """
-    if not report.pages:
+    if not report.pages and not report.api_endpoints:
         return []
 
     findings: list[dict[str, Any]] = []
@@ -100,6 +100,9 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
     route_map = _route_map_finding(report)
     if route_map is not None:
         aggregates.append(route_map)
+    api_surface = _api_surface_finding(report)
+    if api_surface is not None:
+        aggregates.append(api_surface)
 
     return [*findings, *aggregates, *_session_access_findings(report)]
 
@@ -246,6 +249,59 @@ def _route_map_finding(report: ScanReport) -> dict[str, Any] | None:
             ],
             "app_route_count": app_count,
             "static_count": static_count,
+        },
+    )
+
+
+def _api_surface_finding(report: ScanReport) -> dict[str, Any] | None:
+    """API surface from an observed OpenAPI/Swagger spec (M8-P0).
+
+    The spec is the operator's own official surface — no endpoint is invented,
+    no enumeration is performed. The report maps method/path/params exactly as
+    declared, filtered to the target host, and labels the session that could
+    retrieve the spec.
+    """
+    endpoints = list(report.api_endpoints)
+    if not endpoints:
+        return None
+    host = report.target
+    distinct_paths = len({e["path"] for e in endpoints})
+    sessions = sorted({e.get("session") or "anon" for e in endpoints})
+    methods = sorted({e["method"] for e in endpoints})
+    spec = report.api_spec or {}
+    lines = [
+        f"- {e['method']} {e['path']}"
+        + (f" | params=[{', '.join(e['params'])}]" if e.get("params") else "")
+        + f" | sessão {e.get('session') or 'anon'}"
+        for e in sorted(endpoints, key=lambda ep: (ep["path"], ep["method"]))
+    ]
+    return _finding(
+        title=f"{len(endpoints)} endpoint(s) de API mapeados (OpenAPI)",
+        description=(
+            "A aplicação publica uma especificação OpenAPI/Swagger que o scan "
+            "observou e validou (fail-closed). Os endpoints listados são a "
+            "superfície oficial declarada pelo próprio alvo — nenhum caminho é "
+            "inventado nem enumerado. O detalhe por endpoint/método/parâmetros "
+            "fica em ``extras`` para re-prova ao vivo e para as sondas de "
+            "política (M8-P1)."
+        ),
+        severity="info",
+        category="Aplicação / superfície de API",
+        affected=host,
+        evidence="\n".join(lines)[:2000],
+        remediation=(
+            "Use a superfície para revisar manualmente a exposição de cada "
+            "endpoint (autenticação, autorização e tratamento de entrada)."
+        ),
+        confidence=0.6,
+        extras={
+            "endpoints": endpoints,
+            "endpoint_count": len(endpoints),
+            "distinct_paths": distinct_paths,
+            "methods": methods,
+            "sessions": sessions,
+            "spec_url": spec.get("url"),
+            "spec_sha256": spec.get("sha256"),
         },
     )
 

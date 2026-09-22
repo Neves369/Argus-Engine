@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlparse
+
+import yaml
 
 from app.core.security import is_kill_switch_active, validate_scope
 from app.scanning.client import ScanError, ScanHTTPClient
@@ -35,6 +38,10 @@ class ScanReport:
     depth: str | None = None
     sessions: list[dict[str, Any]] = field(default_factory=list)
     anon_probe: list[dict[str, Any]] = field(default_factory=list)
+    #: OpenAPI/Swagger observado (M8-P0): {url, sha256, session} ou None.
+    api_spec: dict[str, Any] | None = None
+    #: Endpoints mapeados do spec: {method, path, params, session}.
+    api_endpoints: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +55,8 @@ class ScanReport:
             "depth": self.depth,
             "sessions": list(self.sessions),
             "anon_probe": list(self.anon_probe),
+            "api_spec": self.api_spec,
+            "api_endpoints": list(self.api_endpoints),
             "pages": [p.to_dict() for p in self.pages],
         }
 
@@ -79,6 +88,8 @@ class ScanService:
         login_password: str = "",
         session_profiles: list[dict[str, str]] | None = None,
         client_factory: Any | None = None,
+        openapi_enabled: bool = False,
+        openapi_discovery_paths: list[str] | None = None,
     ) -> None:
         self._client = client or ScanHTTPClient()
         self._respect_robots = respect_robots
@@ -94,6 +105,12 @@ class ScanService:
                 self._session_profiles.append(normalized)
         self._client_factory = client_factory
         self._active_channels: list[dict[str, Any]] | None = None
+        self._openapi_enabled = bool(openapi_enabled)
+        self._openapi_paths = [
+            f"/{str(p).strip().lstrip('/')}"
+            for p in (openapi_discovery_paths or [])
+            if str(p).strip()
+        ] or ["/openapi.json", "/swagger.json", "/openapi.yaml"]
 
     def _normalize_profile(self, profile: dict[str, str]) -> dict[str, str] | None:
         """Validate a session profile dict; ``None`` when unusable (skipped)."""
@@ -169,6 +186,9 @@ class ScanService:
                 self._finalize_sessions(report, session)
                 if report.auth_status == "success":
                     report.anon_probe = await self._anonymous_baseline(candidates)
+                await self._discover_openapi(
+                    report, base_url, client=self._client, session=session
+                )
                 return report
             # No page reachable under this scheme (e.g. https rejected):
             # fall back to the next candidate only when the scheme was derived.
@@ -257,8 +277,107 @@ class ScanService:
             for rec in [{"auth_status": report.auth_status}, *extras]
         ):
             report.anon_probe = await self._anonymous_baseline([selected_base])
+        await self._discover_openapi(
+            report, selected_base, client=profiles["client"], session=profiles["name"]
+        )
         self._finalize_multi_sessions(report, channels, extras)
         return report
+
+    async def _discover_openapi(
+        self,
+        report: ScanReport,
+        base_url: str,
+        *,
+        client: ScanHTTPClient,
+        session: str,
+    ) -> None:
+        """M8-P0: tenta obter a spec OpenAPI/Swagger oficial da base.
+
+        Roda com o client/jar da sessão que crawleou a base (a spec pode ser
+        autenticada), respeitando robots por path, rate-limit, timeout e o teto
+        de bytes do client. Fail-closed: spec inválida, sem ``paths`` válidos
+        ou servers fora do host → nota no relatório, sem superfície.
+        """
+        if not self._openapi_enabled or not base_url:
+            return
+        robots = (
+            await self._load_robots(base_url)
+            if self._respect_robots
+            else RobotsRules.allow_all()
+        )
+        host = urlparse(base_url).netloc
+        for rel in self._openapi_paths:
+            url = urljoin(base_url, rel.lstrip("/"))
+            if not robots.is_allowed(urlparse(url).path or "/"):
+                report.urls_skipped_by_robots += 1
+                continue
+            try:
+                page = await client.get_page(url)
+            except ScanError as exc:
+                report.note = self._note_append(
+                    report.note, f"spec {rel}: indisponível ({exc})"
+                )
+                continue
+            if page.status_code not in (200, 204):
+                continue
+            spec = self._parse_openapi(page.body)
+            if spec is None:
+                report.note = self._note_append(
+                    report.note, f"spec {rel}: inválida (sem paths válidos)"
+                )
+                continue
+            report.api_spec = {
+                "url": url,
+                "sha256": hashlib.sha256(page.body.encode("utf-8")).hexdigest(),
+                "session": session,
+            }
+            report.api_endpoints = [
+                {
+                    "method": method.upper(),
+                    "path": path,
+                    "params": params,
+                    "session": session,
+                }
+                for path, methods in spec.items()
+                if urlparse(urljoin(base_url, path)).netloc == host
+                for method, params in methods.items()
+            ]
+            return
+
+    @staticmethod
+    def _parse_openapi(body: str) -> dict[str, dict[str, list[str]]] | None:
+        """Extrai {path: {método: [parâmetros]}} da spec; None se inválida."""
+        try:
+            data = yaml.safe_load(body)
+        except Exception:
+            return None
+        if not isinstance(data, dict):
+            return None
+        paths = data.get("paths")
+        if not isinstance(paths, dict) or not paths:
+            return None
+        spec: dict[str, dict[str, list[str]]] = {}
+        for path, item in paths.items():
+            if not isinstance(item, dict):
+                continue
+            methods: dict[str, list[str]] = {}
+            for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+                op = item.get(method)
+                if not isinstance(op, dict):
+                    continue
+                params = [
+                    str(p.get("name") or "")
+                    for p in op.get("parameters") or []
+                    if isinstance(p, dict) and p.get("name")
+                ]
+                methods[method] = params
+            if methods:
+                spec[str(path)] = methods
+        return spec or None
+
+    @staticmethod
+    def _note_append(note: str | None, extra: str) -> str | None:
+        return f"{note}\n{extra}" if note else extra
 
     def _finalize_multi_sessions(
         self,
@@ -594,4 +713,6 @@ def build_scan_service(client: ScanHTTPClient | None = None) -> ScanService:
         login_username=settings.scan_login_username,
         login_password=settings.scan_login_password,
         session_profiles=settings.scan_session_profiles,
+        openapi_enabled=settings.scan_openapi_enabled,
+        openapi_discovery_paths=settings.scan_openapi_discovery_paths,
     )

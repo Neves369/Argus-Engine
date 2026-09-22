@@ -184,6 +184,7 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
     reflections = 0
     errors = 0
     routes = 0
+    api_endpoints = 0
     for finding in applied:
         extras = (finding.meta or {}).get("extras") or {}
         category = (finding.category or "")
@@ -191,6 +192,8 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
             errors += 1
         if category == "Aplicação / superfície de rotas":
             routes += int(extras.get("app_route_count") or 1)
+        if category == "Aplicação / superfície de API":
+            api_endpoints += int(extras.get("endpoint_count") or 0)
         forms += int(extras.get("form_count") or 0)
         reflections += int(extras.get("reflection_count") or 0)
 
@@ -207,6 +210,7 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "reflections": reflections,
             "verbose_errors": errors,
             "routes": routes,
+            "api_endpoints": api_endpoints,
         },
         "validated": validated,
         "candidate": len(findings) - validated,
@@ -354,7 +358,8 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
             f"(formulários: {execu['aplicacao_breakdown']['forms']}, "
             f"reflexões: {execu['aplicacao_breakdown']['reflections']}, "
             f"erros verbosos: {execu['aplicacao_breakdown']['verbose_errors']}, "
-            f"rotas: {execu['aplicacao_breakdown']['routes']})"
+            f"rotas: {execu['aplicacao_breakdown']['routes']}, "
+            f"endpoints de API: {execu['aplicacao_breakdown']['api_endpoints']})"
         ),
         f"- **Validados:** {execu['validated']} | **Candidatos:** {execu['candidate']}",
         f"- **Profundidade:** {execu['depth']}",
@@ -604,7 +609,8 @@ def run_report_pdf(run: Run, findings: list[Finding]) -> bytes:
                     f"(formulários: {execu['aplicacao_breakdown']['forms']}, "
                     f"reflexões: {execu['aplicacao_breakdown']['reflections']}, "
                     f"erros verbosos: {execu['aplicacao_breakdown']['verbose_errors']}, "
-                    f"rotas: {execu['aplicacao_breakdown']['routes']})",
+                    f"rotas: {execu['aplicacao_breakdown']['routes']}, "
+                    f"endpoints de API: {execu['aplicacao_breakdown']['api_endpoints']})",
                 ),
                 ("Validados / Candidatos", f"{execu['validated']} / {execu['candidate']}"),
                 ("Profundidade", execu["depth"]),

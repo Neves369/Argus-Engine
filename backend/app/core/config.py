@@ -177,6 +177,21 @@ class Settings(BaseSettings):
     #   SCAN_SESSION_PROFILES=[{"name":"admin","login_url":"https://...","username":"root","password":"..."}]
     scan_session_profiles: list[dict[str, str]] = []
 
+    # Descoberta de OpenAPI/Swagger (M8-P0): após resolver a base do alvo, tenta
+    # baixar a especificação oficial da API nos candidatos abaixo (ordem dada,
+    # primeiro que validar vence). Gera a superfície de API no relatório —
+    # nenhum endpoint é inventado: vem do spec. Fail-closed: spec inválido/
+    # fora do host/robots disallow → nota, sem superfície. Env:
+    # SCAN_OPENAPI_ENABLED (desligado para construções diretas de ScanService;
+    # build_scan_service/produção respeita este setting) /
+    # SCAN_OPENAPI_DISCOVERY_PATHS (json list).
+    scan_openapi_enabled: bool = True
+    scan_openapi_discovery_paths: list[str] = [
+        "openapi.json",
+        "swagger.json",
+        "openapi.yaml",
+    ]
+
     # Execução real do Carro (Etapa 15) — verificação ativa NÃO destrutiva.
     # O Carro re-prova ao vivo os achados candidatos (sondas GET dentro dos
     # controles do scanning ativo) e pode invocar tools NÃO destrutivas do

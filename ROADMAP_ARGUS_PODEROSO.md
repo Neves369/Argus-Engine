@@ -238,6 +238,19 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 
 **Meta:** não ficar preso só a HTML de form.
 
+**Checklist M8-P0 (ingestão de OpenAPI/Swagger): entregue.**
+- `ScanService._discover_openapi`: candidatos `openapi.json`/`swagger.json`/
+  `openapi.yaml` (1 GET por candidato, primeiro que validar vence), com o client
+  da sessão do crawl; robots por path; fail-closed (spec inválida/sem paths/
+  host divergente → nota, sem superfície); teto de bytes/rate-limit/timeout do
+  client; ctrl `SCAN_OPENAPI_ENABLED` (ligado via `build_scan_service`).
+- `ScanReport.api_spec` (`url`/`sha256`/`session`) + `api_endpoints`
+  (`method`/`path`/`params`/`session`); `to_dict` cobre ambos.
+- Finding agregado "endpoints de API mapeados (OpenAPI)" em `Aplicação /
+  superfície de API`, `candidate`, com `extras.endpoints[]` prontos para servir
+  de leads aos probes JSON do M8-P1; breakdown/sumário `api_endpoints`.
+- Suíte `tests/test_openapi_m8.py` (7).
+
 **Entregas**
 - Ingestão de OpenAPI/Swagger quando disponível.
 - Mapeamento de endpoints, métodos e parâmetros.

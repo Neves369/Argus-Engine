@@ -117,6 +117,7 @@ def test_report_json_has_executive_summary():
         "reflections": 2,
         "verbose_errors": 1,
         "routes": 4,
+        "api_endpoints": 0,
     }
     assert summary["validated"] == 0
     assert summary["candidate"] == 6
