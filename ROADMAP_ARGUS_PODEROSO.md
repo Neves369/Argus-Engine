@@ -11,6 +11,7 @@
 - **M6 P0 entregue (set/2026):** proactive probes de comportamento sob política no run (ver seção M6).
 - **M6 P1 entregue (set/2026):** injeção (replay controlado) + upload (observação de form), com allowlist de classes por run.
 - **M6 P2 entregue (set/2026):** CSRF (POST de estado sem token) + redirect aberto reproduzível (inclui observação de redirect 3xx no scan).
+- **M6 P3 entregue (set/2026):** authn fraca — login com resposta diferencial (enumeração de usuário) com controles sentinela, sem brute force.
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -47,7 +48,7 @@ O Argus poderoso entrega, em um run autorizado:
 [Curto]        M3  depth=quick|deep
 [Médio]        M4  Justiça, FP, relatório maduro
 [Médio]        M5  Diabo controlado (HITL)
-[Poder]        M6  Probes de comportamento por classe (controlados) — P0+P1+P2 pronto, P3+ pendente
+[Poder]        M6  Probes de comportamento por classe (controlados) — P0..P3 pronto
 [Poder]        M7  Sessão, papéis e fluxos multi-step
 [Poder]        M8  APIs e superfícies modernas
 [Escala]       M9  Qualidade, baseline, multi-alvo, CI
@@ -95,8 +96,8 @@ O Argus poderoso entrega, em um run autorizado:
 | Depth | Comportamento |
 |-------|----------------|
 | `quick` | Sources + scan config/superfície + sample mínimo de app |
-| `deep` | Auth + crawl amplo + forms/rotas + re-probe Carro + probes M6 (P0 default; P1/P2 via allowlist `probe_classes`) |
-| `deep+` (futuro, após P3) | Inclui classes P3 dentro da política |
+| `deep` | Auth + crawl amplo + forms/rotas + re-probe Carro + probes M6 (P0 default; P1/P2/P3 via allowlist `probe_classes`) |
+| `deep+` (futuro, após M7) | Inclui classes de sessão/authz dentro da política |
 
 **Aceite**
 - Default seguro = `quick`.
@@ -139,7 +140,7 @@ O Argus poderoso entrega, em um run autorizado:
 
 **Meta:** passar de “há um form em /sqli” para “há comportamento anômalo **reproduzível** sob política”, ainda sem virar exploit kit.
 
-**Status (set/2026):** **M6 P0 + P1 + P2 entregues** — reflexão e erro verboso (P0), injeção por replay controlado + upload por observação de form (P1) e CSRF (POST de estado sem token) + redirect aberto reproduzível (P2) sob política versada (`backend/policies/probes/reflection_p0.yaml`, `verbose_error_p0.yaml`, `injection_p1.yaml`, `upload_p1.yaml`, `csrf_p2.yaml`, `redirect_p2.yaml`), sem payload, com os guardrails da 6.3, allowlist de classes por run (`probe_classes`) e gate por profundidade (probes só em `deep`). O P2 de redirect conta com observação de redirect 3xx no scan (a URL original fica em `requested_url` no mapa de rotas, para o probe re-consultar a rota de origem). Findings na seção **Comportamento** do relatório e auditoria “qual regra gerou este finding?”. P3 da tabela 6.2 segue pendente.
+**Status (set/2026):** **M6 P0 + P1 + P2 + P3 entregues** — reflexão e erro verboso (P0), injeção por replay controlado + upload por observação de form (P1), CSRF (POST de estado sem token) + redirect aberto reproduzível (P2) e authn fraca com resposta diferencial (P3) sob política versada (`backend/policies/probes/reflection_p0.yaml`, `verbose_error_p0.yaml`, `injection_p1.yaml`, `upload_p1.yaml`, `csrf_p2.yaml`, `redirect_p2.yaml`, `authn_p3.yaml`), sem payload de ataque, com os guardrails da 6.3, allowlist de classes por run (`probe_classes`) e gate por profundidade (probes só em `deep`). O P2 de redirect conta com observação de redirect 3xx no scan (a URL original fica em `requested_url` no mapa de rotas, para o probe re-consultar a rota de origem). O P3 de authn é o primeiro sinal ativo: um diferencial mínimo de login (2 envios com a MESMA senha sentinela e usuários controlados — nunca credenciais reais, nunca brute force) para detectar enumeração de usuário. Findings na seção **Comportamento** do relatório e auditoria “qual regra gerou este finding?”. M7–M10 seguem no escopo.
 
 ### 6.1 Ideia central
 
@@ -284,7 +285,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Profundidade explícita (M3)
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
-- [x] Comportamento sob política (M6) — **P0+P1+P2 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto); P3 pendente ← **principal salto de poder**
+- [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
 - [ ] Contexto de sessão/papéis (M7)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
@@ -303,8 +304,7 @@ Com M9–M10, vira **produto operável em time**.
 | Agora | M1b + M2 | Relatório limpo + leads revalidados |
 | +1 ciclo | M3 + M4 | Depth e confiança profissionais |
 | +1 ciclo | M5 | Stress opt-in |
-| Feito | M6 P0 + P1 + P2 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto |
-| +2 ciclos | M6 (P3) | authn fraca |
+| Feito | M6 P0+ → P3 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial |
 | +2 ciclos | M7 | Authz/sessão |
 | Depois | M8–M10 | API, escala, produto |
 
@@ -347,7 +347,7 @@ Com M9–M10, vira **produto operável em time**.
 
 1. Fechar **M1b + M2** (já especificados).  
 2. Implementar **M3 + M4** para profissionalizar depth e validação.  
-3. ~~Abrir design formal da **M6 P0/P1/P2**~~ — **P0+P1 entregues** (reflexão, erro verboso, injeção replay controlado, upload por observação) e **P2 entregue** (CSRF de estado sem token + redirect aberto reproduzível com observação de redirect 3xx no scan). Próximo: design formal da **M6 P3** (authn fraca), ainda dentro dos guardrails da 6.3.  
-4. Só então expandir P3 e M7–M8.
+3. ~~Abrir design formal da **M6 P0→P3**~~ — **P0+P1 entregues** (reflexão, erro verboso, injeção replay controlado, upload por observação), **P2 entregue** (CSRF de estado sem token + redirect aberto reproduzível com observação de redirect 3xx no scan) e **P3 entregue** (authn fraca: login com resposta diferencial e controles sentinela, sem brute force), sempre dentro dos guardrails da 6.3. Próximo: design formal da **M7** (sessão/papéis).  
+4. Só então expandir M7–M8.
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.

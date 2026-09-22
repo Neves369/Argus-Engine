@@ -32,6 +32,7 @@ def _run(coro):
 def _stub_client(
     pages: dict[str, TargetPage],
     robots_body: str | None = None,
+    post_fn=None,
 ) -> object:
     class _StubClient:
         user_agent = "ArgusTest"
@@ -39,7 +40,9 @@ def _stub_client(
         def __init__(self) -> None:
             self.pages = pages
             self.robots_body = robots_body or "User-agent: *\nAllow: /"
+            self.post_fn = post_fn
             self.calls: list[str] = []
+            self.post_calls: list[tuple[str, dict]] = []
 
         async def get_page(self, url: str):
             self.calls.append(url)
@@ -47,6 +50,12 @@ def _stub_client(
             if page is None:
                 raise ScanError(f"no stub for {url}")
             return page
+
+        async def post_page(self, url: str, data: dict[str, str]):
+            self.post_calls.append((url, data))
+            if self.post_fn is None:
+                raise ScanError(f"no post stub for {url}")
+            return self.post_fn(url, data)
 
         async def fetch_no_rate_limit(self, url: str):
             self.calls.append(url)
@@ -83,6 +92,7 @@ def _error_findings(*, live_body: str) -> tuple[ScanReport, list[dict]]:
 def test_catalog_loads_all_probe_policies():
     catalog = load_catalog()
     assert sorted(catalog) == [
+        "authn_p3",
         "csrf_p2",
         "injection_p1",
         "redirect_p2",
@@ -102,6 +112,7 @@ def test_catalog_loads_all_probe_policies():
         "csrf_p2",
         "redirect_p2",
     }
+    assert {p.id for p in catalog.values() if p.priority == "P3"} == {"authn_p3"}
     assert all(p.default_enabled for p in catalog.values())
 
 
@@ -870,6 +881,187 @@ def test_resolve_classes_p2_default_includes_everything():
     engine = ProbeEngine(respect_robots=False, default_classes="p2")
     resolved = engine.resolve_classes(None)
     assert {"csrf_p2", "redirect_p2"} <= set(resolved)
+    assert {"injection_p1", "upload_p1"} <= set(resolved)
+    assert {"reflection_p0", "verbose_error_p0"} <= set(resolved)
+
+
+LOGIN_URL = "http://example.com/login.php"
+
+_LOGIN_FORM = (
+    '<form method="POST" action="/login.php">'
+    '<input type="text" name="user">'
+    '<input type="password" name="pass">'
+    "</form>"
+)
+
+
+def _authn_finding() -> dict:
+    return _input_routes_finding(
+        {
+            "url": LOGIN_URL,
+            "method": "POST",
+            "action": "login.php",
+            "fields": ["user", "pass"],
+        }
+    )
+
+
+def test_authn_positive_when_login_responses_differ():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+
+    def post_fn(url: str, data: dict[str, str]) -> TargetPage:
+        if data.get("user") == "admin":
+            body = "<html><body>Senha incorreta para admin</body></html>"
+        else:
+            body = "<html><body>Usuário não localizado</body></html>"
+        return TargetPage(url=url, status_code=200, headers={}, body=body)
+
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, _LOGIN_FORM)}, post_fn=post_fn)
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["authn_p3"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert behavior[0]["category"] == "Comportamento / Login com resposta diferencial (enumeração)"
+    assert behavior[0]["severity"] == "medium"
+    assert records[0]["rule_id"] == "authn_p3"
+    assert records[0]["positive"] is True
+    assert "divergiu" in records[0]["detail"]
+    assert len(stub.post_calls) == 2
+
+
+def test_authn_negative_when_login_responses_identical():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+
+    def post_fn(url: str, data: dict[str, str]) -> TargetPage:
+        return TargetPage(
+            url=url,
+            status_code=200,
+            headers={},
+            body="<html><body>invalid credentials</body></html>",
+        )
+
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, _LOGIN_FORM)}, post_fn=post_fn)
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["authn_p3"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+    assert "corpo idêntico" in records[0]["detail"]
+
+
+def test_authn_fp_when_one_response_is_generic_404():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+
+    def post_fn(url: str, data: dict[str, str]) -> TargetPage:
+        if data.get("user") == "admin":
+            return TargetPage(url=url, status_code=404, headers={}, body="404 not found")
+        return TargetPage(
+            url=url,
+            status_code=200,
+            headers={},
+            body="<html><body>Usuário não localizado</body></html>",
+        )
+
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, _LOGIN_FORM)}, post_fn=post_fn)
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["authn_p3"],
+        )
+    )
+
+    # Respostas divergem, mas o negativo 404 tem precedência (FP).
+    assert behavior == []
+    assert records[0]["positive"] is False
+    assert records[0]["fp_matched"] is True
+
+
+def test_authn_negative_when_fresh_page_has_no_login_form():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, "<html><body>no form</body></html>")})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["authn_p3"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+    assert "sem form de login" in records[0]["detail"]
+    assert stub.post_calls == []
+
+
+def test_authn_skipped_when_login_action_out_of_host():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+    cross_host = '<form method="POST" action="http://other.test/login.php">' \
+        '<input type="text" name="user"><input type="password" name="pass"></form>'
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, cross_host)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["authn_p3"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["skipped"] is True
+    assert "fora do host" in records[0]["skip_reason"]
+    assert stub.post_calls == []
+
+
+def test_p3_only_runs_with_allowlist():
+    report = ScanReport(target=TARGET, pages=[_page(LOGIN_URL, _LOGIN_FORM)])
+    findings = [_authn_finding()]
+    stub = _stub_client({LOGIN_URL: _page(LOGIN_URL, _LOGIN_FORM)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(report=report, findings=findings, target={"name": TARGET})
+    )
+
+    # Default seguro: P0 apenas — authn (P3) fica de fora mesmo com lead ativo.
+    assert behavior == []
+    assert all(r["rule_id"] != "authn_p3" for r in records)
+
+
+def test_resolve_classes_p3_default_includes_everything():
+    engine = ProbeEngine(respect_robots=False, default_classes="p3")
+    resolved = engine.resolve_classes(None)
+    assert {"authn_p3", "csrf_p2", "redirect_p2"} <= set(resolved)
     assert {"injection_p1", "upload_p1"} <= set(resolved)
     assert {"reflection_p0", "verbose_error_p0"} <= set(resolved)
 

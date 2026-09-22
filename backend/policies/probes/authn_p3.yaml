@@ -1,0 +1,57 @@
+# Política de probe P3 — Authn: login com resposta diferencial (Etapa M6).
+#
+# Pré-condição: o crawl observou um form de login (POST com campo de senha)
+# apontando para a própria aplicação. O probe re-visita a página do form (um
+# GET) e executa um diferencial MÍNIMO de login — NUNCA brute force:
+# duas tentativas com a MESMA senha sentinela (controle fixo, não é uma
+# credencial real) e usuários distintos (controles "admin" e um usuário
+# inexistente conhecido do motor). Nada é gravado, nada é destruído: apenas
+# dois envios falhos de login dentro do escopo.
+#
+# Sinal positivo: as duas respostas frescas DIFEREM (status ou corpo) →
+# a aplicação discrimina a existência de conta (enumeração de usuário).
+# Sinal negativo (precedência): resposta parece página 404/página genérica,
+# ou as respostas são idênticas (o diferencial não casa).
+#
+# P3 → fora do default (probe_classes_default=p0); execute com a allowlist
+# explícita (probe_classes=["authn_p3"] ou PROBE_CLASSES_DEFAULT=p3).
+id: authn_p3
+version: "1.0.0"
+name: Login com resposta diferencial (enumeração de usuário)
+priority: "P3"
+class_label: "Login com resposta diferencial (enumeração)"
+description: >
+  Ao enviar duas tentativas de login com a mesma senha sentinela e usuários
+  controlados, o endpoint de autenticação responde de forma diferente —
+  revelando, na camada de resposta, se a conta existe. Sinal observacional de
+  enumeração de usuário (sem brute force: apenas 2 envios falhos de login com
+  controles sentinela, nunca credenciais reais).
+precondition:
+  lead: authn
+allowed_probe:
+  tool: http_request
+  method: POST
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: login_differential
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: medium
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} login(s) com resposta diferencial (possível enumeração)"
+  remediation: >
+    Uniformize as respostas de autenticação (mesma mensagem/status para usuário
+    e senha inválidos), implemente timeout em lista de falhas e emita eventos
+    de auditoria de tentativas; idealmente com MFA e captcha.
+  references:
+    - https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/03-Identity_Management_Testing/04-Testing_for_Account_Enumeration_and_Guessable_User_Account
+    - https://owasp.org/www-project-automated-threats-to-web-applications/
+  confidence: 0.5

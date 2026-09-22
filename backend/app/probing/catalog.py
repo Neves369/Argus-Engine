@@ -11,7 +11,7 @@ from app.probing.schemas import ProbePolicy
 PROBES_PATH = Path(__file__).resolve().parents[2] / "policies" / "probes"
 CATALOG_VERSION = "1.0.0"
 
-_PRIORITY_ORDER = {"p0": 0, "p1": 1, "p2": 2}
+_PRIORITY_ORDER = {"p0": 0, "p1": 1, "p2": 2, "p3": 3}
 
 
 @lru_cache
@@ -45,10 +45,12 @@ def default_probe_classes(limit: str = "p0") -> list[str]:
     """Classes liberadas pelo allowlist de prioridade do operador.
 
     ``p0`` (default seguro) → só políticas P0 com ``default_enabled``;
-    ``p1`` → P0+P1; ``p2``/``all`` → P0+P1+P2. P3 (authn) fica em M7.
+    ``p1`` → P0+P1; ``p2`` → P0+P1+P2; ``p3``/``all`` → todas as classes.
     """
     key = (limit or "p0").strip().lower()
-    if key in ("all", "p2"):
+    if key in ("all", "p3"):
+        allow = 3
+    elif key == "p2":
         allow = 2
     elif key == "p1":
         allow = 1

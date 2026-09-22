@@ -3,14 +3,16 @@
 Diferente do re-probe do Carro (M2, que só reconfirma o lead que o crawl já
 observou), aqui o Argus aplica **políticas versionadas** (`policies/probes/*.yaml`)
 para transformar um lead observacional em um sinal de comportamento
-*reproduzível* — sempre com ações mínimas, somente leitura, no escopo, com
+*reproduzível* — sempre com ações mínimas, no escopo, com
 rate-limit/robots/teto de probes, e evidência estruturada por regra.
 
 Princípios de projeto (ver ROADMAP_ARGUS_PODEROSO.md, M6):
 
 - o LLM **não** inventa probe: ele não participa — só o catálogo aprovado roda;
 - nenhuma política envia payload/exploit; os valores usados são apenas os que o
-  crawl já observou (ou nenhum, em observação pura de forms/redirect);
+  crawl já observou (ou nenhum, em observação pura de forms/redirect); authn
+  (P3) envia um diferencial mínimo de login com controles sentinela — nunca
+  credenciais reais, nunca brute force;
 - toda ação passa por kill-switch + ``ALLOWED_SCOPES`` + robots + rate-limit do
   ``ScanHTTPClient`` compartilhado do run;
 - cada probe gera um registro auditável (request/response resumidos + regra).
@@ -30,6 +32,7 @@ from app.probing.catalog import catalog_digest, load_catalog
 from app.probing.schemas import ProbePolicy, SignalRule
 from app.scanning.client import ScanError, ScanHTTPClient
 from app.scanning.detectors import _VERBOSE_ERROR_MARKERS
+from app.scanning.login import login_payload, select_login_form
 from app.scanning.parsers import parse_html
 from app.scanning.robots import RobotsRules
 from app.scanning.service import ScanReport
@@ -39,10 +42,16 @@ logger = logging.getLogger(__name__)
 
 BEHAVIOR_CATEGORY_PREFIX = "Comportamento / "
 
-_PRIORITY_ORDER = {"p0": 0, "p1": 1, "p2": 2}
+_PRIORITY_ORDER = {"p0": 0, "p1": 1, "p2": 2, "p3": 3}
 _TOKEN_NAME_HINTS = ("csrf", "token", "_token", "authenticity", "anticsrf")
 _BROAD_ACCEPT = ("", "*/*", "image/*", "*")
 _EDITABLE_TYPES = ("text", "email", "search", "url", "number", "tel")
+_PASSWORD_HINTS = ("pass", "senha", "pwd", "secret", "chave")
+#: Controles sentinela do diferencial P3 (authn): nunca credenciais reais, e
+#: nunca um brute force — dois envios com a MESMA senha sentinela e usuários
+#: distintos revelam se a aplicação discrimina a existência de conta.
+_AUTHN_SENTINEL_PASSWORD = "argus-control-password"
+_AUTHN_DIFFERENTIAL_USERS = ("admin", "argus_nonexistent_user")
 
 
 def _utcnow() -> str:
@@ -63,6 +72,7 @@ class _Lead:
     value: str | None = None
     method: str = "GET"
     fields: list[str] = field(default_factory=list)
+    differential: bool | None = None
 
 
 class ProbeEngine:
@@ -218,6 +228,28 @@ class ProbeEngine:
                     else:
                         detail = "rota observada no crawl"
                     _add(_Lead(url=url, detail=detail))
+        elif lead_kind == "authn":
+            for finding in self._findings_matching(policy, findings, "vetores de entrada"):
+                for route in (finding.get("extras") or {}).get("routes") or []:
+                    if str(route.get("method") or "GET").upper() != "POST":
+                        continue
+                    fields = [str(f) for f in route.get("fields") or []]
+                    if not any(
+                        any(hint in (f or "").lower() for hint in _PASSWORD_HINTS)
+                        for f in fields
+                    ):
+                        continue
+                    url = str(route.get("url") or route.get("probe_url") or "").strip()
+                    if not url:
+                        continue
+                    _add(
+                        _Lead(
+                            url=url,
+                            detail="form de login (campo de senha) observado",
+                            method="POST",
+                            fields=fields,
+                        )
+                    )
         elif lead_kind in ("injection", "upload", "csrf"):
             reflection_leads = self._reflection_params(findings)
             for finding in self._findings_matching(policy, findings, "vetores de entrada"):
@@ -297,6 +329,12 @@ class ProbeEngine:
         blocked = await self._robots_blocked(host, lead.url)
         if blocked is not None:
             return self._record(policy, lead, skipped=True, skip_reason=blocked)
+        needs_differential = any(
+            rule.kind == "login_differential"
+            for rule in [*policy.positive_signal, *policy.negative_signal]
+        )
+        if needs_differential:
+            return await self._probe_post(policy, lead)
         try:
             page = await self._client.get_page(lead.url)
         except ScanError as exc:  # noqa: BLE001 - transcrito como skip auditável
@@ -312,6 +350,78 @@ class ProbeEngine:
             status_code=page.status_code,
             detail=detail,
             final_url=page.url,
+        )
+
+    async def _probe_post(self, policy: ProbePolicy, lead: _Lead) -> dict[str, Any]:
+        """Diferencial P3 (authn): dois envios de login, mesma senha sentinela.
+
+        Re-visita a página do form (uma vez), encontra o form de login fresca e
+        envia duas tentativas que diferem apenas no usuário (controles sentinela
+        — nunca credenciais reais). Respostas diferentes (status ou corpo)
+        indicam que a aplicação discrimina a existência de conta.
+        """
+        try:
+            page = await self._client.get_page(lead.url)
+        except ScanError as exc:  # noqa: BLE001
+            return self._record(policy, lead, skipped=True, skip_reason=f"unreachable: {exc}")
+
+        form = select_login_form(parse_html(page.url, page.body)["forms"])
+        if form is None:
+            return self._record(
+                policy,
+                lead,
+                positive=False,
+                fp=False,
+                status_code=page.status_code,
+                detail="sinal não confirmado; página fresca sem form de login (campo de senha)",
+                final_url=page.url,
+            )
+
+        action = urljoin(page.url, form.action or page.url)
+        if _host(action) != _host(lead.url):
+            return self._record(
+                policy,
+                lead,
+                skipped=True,
+                skip_reason=f"action do form fora do host ({_host(action)})",
+            )
+
+        try:
+            first = await self._client.post_page(
+                action, login_payload(form, _AUTHN_DIFFERENTIAL_USERS[0], _AUTHN_SENTINEL_PASSWORD)
+            )
+            second = await self._client.post_page(
+                action, login_payload(form, _AUTHN_DIFFERENTIAL_USERS[1], _AUTHN_SENTINEL_PASSWORD)
+            )
+        except ScanError as exc:  # noqa: BLE001
+            return self._record(policy, lead, skipped=True, skip_reason=f"unreachable: {exc}")
+
+        diverged = (
+            first.status_code,
+            first.body.strip().lower(),
+        ) != (
+            second.status_code,
+            second.body.strip().lower(),
+        )
+        lead.differential = diverged
+        positive, fp, _ = self._evaluate(policy, first, lead)
+        detail = (
+            "sinal reproduzido (login_differential)" if positive else "sinal não confirmado"
+        )
+        detail += (
+            f"; status {first.status_code} vs {second.status_code}; "
+            f"corpo {'divergiu' if diverged else 'idêntico'}"
+        )
+        if page.url != first.url:
+            detail += f"; redirecionou para rede: {_host(first.url)}"
+        return self._record(
+            policy,
+            lead,
+            positive=positive,
+            fp=fp,
+            status_code=first.status_code,
+            detail=detail[:300],
+            final_url=first.url,
         )
 
     def _evaluate(
@@ -365,6 +475,9 @@ class ProbeEngine:
             return _has_postonly_form_without_token(page)
         if kind == "file_input_without_accept":
             return _has_file_input_without_accept(page)
+        if kind == "login_differential":
+            # O diferencial é computado em _probe_post e carregado no lead.
+            return lead.differential is True
         return False
 
     def _record(
