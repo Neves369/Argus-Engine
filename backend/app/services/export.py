@@ -213,6 +213,15 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
         "depth": first_scan.get("depth") or "quick",
         "auth": first_scan.get("auth_status") or "skipped",
     }
+    if first_scan.get("sessions"):
+        summary["sessions"] = [
+            {
+                "name": s.get("name"),
+                "auth_status": s.get("auth_status"),
+                "page_count": s.get("page_count") or 0,
+            }
+            for s in first_scan["sessions"]
+        ]
     if first_scan.get("auth_cookies"):
         summary["auth_cookie_names"] = list(first_scan["auth_cookies"])
     if first_scan.get("auth"):

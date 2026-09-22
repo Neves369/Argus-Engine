@@ -90,7 +90,7 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
     if route_map is not None:
         aggregates.append(route_map)
 
-    return [*findings, *aggregates]
+    return [*findings, *aggregates, *_session_access_findings(report)]
 
 
 def _aggregate_forms(routes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -225,6 +225,7 @@ def _route_map_finding(report: ScanReport) -> dict[str, Any] | None:
                     "static": False,
                     "probe_url": page.url,
                     "requested_url": page.requested_url or page.url,
+                    "session": page.session,
                 }
                 for page, title in app_pages
             ],
@@ -270,3 +271,102 @@ def _reflections_host(reflections: list[dict[str, Any]]) -> str:
         if host:
             return host
     return "unknown"
+
+
+def _anon_reaches(probe: dict[str, Any], base: str) -> bool:
+    """Did the anonymous baseline really see the base URL itself?
+
+    A 2xx final response is not enough: if the anonymous request was pulled
+    away from the base (redirect to the login page, for example), the base
+    content was NOT observed anonymously even when the final status was 200.
+    """
+    status = probe.get("status_code")
+    if status is None or not (200 <= status < 300):
+        return False
+    final = probe.get("final_url") or ""
+    if not final:
+        return False
+    base_parts = urlparse(base)
+    final_parts = urlparse(final)
+    if final_parts.netloc != base_parts.netloc:
+        return False
+    base_path = base_parts.path.rstrip("/") or "/"
+    final_path = final_parts.path.rstrip("/") or "/"
+    return base_path == final_path
+
+
+def _session_access_findings(report: ScanReport) -> list[dict[str, Any]]:
+    """Access-difference observation: content visible only when authenticated.
+
+    M7-P0 (login único): after a successful dynamic login the crawl runs in the
+    ``user`` session and the base URL(s) are re-observed anonymously. When that
+    anonymous baseline *does not* reach the same URL that the authenticated
+    crawl did (non-2xx or redirected away), the report honestly states the
+    content is reachable only under the session — without any enumeration.
+    """
+    user_sessions = [
+        s
+        for s in report.sessions
+        if s.get("name") == "user" and s.get("auth_status") == "success"
+    ]
+    if not user_sessions or not report.anon_probe:
+        return []
+    authed = [p for p in report.pages if p.session == "user"]
+    diffs: list[dict[str, Any]] = []
+    for probe in report.anon_probe:
+        base = probe.get("url")
+        if _anon_reaches(probe, base):
+            continue
+        authed_page = next(
+            (
+                p
+                for p in authed
+                if p.url == base or (p.requested_url or "") == base
+            ),
+            None,
+        )
+        if authed_page is None or not (200 <= authed_page.status_code < 300):
+            continue
+        diffs.append(
+            {
+                "url": base,
+                "anon_status": probe.get("status_code"),
+                "anon_final_url": probe.get("final_url"),
+                "auth_status": authed_page.status_code,
+            }
+        )
+    if not diffs:
+        return []
+
+    lines = [
+        f"- GET {d['url']} -> {d['auth_status']} (sessão user); anônimo -> "
+        f"{d['anon_status']} {d['anon_final_url']}"
+        for d in diffs
+    ]
+    return [
+        _finding(
+            title="Conteúdo visível apenas em sessão autenticada (controle de acesso)",
+            description=(
+                "O crawl descobriu conteúdo (sob login dinâmico) que uma "
+                "requisição anônima ao mesmo endereço não alcançou. Sinal "
+                "observacional de controle de acesso por sessão — o relatório "
+                "apenas constata a diferença; nenhum bypass é testado. O "
+                "resultado é um lead para revisão manual."
+            ),
+            severity="info",
+            category="Aplicação / controle de acesso",
+            affected=report.target,
+            evidence="\n".join(lines)[:2000],
+            remediation=(
+                "Revise manualmente se a proteção de autenticação destas "
+                "rotas é intencional e se o conteúdo deve mesmo ser restrito "
+                "à sessão autenticada."
+            ),
+            confidence=0.4,
+            extras={
+                "sessions": list(report.sessions),
+                "asymmetric": diffs,
+                "asymmetric_count": len(diffs),
+            },
+        )
+    ]

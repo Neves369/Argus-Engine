@@ -12,6 +12,7 @@
 - **M6 P1 entregue (set/2026):** injeção (replay controlado) + upload (observação de form), com allowlist de classes por run.
 - **M6 P2 entregue (set/2026):** CSRF (POST de estado sem token) + redirect aberto reproduzível (inclui observação de redirect 3xx no scan).
 - **M6 P3 entregue (set/2026):** authn fraca — login com resposta diferencial (enumeração de usuário) com controles sentinela, sem brute force.
+- **M7 P0 entregue (set/2026):** sessão única com consciência de sessão — pages etiquetadas ("user"/"anon"), metadados de sessão no relatório e constatação de "visível apenas em sessão autenticada" via baseline anônimo (ver seção M7).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -198,6 +199,16 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - Relatório indica “visível só em sessão X”.
 - Sem credenciais configuradas, M7 degrada com graça para anônimo.
 
+### M7-P0 (entregue)
+- **Sessão única com consciência de sessão** (fatia rasa): o relatório passa a saber *em qual canal* cada página foi observada.
+- `TargetPage.session` etiqueta cada página (`user` quando o login dinâmico foi aplicado, `anon` caso contrário).
+- `ScanReport.sessions` carrega metadados da sessão observada (nome, `auth_status`, cookies, contagem); `auth_status`/`auth_cookies` legados continuam.
+- **Baseline anônimo**: após login bem-sucedido, UM GET anônimo por URL base (client novo, jar vazio) re-observa a home sem a sessão — custo mínimo, sem segundo crawl.
+- **Finding** "Conteúdo visível apenas em sessão autenticada (controle de acesso)" (categoria `Aplicação / controle de acesso`, `candidate`, `confidence=0.4`): dispara só quando a URL base é alcançada pela sessão `user` mas o baseline anônimo não a alcança (status não-2xx ou redirect para fora da base, ex. → `/login`). Nada é enumerado.
+- **Degradação graciosa**: sem credenciais → crawl anônimo (sessão `anon`), nenhum request extra; login falho degrada para anônimo com `auth_status` no relatório.
+- Route map etiqueta cada rota com a sessão (`extras.routes[].session`); export summary inclui `sessions`.
+- **Próximas fatias**: M7-P1 = múltiplos perfis (múltiplas sessões) + probes por papel; M7-P2 = jornadas multi-step.
+
 ---
 
 ## Fase M8 — APIs e superfícies modernas
@@ -286,7 +297,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
-- [ ] Contexto de sessão/papéis (M7)
+- [ ] Contexto de sessão/papéis (M7) — **P0 entregue** (sessão única + "visível só autenticado"; P1 = múltiplos perfis + probes por papel, P2 = jornadas)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
 - [ ] Pacotes e UX de política (M10)
@@ -305,7 +316,7 @@ Com M9–M10, vira **produto operável em time**.
 | +1 ciclo | M3 + M4 | Depth e confiança profissionais |
 | +1 ciclo | M5 | Stress opt-in |
 | Feito | M6 P0+ → P3 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial |
-| +2 ciclos | M7 | Authz/sessão |
+| +2 ciclos | M7 | Authz/sessão (P0: sessão única + "visível só autenticado" — entregue) |
 | Depois | M8–M10 | API, escala, produto |
 
 ---

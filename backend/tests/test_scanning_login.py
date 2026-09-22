@@ -9,6 +9,7 @@ import respx
 
 from app.scanning.client import ScanHTTPClient
 from app.scanning.service import ScanService
+from app.services.scan_findings import derive_findings_from_scan
 
 
 def _run(coro):
@@ -162,6 +163,95 @@ def test_credentials_never_logged(caplog):
 
     assert "hunter2" not in caplog.text
     assert "operator" not in caplog.text
+
+
+@respx.mock
+def test_login_labels_pages_as_user_session_and_records_metadata():
+    respx.get("http://example.com/login").mock(return_value=httpx.Response(200, text=_LOGIN_HTML))
+    respx.post("http://example.com/authenticate").mock(
+        return_value=httpx.Response(200, headers={"Set-Cookie": "session=abc123; Path=/"})
+    )
+    respx.get("http://example.com/").mock(return_value=httpx.Response(200, text=_ROOT_HTML))
+
+    report = _run(_service().scan({"name": "example.com", "url": "http://example.com/"}))
+
+    assert all(page.session == "user" for page in report.pages)
+    assert report.sessions == [
+        {
+            "name": "user",
+            "auth_status": "success",
+            "auth": "login dinâmico aplicado",
+            "auth_cookies": ["session"],
+            "page_count": 1,
+        }
+    ]
+    assert report.anon_probe == [
+        {"url": "http://example.com/", "status_code": 200, "final_url": "http://example.com/"}
+    ]
+    titles = [f["title"] for f in derive_findings_from_scan(report)]
+    assert not any("apenas em sessão autenticada" in t for t in titles)
+
+
+@respx.mock
+def test_without_login_pages_are_anonymous_session():
+    respx.get("http://example.com/").mock(return_value=httpx.Response(200, text=_ROOT_HTML))
+
+    report = _run(
+        _service(login_url="", login_username="", login_password="").scan(
+            {"name": "example.com", "url": "http://example.com/"}
+        )
+    )
+
+    assert all(page.session == "anon" for page in report.pages)
+    assert report.sessions[0]["name"] == "anon"
+    assert report.sessions[0]["auth_status"] == "skipped"
+    assert report.sessions[0]["page_count"] == 1
+    assert report.anon_probe == []
+
+
+@respx.mock
+def test_failed_login_degrades_to_anonymous_without_baseline():
+    respx.get("http://example.com/login").mock(return_value=httpx.Response(200, text=_LOGIN_HTML))
+    respx.post("http://example.com/authenticate").mock(return_value=httpx.Response(503))
+    respx.get("http://example.com/").mock(return_value=httpx.Response(200, text=_ROOT_HTML))
+
+    report = _run(_service().scan({"name": "example.com", "url": "http://example.com/"}))
+
+    assert all(page.session == "anon" for page in report.pages)
+    assert report.sessions[0]["name"] == "anon"
+    assert report.sessions[0]["auth_status"] == "failed"
+    assert report.anon_probe == []
+
+
+def _anon_vs_authed(request):
+    if "session=abc123" in (request.headers.get("Cookie") or ""):
+        return httpx.Response(200, text=_ROOT_HTML)
+    return httpx.Response(302, headers={"Location": "/login"})
+
+
+@respx.mock
+def test_access_difference_finding_when_anonymous_baseline_is_blocked():
+    respx.get("http://example.com/login").mock(return_value=httpx.Response(200, text=_LOGIN_HTML))
+    respx.post("http://example.com/authenticate").mock(
+        return_value=httpx.Response(200, headers={"Set-Cookie": "session=abc123; Path=/"})
+    )
+    respx.get("http://example.com/").mock(side_effect=_anon_vs_authed)
+
+    report = _run(_service().scan({"name": "example.com", "url": "http://example.com/"}))
+
+    assert report.anon_probe == [
+        {"url": "http://example.com/", "status_code": 200, "final_url": "http://example.com/login"}
+    ]
+    findings = derive_findings_from_scan(report)
+    access = [f for f in findings if "apenas em sessão autenticada" in f["title"]]
+    assert len(access) == 1
+    assert access[0]["category"] == "Aplicação / controle de acesso"
+    assert access[0]["status"] == "candidate"
+    extras = access[0]["extras"]
+    assert extras["asymmetric"][0]["url"] == "http://example.com/"
+    assert extras["asymmetric"][0]["anon_status"] == 200
+    assert extras["asymmetric"][0]["anon_final_url"] == "http://example.com/login"
+    assert extras["asymmetric"][0]["auth_status"] == 200
 
 
 def responses_by_method(method: str) -> list[respx.models.Response]:

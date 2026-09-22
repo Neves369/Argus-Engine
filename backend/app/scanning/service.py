@@ -33,6 +33,8 @@ class ScanReport:
     auth_status: str | None = None
     auth_cookies: list[str] = field(default_factory=list)
     depth: str | None = None
+    sessions: list[dict[str, Any]] = field(default_factory=list)
+    anon_probe: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +46,8 @@ class ScanReport:
             "auth_status": self.auth_status,
             "auth_cookies": list(self.auth_cookies),
             "depth": self.depth,
+            "sessions": list(self.sessions),
+            "anon_probe": list(self.anon_probe),
             "pages": [p.to_dict() for p in self.pages],
         }
 
@@ -119,14 +123,18 @@ class ScanService:
         )
         await self._authenticate(report)
         override = self._max_pages if max_pages is None else max(1, int(max_pages))
+        session = "user" if report.auth_status == "success" else "anon"
         for base_url in candidates:
-            attempt = await self._crawl(base_url, max_pages=override)
+            attempt = await self._crawl(base_url, max_pages=override, session=session)
             report.pages = attempt.pages
             report.urls_skipped_by_robots += attempt.urls_skipped_by_robots
             if attempt.robots_respected is not None:
                 report.robots_respected = attempt.robots_respected
             if attempt.pages:
                 report.note = attempt.note
+                self._finalize_sessions(report, session)
+                if report.auth_status == "success":
+                    report.anon_probe = await self._anonymous_baseline(candidates)
                 return report
             # No page reachable under this scheme (e.g. https rejected):
             # fall back to the next candidate only when the scheme was derived.
@@ -139,6 +147,7 @@ class ScanService:
                 "Nenhuma página acessível retornou conteúdo dentro dos "
                 "controles de escopo."
             )
+        self._finalize_sessions(report, session)
         return report
 
     def _base_candidates(self, target: dict[str, Any]) -> list[str]:
@@ -202,7 +211,77 @@ class ScanService:
             urlparse(self._login_url).netloc
         )
 
-    async def _crawl(self, base_url: str, *, max_pages: int | None = None) -> ScanReport:
+    def _finalize_sessions(self, report: ScanReport, session: str) -> None:
+        """Label which session(s) observed the crawl (M7: session awareness).
+
+        ``session`` is the channel the crawl actually ran under: ``user`` when
+        the dynamic login succeeded, ``anon`` otherwise (no login configured,
+        skipped, or a failed login that degraded to anonymous). The report
+        carries the session metadata so findings can state, for example, when
+        a route was only reachable once authenticated.
+        """
+        if session == "user":
+            report.sessions = [
+                {
+                    "name": "user",
+                    "auth_status": "success",
+                    "auth": report.auth,
+                    "auth_cookies": list(report.auth_cookies),
+                    "page_count": len(report.pages),
+                }
+            ]
+        else:
+            report.sessions = [
+                {
+                    "name": "anon",
+                    "auth_status": report.auth_status or "skipped",
+                    "auth": report.auth,
+                    "auth_cookies": [],
+                    "page_count": len(report.pages),
+                }
+            ]
+
+    async def _anonymous_baseline(self, candidates: list[str]) -> list[dict[str, Any]]:
+        """Re-observe the base URLs without the session jar (M7-P0).
+
+        A single anonymous GET per candidate on a *fresh* client — the 
+        contrast with the authenticated crawl grounds a ``visível apenas na
+        sessão user`` finding. Runs only after a successful login and only for
+        the base URL(s), so request overhead stays minimal.
+        """
+        client = self._new_client()
+        probe: list[dict[str, Any]] = []
+        for base_url in candidates:
+            try:
+                page = await client.get_page(base_url)
+            except ScanError:
+                continue
+            probe.append(
+                {
+                    "url": base_url,
+                    "status_code": page.status_code,
+                    "final_url": page.url,
+                }
+            )
+        return probe
+
+    def _new_client(self) -> ScanHTTPClient:
+        """A fresh anonymous client with the same settings (empty session jar)."""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        return ScanHTTPClient(
+            rate_limit=settings.scan_rate_limit,
+            timeout=settings.scan_request_timeout,
+            max_body_bytes=settings.scan_max_body_bytes,
+            user_agent=settings.scan_user_agent,
+            extra_headers=settings.scan_extra_headers,
+            cookies=settings.scan_cookies,
+        )
+
+    async def _crawl(
+        self, base_url: str, *, max_pages: int | None = None, session: str = "anon"
+    ) -> ScanReport:
         """BFS crawl of same-host pages bounded by ``max_pages`` (or the
         instance default when omitted — ``deep`` runs may override per call)."""
         limit = max(1, int(max_pages)) if max_pages is not None else self._max_pages
@@ -236,6 +315,7 @@ class ScanService:
             parsed = parse_html(page.url, page.body)
             page.links = parsed["links"]
             page.forms = parsed["forms"]
+            page.session = session
             attempt.pages.append(page)
             queue.extend(page.links)
 

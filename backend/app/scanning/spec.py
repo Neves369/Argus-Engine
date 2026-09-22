@@ -38,6 +38,7 @@ class TargetPage:
     links: list[str] = field(default_factory=list)
     forms: list[HtmlForm] = field(default_factory=list)
     tech: list[str] = field(default_factory=list)
+    session: str = "anon"
 
     @property
     def host(self) -> str:
@@ -73,4 +74,5 @@ class TargetPage:
                 for f in self.forms
             ],
             "tech": list(self.tech),
+            "session": self.session,
         }
