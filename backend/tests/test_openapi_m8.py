@@ -76,9 +76,27 @@ def test_openapi_discovered_and_surface_finding_derived():
     assert len(report.api_spec["sha256"]) == 64
     assert report.api_spec["session"] == "anon"
     assert report.api_endpoints == [
-        {"method": "GET", "path": "/api/users", "params": ["id"], "session": "anon"},
-        {"method": "POST", "path": "/api/users", "params": [], "session": "anon"},
-        {"method": "GET", "path": "/api/health", "params": [], "session": "anon"},
+        {
+            "method": "GET",
+            "path": "/api/users",
+            "params": ["id"],
+            "session": "anon",
+            "url": BASE + "api/users",
+        },
+        {
+            "method": "POST",
+            "path": "/api/users",
+            "params": [],
+            "session": "anon",
+            "url": BASE + "api/users",
+        },
+        {
+            "method": "GET",
+            "path": "/api/health",
+            "params": [],
+            "session": "anon",
+            "url": BASE + "api/health",
+        },
     ]
 
     findings = derive_findings_from_scan(report)
@@ -208,5 +226,11 @@ def test_openapi_direct_discovery_labels_session_for_multi_profile():
 
     assert report.api_spec["session"] == "admin"
     assert report.api_endpoints == [
-        {"method": "GET", "path": "/api/admin", "params": [], "session": "admin"}
+        {
+            "method": "GET",
+            "path": "/api/admin",
+            "params": [],
+            "session": "admin",
+            "url": BASE + "api/admin",
+        }
     ]

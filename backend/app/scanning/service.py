@@ -337,6 +337,7 @@ class ScanService:
                     "path": path,
                     "params": params,
                     "session": session,
+                    "url": urljoin(base_url, path),
                 }
                 for path, methods in spec.items()
                 if urlparse(urljoin(base_url, path)).netloc == host

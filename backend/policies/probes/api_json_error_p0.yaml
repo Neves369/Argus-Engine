@@ -1,0 +1,58 @@
+# Política de probe P0 — Erro verboso em resposta JSON (Etapa M8-P1).
+#
+# Pré-condição: o scan observou a superfície oficial de API (spec OpenAPI,
+# M8-P0). Cada endpoint mapeado é re-visitado via GET (sem valor inventado — a
+# spec só declara nomes de parâmetros) e a resposta fresca é avaliada de forma
+# JSON-adaptada: status de falha de aplicação (5xx) ou marcadores de erro/dump
+# *dentro* do JSON parseado (chaves/valores), não em substring cru.
+#
+# Sinal negativo (precedência): corpo indica rota inexistente → descarta.
+id: api_json_error_p0
+version: "1.0.0"
+name: Erro verboso em resposta JSON
+priority: "P0"
+class_label: "Erro verboso em resposta JSON"
+description: >
+  Um endpoint da superfície de API (spec OpenAPI observada) respondeu ao
+  re-probe GET com status de falha de aplicação ou com marcadores de erro
+  dentro do JSON parseado (ex.: traceback, exception, error). Igual à classe
+  de erro verboso do crawl, mas avaliada estruturalmente sobre JSON. Sem
+  payload: o probe re-visita apenas o endpoint declarado, com/sem os parâmetros
+  nomeados (nunca valores inventados).
+precondition:
+  lead: api
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: status_in
+    value: [500, 502, 503, 504]
+  - kind: json_contains
+    value: "traceback"
+  - kind: json_contains
+    value: "exception"
+  - kind: json_contains
+    value: "stack trace"
+  - kind: json_contains
+    value: "internal server error"
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: medium
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} resposta de aplicação com erro verboso em API"
+  remediation: >
+    Trate erros de API sem expor detalhes internos (stack, banco, trace): use
+    respostas 4xx/5xx enxutas e logue o diagnóstico fora do corpo da resposta.
+  references:
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+    - https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure
+  confidence: 0.55

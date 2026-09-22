@@ -251,6 +251,18 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
   de leads aos probes JSON do M8-P1; breakdown/sumário `api_endpoints`.
 - Suíte `tests/test_openapi_m8.py` (7).
 
+**Checklist M8-P1 (probes de política adaptados a JSON): entregue.**
+- `_Lead` novo: cada endpoint da superfície (`report.api_endpoints`) vira lead
+  (`lead_kind: api`), URL resolvida, apenas nomes de parâmetros (nunca valores
+  inventados); re-prova GET bare e só-observa.
+- Sinais JSON-adaptados (`SignalRule`): `json_response`, `json_has_array`,
+  `json_contains` (procura em chaves/valores do JSON parseado, não substring
+  cru). Mesmos guardrails M6 (escopo/kill-switch/robots/rate-limit/
+  per-endpoint/probe cap) e players por sessão (M7-P2).
+- Políticas: `api_json_error_p0.yaml` (P0, default) e `api_bulk_p1.yaml` (P1,
+  allowlist) — findings "Comportamento / ...".
+- Suíte `tests/test_probing_m8.py` (13).
+
 **Entregas**
 - Ingestão de OpenAPI/Swagger quando disponível.
 - Mapeamento de endpoints, métodos e parâmetros.

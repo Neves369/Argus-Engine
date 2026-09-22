@@ -11,7 +11,16 @@ ProbeSeverity = Literal["info", "low", "medium", "high", "critical"]
 class Precondition(BaseModel):
     """Lead observacional que ativa a política (sempre derivado do scan)."""
 
-    lead: Literal["reflection", "verbose_error", "injection", "upload", "csrf", "redirect", "authn"]
+    lead: Literal[
+        "reflection",
+        "verbose_error",
+        "injection",
+        "upload",
+        "csrf",
+        "redirect",
+        "authn",
+        "api",
+    ]
     #: Matcher opcional sobre o título/categoria do finding de origem.
     title_contains: str | None = None
     category_contains: str | None = None
@@ -42,6 +51,9 @@ class SignalRule(BaseModel):
         "missing_sensitive_field",
         "file_input_without_accept",
         "login_differential",
+        "json_response",
+        "json_has_array",
+        "json_contains",
     ]
     value: str | int | list[str] | list[int] | None = None
 

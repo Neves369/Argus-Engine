@@ -20,6 +20,7 @@ Princípios de projeto (ver ROADMAP_ARGUS_PODEROSO.md, M6):
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -272,6 +273,28 @@ class ProbeEngine:
                             session=str(route.get("session") or "anon"),
                         )
                     )
+        elif lead_kind == "api":
+            # M8-P1: leads vêm da superfície oficial do spec OpenAPI (M8-P0).
+            # Nenhum valor é inventado — a spec só declara nomes de parâmetros,
+            # então o probe re-visita o endpoint sem valores (GET, somente
+            # leitura) e observa como ele responde a JSON.
+            for route in report.api_endpoints:
+                url = str(route.get("url") or "").strip()
+                if not url.startswith(("http://", "https://")):
+                    continue
+                params = [str(p) for p in (route.get("params") or [])]
+                _add(
+                    _Lead(
+                        url=url,
+                        detail=(
+                            f"endpoint {route.get('method')} {route.get('path')} "
+                            "da spec OpenAPI observada"
+                        ),
+                        method=str(route.get("method") or "GET").upper(),
+                        fields=params,
+                        session=str(route.get("session") or "anon"),
+                    )
+                )
         elif lead_kind in ("injection", "upload", "csrf"):
             reflection_leads = self._reflection_params(findings)
             for finding in self._findings_matching(policy, findings, "vetores de entrada"):
@@ -509,6 +532,14 @@ class ProbeEngine:
         if kind == "login_differential":
             # O diferencial é computado em _probe_post e carregado no lead.
             return lead.differential is True
+        if kind == "json_response":
+            return _json_value(page.body) is not None
+        if kind == "json_has_array":
+            return bool(_json_value(page.body)) and _json_has_list(_json_value(page.body))
+        if kind == "json_contains":
+            # Estrutural (JSON-adaptado): o valor é procurado em chaves e
+            # strings do JSON parseado — não em substring do corpo cru.
+            return _json_contains(_json_value(page.body), str(rule.value or ""))
         return False
 
     def _record(
@@ -614,6 +645,44 @@ class ProbeEngine:
 
 
 _MISSING = object()
+
+
+def _json_value(body: str) -> Any | None:
+    """Corpo parseado como JSON (dict/list); None se não for JSON."""
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, (dict, list)) else None
+
+
+def _json_has_list(value: Any | None) -> bool:
+    """True se o JSON parsed contiver alguma lista (batch/coleção)."""
+    if value is None:
+        return False
+    if isinstance(value, list):
+        return True
+    if isinstance(value, dict):
+        return any(_json_has_list(v) for v in value.values())
+    return False
+
+
+def _json_contains(value: Any | None, needle: str) -> bool:
+    """Procura ``needle`` (case-insensitive) em chaves e strings do JSON."""
+    if value is None or not needle:
+        return False
+    target = needle.lower()
+    if isinstance(value, str):
+        return target in value.lower()
+    if isinstance(value, list):
+        return any(_json_contains(v, needle) for v in value)
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if target in str(key).lower():
+                return True
+            if _json_contains(item, needle):
+                return True
+    return False
 
 
 def _reflection_context(body: str, value: str) -> str:

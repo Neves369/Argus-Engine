@@ -92,6 +92,8 @@ def _error_findings(*, live_body: str) -> tuple[ScanReport, list[dict]]:
 def test_catalog_loads_all_probe_policies():
     catalog = load_catalog()
     assert sorted(catalog) == [
+        "api_bulk_p1",
+        "api_json_error_p0",
         "authn_p3",
         "csrf_p2",
         "injection_p1",
@@ -101,10 +103,12 @@ def test_catalog_loads_all_probe_policies():
         "verbose_error_p0",
     ]
     assert {p.id for p in catalog.values() if p.priority == "P0"} == {
+        "api_json_error_p0",
         "reflection_p0",
         "verbose_error_p0",
     }
     assert {p.id for p in catalog.values() if p.priority == "P1"} == {
+        "api_bulk_p1",
         "injection_p1",
         "upload_p1",
     }
@@ -147,7 +151,7 @@ def test_catalog_fails_closed_on_invalid_policy(tmp_path, monkeypatch):
 
 def test_default_probe_classes_p0_only(monkeypatch):
     names = {p.id for p in load_catalog().values() if "p0" in p.id.lower()}
-    assert names == {"reflection_p0", "verbose_error_p0"}
+    assert names == {"api_json_error_p0", "reflection_p0", "verbose_error_p0"}
     # O default seguro resolve "p0" para as políticas P0 habilitadas por default.
     engine = ProbeEngine(respect_robots=False)
     assert engine.resolve_classes(None) == sorted(names)

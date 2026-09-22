@@ -1,0 +1,51 @@
+# Política de probe P1 — Coleção em API sem filtro (Etapa M8-P1).
+#
+# Pré-condição: a superfície de API observada (spec OpenAPI, M8-P0) declara o
+# endpoint. O re-probe GET (sem valor inventado — a spec só declara nomes de
+# parâmetros de filtro/paginação) observa se o endpoint devolve uma coleção
+# (JSON com listas/array) mesmo sem nenhum filtro: sinal observacional de
+# retorno abrangente (data bulk).
+#
+# Sinal negativo (precedência): resposta exige sessão (401/403) ou parece rota
+# inexistente → descarta (a coleção sem filtro só é constatada quando a resposta
+# é alcançável e estruturalmente JSON com listas).
+id: api_bulk_p1
+version: "1.0.0"
+name: Coleção em API sem filtro
+priority: "P1"
+class_label: "Retorno abrangente em API (coleção sem filtro)"
+description: >
+  Um endpoint GET da superfície de API respondeu ao re-probe com JSON contendo
+  coleções/arrays sem nenhum parâmetro de filtro ou paginação declarado, o que
+  sugere retorno abrangente de dados. Observacional e JSON-adaptado: o sinal só
+  casa quando a resposta é JSON e estruturalmente contém listas; nenhum valor de
+  filtro é inventado, nenhuma enumeração é feita — apenas o endpoint do spec.
+precondition:
+  lead: api
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: json_has_array
+negative_signal:
+  - kind: status_in
+    value: [401, 403]
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "unauthorized"
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} endpoint de API retornando coleção sem filtro"
+  remediation: >
+    Revise o contrato destes endpoints: exija parâmetros de filtro/paginação,
+    limite campos por padrão e avalie a necessidade de autorização por linha
+    (row-level) antes de expor coleções.
+  references:
+    - https://owasp.org/Top10/A01_2021-Broken_Access_Control
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+  confidence: 0.5
