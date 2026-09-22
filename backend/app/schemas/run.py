@@ -12,6 +12,7 @@ class RunCreate(BaseModel):
     devil_mode: bool = False
     archetypes: list[str] | None = None
     depth: Literal["quick", "deep"] = "quick"
+    probe_classes: list[str] | None = None
 
 
 class RunRead(BaseModel):

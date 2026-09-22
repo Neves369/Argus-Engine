@@ -82,8 +82,15 @@ def _error_findings(*, live_body: str) -> tuple[ScanReport, list[dict]]:
 
 def test_catalog_loads_the_p0_policies():
     catalog = load_catalog()
-    assert sorted(catalog) == ["reflection_p0", "verbose_error_p0"]
-    assert all(p.priority == "P0" for p in catalog.values())
+    assert sorted(catalog) == ["injection_p1", "reflection_p0", "upload_p1", "verbose_error_p0"]
+    assert {p.id for p in catalog.values() if p.priority == "P0"} == {
+        "reflection_p0",
+        "verbose_error_p0",
+    }
+    assert {p.id for p in catalog.values() if p.priority == "P1"} == {
+        "injection_p1",
+        "upload_p1",
+    }
     assert all(p.default_enabled for p in catalog.values())
 
 
@@ -322,7 +329,7 @@ def test_chariot_wires_the_probe_engine():
         {REFLECT_URL: _page(REFLECT_URL, "<html><body>echo: hello</body></html>")}
     )
     engine = ProbeEngine(client=stub, respect_robots=False)
-    state = GraphState(target={"name": TARGET})
+    state = GraphState(target={"name": TARGET}, depth="deep")
     state.set_probe_engine(engine)
 
     added, records = _run(
@@ -335,12 +342,30 @@ def test_chariot_wires_the_probe_engine():
     assert findings[-1]["id"].startswith("F-")
 
 
+def test_chariot_does_not_probe_on_quick_depths():
+    from app.agents import get_archetype
+    from app.orchestration.state import GraphState
+
+    report, findings = _reflect_findings(live_body="<html><body>echo: hello</body></html>")
+    stub = _stub_client({REFLECT_URL: _page(REFLECT_URL, "<html><body>echo: hello</body></html>")})
+    state = GraphState(target={"name": TARGET}, depth="quick")
+    state.set_probe_engine(ProbeEngine(client=stub, respect_robots=False))
+
+    added, records = _run(
+        get_archetype("chariot")._behavior_probes(state, findings, report, set())
+    )
+
+    assert added == 0
+    assert records == []
+    assert stub.calls == []
+
+
 def test_chariot_degrades_when_probe_engine_fails(monkeypatch):
     from app.agents import get_archetype
     from app.orchestration.state import GraphState
 
     report, findings = _reflect_findings(live_body="<html><body>echo: hello</body></html>")
-    state = GraphState(target={"name": TARGET})
+    state = GraphState(target={"name": TARGET}, depth="deep")
 
     class Boom:
         async def run(self, **kwargs):
@@ -354,6 +379,259 @@ def test_chariot_degrades_when_probe_engine_fails(monkeypatch):
     assert added == 0
     assert records == []
     assert len(findings) == len(_reflect_findings(live_body="")[1])
+
+
+INJECT_URL = "http://example.com/search.php"
+
+UPLOAD_URL = "http://example.com/upload.php"
+
+
+def _reflection_finding() -> dict:
+    return {
+        "category": "Aplicação / reflexão observada",
+        "extras": {
+            "reflections": [
+                {"probe_url": f"{INJECT_URL}?q=hello", "param": "q", "value": "hello"}
+            ]
+        },
+    }
+
+
+def _input_routes_finding(*routes: dict) -> dict:
+    return {
+        "category": "Aplicação / vetores de entrada",
+        "extras": {"routes": list(routes)},
+    }
+
+
+def _injection_probe(replay_body: str, status_code: int = 200) -> str:
+    return f"{INJECT_URL}?q=hello"
+
+
+def test_injection_replay_positive_when_reflected_again():
+    report = ScanReport(
+        target=TARGET,
+        pages=[_page(_injection_probe("hello"), "<html><body>search for hello</body></html>")],
+    )
+    findings = [
+        _reflection_finding(),
+        _input_routes_finding(
+            {"url": INJECT_URL, "method": "GET", "action": "search.php", "fields": ["q"]}
+        ),
+    ]
+    stub = _stub_client(
+        {
+            _injection_probe("hello"): _page(
+                _injection_probe("hello"), "<html><body>search for hello</body></html>"
+            )
+        }
+    )
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["injection_p1"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert behavior[0]["category"] == "Comportamento / Injeção suspeita (replay controlado)"
+    assert behavior[0]["severity"] == "medium"
+    assert records[0]["rule_id"] == "injection_p1"
+    assert records[0]["positive"] is True
+
+
+def test_injection_replay_positive_via_error_status():
+    report = ScanReport(
+        target=TARGET,
+        pages=[_page(_injection_probe("hello"), "<html><body>application error</body></html>")],
+    )
+    report.pages[0].status_code = 500
+    findings = [
+        _reflection_finding(),
+        _input_routes_finding(
+            {
+                "url": INJECT_URL,
+                "method": "GET",
+                "action": "search.php",
+                "fields": ["q"],
+            }
+        ),
+    ]
+
+    class _ErrStub:
+        user_agent = "ArgusTest"
+        calls: list[str] = []
+
+        async def get_page(self, url: str):
+            self.calls.append(url)
+            return TargetPage(
+                url=url,
+                status_code=500,
+                headers={},
+                body="<html><body>application error</body></html>",
+            )
+
+        async def fetch_no_rate_limit(self, url: str):
+            return TargetPage(
+                url=url,
+                status_code=200,
+                headers={"content-type": "text/plain"},
+                body="User-agent: *\nAllow: /",
+            )
+
+    engine = ProbeEngine(client=_ErrStub(), respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["injection_p1"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert records[0]["positive"] is True
+    assert records[0]["detail"].startswith("sinal reproduzido")
+
+
+def test_injection_replay_fp_when_generic_404():
+    report = ScanReport(
+        target=TARGET,
+        pages=[_page(_injection_probe("hello"), "<html><body>404 not found</body></html>")],
+    )
+    findings = [
+        _reflection_finding(),
+        _input_routes_finding(
+            {
+                "url": INJECT_URL,
+                "method": "GET",
+                "action": "search.php",
+                "fields": ["q"],
+            }
+        ),
+    ]
+    stub = _stub_client(
+        {
+            _injection_probe("hello"): _page(
+                _injection_probe("hello"), "<html><body>404 not found</body></html>"
+            )
+        }
+    )
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["injection_p1"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+    assert records[0]["fp_matched"] is True
+
+
+def test_upload_positive_when_file_input_has_no_accept():
+    report = ScanReport(target=TARGET, pages=[_page(UPLOAD_URL, "<html></html>")])
+    findings = [
+        _input_routes_finding(
+            {"url": UPLOAD_URL, "method": "POST", "action": "upload.php", "fields": ["file"]}
+        )
+    ]
+    body = '<form method="POST" action="/upload.php"><input type="file" name="file"></form>'
+    stub = _stub_client({UPLOAD_URL: _page(UPLOAD_URL, body)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["upload_p1"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert behavior[0]["category"] == "Comportamento / Upload sem allowlist de tipo"
+    assert records[0]["rule_id"] == "upload_p1"
+    assert records[0]["positive"] is True
+
+
+def test_upload_negative_when_file_input_has_accept():
+    report = ScanReport(target=TARGET, pages=[_page(UPLOAD_URL, "<html></html>")])
+    findings = [
+        _input_routes_finding(
+            {"url": UPLOAD_URL, "method": "POST", "action": "upload.php", "fields": ["file"]}
+        )
+    ]
+    body = (
+        '<form method="POST" action="/upload.php">'
+        '<input type="file" name="file" accept="image/png">'
+        "</form>"
+    )
+    stub = _stub_client({UPLOAD_URL: _page(UPLOAD_URL, body)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["upload_p1"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+
+
+def test_p1_only_runs_with_allowlist():
+    report = ScanReport(
+        target=TARGET,
+        pages=[_page(_injection_probe("hello"), "<html><body>search for hello</body></html>")],
+    )
+    findings = [
+        _reflection_finding(),
+        _input_routes_finding(
+            {
+                "url": INJECT_URL,
+                "method": "GET",
+                "action": "search.php",
+                "fields": ["q"],
+            }
+        ),
+    ]
+    stub = _stub_client(
+        {
+            _injection_probe("hello"): _page(
+                _injection_probe("hello"), "<html><body>search for hello</body></html>"
+            )
+        }
+    )
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(report=report, findings=findings, target={"name": TARGET})
+    )
+
+    # Default seguro: P0 apenas — injeção (P1) fica de fora mesmo com lead ativo.
+    assert behavior
+    assert all(r["rule_id"] != "injection_p1" for r in records)
+    assert all(r["priority"] == "P0" for r in records)
+
+
+def test_resolve_classes_p1_default_includes_p0_and_p1():
+    engine = ProbeEngine(respect_robots=False, default_classes="p1")
+    resolved = engine.resolve_classes(None)
+    assert {"injection_p1", "upload_p1"} <= set(resolved)
+    assert {"reflection_p0", "verbose_error_p0"} <= set(resolved)
 
 
 def _dup_policy(policy_id: str):

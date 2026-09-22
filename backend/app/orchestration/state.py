@@ -42,6 +42,11 @@ class GraphState(BaseModel):
     #: Justiça leve; ``deep`` = autenticação → crawl de módulos → forms → probes
     #: do Carro → Justiça. Serializado (persiste em resume). Default seguro.
     depth: str = "quick"
+    #: Allowlist de classes de probe do catálogo M6 (Etapa M6, guardrail 6.3).
+    #: ``None`` → default seguro em ``probe_classes_default`` (P0 apenas).
+    #: Serializado (persiste em resume); validação contra o catálogo é feita no
+    #: motor (só libera classes existentes/versionadas).
+    probe_classes: list[str] | None = None
     #: Etapa 7 (resumo): marca que o trecho intermediário do histórico já foi
     #: resumido via LLM — a partir daí a compressão segue determinística, para
     #: limitar a 1 chamada de resumo por run. Serializado (persiste em resume).

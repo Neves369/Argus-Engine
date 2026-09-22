@@ -1,0 +1,52 @@
+# Política de probe P1 — Upload / aceitação de tipo sem allowlist (Etapa M6).
+#
+# Pré-condição: o crawl observou um form POST com campo de arquivo (upload) e
+# rota atingível. O probe re-visita a rota observada (uma vez) e avalia a
+# resposta fresca — nenhum upload é enviado, nenhum arquivo é gerado: só
+# observação da estrutura aceita pela aplicação.
+#
+# Sinal positivo: existe input do tipo `file` sem `accept` (accept vazio,
+# "*/*", "image/*" ou "*") → a aplicação aceita tipo/tamanho fora de qualquer
+# allowlist explícita, o que indica upload desgovernado (lead P1).
+# Sinal negativo (precedência): resposta parece página 404/página genérica.
+#
+# P1 → fora do default (probe_classes_default=p0); execute com a allowlist
+# explícita (probe_classes=["upload_p1"] ou PROBE_CLASSES_DEFAULT=p1).
+id: upload_p1
+version: "1.0.0"
+name: Upload sem allowlist de tipo (observação)
+priority: "P1"
+class_label: "Upload sem allowlist de tipo"
+description: >
+  Um form de upload observado aceita qualquer tipo de arquivo (sem `accept`
+  na política de mídia). Sem enviar conteúdo, o Argus registra o lead de
+  upload desgovernado como comportamento reproduzível para revisão do
+  operador (tamanho/tipo permitido fora do esperado).
+precondition:
+  lead: upload
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: file_input_without_accept
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} upload(s) sem allowlist de tipo"
+  remediation: >
+    Defina `accept` e limite de tamanho em todo input de arquivo; valide o
+    tipo/mime no servidor (whitelist) e armazene com nome aleatório fora do
+    diretório público.
+  references:
+    - https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload
+  confidence: 0.5

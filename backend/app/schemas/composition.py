@@ -12,6 +12,7 @@ class CompositionCreate(BaseModel):
     target: dict[str, Any] | None = None
     devil_mode: bool = False
     depth: Literal["quick", "deep"] = "quick"
+    probe_classes: list[str] | None = None
 
 
 class CompositionExecute(BaseModel):

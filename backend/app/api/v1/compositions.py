@@ -45,6 +45,7 @@ async def create_composition(payload: CompositionCreate, db: DBSession) -> Sessi
             "target": payload.target,
             "devil_mode": payload.devil_mode,
             "depth": payload.depth,
+            "probe_classes": payload.probe_classes,
         },
     )
     db.add(session)
@@ -145,6 +146,7 @@ async def execute_composition(
         budget_cost=budget_cost,
         composition=archetypes,
         depth=depth,
+        probe_classes=config.get("probe_classes") or None,
     )
     services = (
         build_sources_service(),

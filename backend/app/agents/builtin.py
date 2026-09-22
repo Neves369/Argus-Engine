@@ -689,10 +689,15 @@ class ChariotAgent(BaseArchetype):
         """Etapa M6: aplica o catálogo de políticas versionadas aos leads do scan.
 
         O ``ProbeEngine`` injetado no run transforma leads observacionais
-        (reflexão, erro verboso) em sinais *reproduzíveis sob política* —
-        sempre somente-leitura, no escopo, com robots/rate-limit/teto de probes.
-        Os findings "Comportamento / ..." retornam já como ``candidate`` com
-        ``requires_human_review`` e a evidência de probe em ``extras``.
+        (reflexão, erro verboso, injeção, upload) em sinais *reproduzíveis sob
+        política* — sempre somente-leitura, no escopo, com robots/rate-limit/
+        teto de probes. Os findings "Comportamento / ..." retornam já como
+        ``candidate`` com ``requires_human_review`` e a evidência de probe em
+        ``extras``.
+
+        Profundidade é opt-in (Etapa M3): probes só rodam em ``deep`` — em
+        ``quick`` nada executa, alinhado ao re-probe do Carro (M2) e à tabela
+        de depth do roadmap (``deep+`` fica reservado para P1+ via allowlist).
 
         Degrada para registro em qualquer falha (nunca derruba o run). Retorna
         ``(num_findings, registros_de_probe)``.
@@ -700,9 +705,14 @@ class ChariotAgent(BaseArchetype):
         engine = state.probe_engine
         if engine is None or report is None or not report.pages:
             return 0, []
+        if (state.depth or "quick") != "deep":
+            return 0, []
         try:
             behavior, records = await engine.run(
-                report=report, findings=findings, target=state.target
+                report=report,
+                findings=findings,
+                target=state.target,
+                probe_classes=state.probe_classes,
             )
         except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
             return 0, []

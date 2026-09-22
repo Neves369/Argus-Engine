@@ -1,0 +1,58 @@
+# Política de probe P1 — Injeção suspeita (replay controlado) (Etapa M6).
+#
+# Pré-condição: o crawl observou um parâmetro refletido (eco) e há rotas GET de
+# entrada atingíveis no mesmo host. O replay controlado é a mesma requisição
+# que o scan JÁ observou (mesmo valor, mesmo parâmetro), sem payload e sem
+# variação inventada — só uma re-prova em mais pontos de entrada.
+#
+# Sinal positivo:
+#   - o valor observado (reflects_param) reaparece na resposta fresca, OU
+#   - a resposta retorna status de falha de aplicação (4xx/5xx específico),
+#     comportamento diferente do esperado sob a mesma entrada observada.
+# Sinal negativo (precedência): corpo parece página 404/página genérica de
+# aplicação → descarta (não é erro de app, é rota inexistente).
+#
+# P1 → fora do default (probe_classes_default=p0); execute com a allowlist
+# explícita (probe_classes=["injection_p1"] ou PROBE_CLASSES_DEFAULT=p1).
+id: injection_p1
+version: "1.0.0"
+name: Replay controlado em entrada de dados
+priority: "P1"
+class_label: "Injeção suspeita (replay controlado)"
+description: >
+  Um parâmetro refletido observado pelo scan foi re-enviado, como no crawl,
+  para pontos de entrada GET do mesmo host. A resposta fresca que reflete o
+  valor ou falha com status de aplicação sugere tratamento de entrada instável
+  (contexto suspeito para injeção). Sem payload: o replay usa apenas o valor
+  que o crawl já observou.
+precondition:
+  lead: injection
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: reflects_param
+  - kind: status_in
+    value: [400, 500, 502, 503, 504]
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: medium
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} replay controlado com reflexão ou erro em entrada de dados"
+  remediation: >
+    Valide e sanitize a entrada (whitelist sintática, data types e
+    comprimento). Trate erros de aplicação sem expor detalhes internos e
+    responda 4xx/5xx sem vazar stack ou contexto de banco.
+  references:
+    - https://owasp.org/www-project-top-ten/2017/A1_2017-Injection
+    - https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure
+  confidence: 0.55

@@ -42,7 +42,7 @@ class SignalRule(BaseModel):
         "missing_sensitive_field",
         "file_input_without_accept",
     ]
-    value: str | list[str] | int | None = None
+    value: str | int | list[str] | list[int] | None = None
 
 
 class Reporting(BaseModel):

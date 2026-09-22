@@ -140,6 +140,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         devil_mode=payload.devil_mode,
         composition=archetypes or [],
         depth=depth,
+        probe_classes=payload.probe_classes,
     )
     services = _runtime_services()
     _inject_runtime(state, services)
@@ -185,6 +186,7 @@ async def stream_run(
     devil_mode: bool = False,
     archetypes: list[str] | None = None,
     depth: str = "quick",
+    probe_classes: list[str] | None = None,
 ):
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
@@ -203,6 +205,8 @@ async def stream_run(
         cfg = session.config or {}
         if archetypes is None:
             archetypes = cfg.get("archetypes") or None
+        if probe_classes is None:
+            probe_classes = cfg.get("probe_classes") or None
         target_meta = cfg.get("target") or {}
         devil_mode = bool(cfg.get("devil_mode", devil_mode))
         depth = str(cfg.get("depth") or depth)
@@ -264,6 +268,7 @@ async def stream_run(
         devil_mode=devil_mode,
         composition=archetypes or [],
         depth=depth,
+        probe_classes=probe_classes,
     )
     services = _runtime_services()
     _inject_runtime(state, services)
