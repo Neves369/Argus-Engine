@@ -71,6 +71,9 @@ class GraphState(BaseModel):
     # Runtime-only injectable (not serialized): motor de probes sob política
     # (Etapa M6) — aplica o catálogo policies/probes/*.yaml aos leads do scan.
     _probe_engine: Any = PrivateAttr(default=None)
+    # Runtime-only injectable (not serialized): motor de jornadas multi-step
+    # (Etapa M7-P3) — re-executa o catálogo policies/journeys/*.yaml por sessão.
+    _journey_engine: Any = PrivateAttr(default=None)
 
     # Time de agentes disponíveis para este run (cartas ou time padrão).
     team: list[str] = Field(default_factory=list)
@@ -132,3 +135,10 @@ class GraphState(BaseModel):
 
     def set_probe_engine(self, engine: Any) -> None:
         self._probe_engine = engine
+
+    @property
+    def journey_engine(self) -> Any:
+        return self._journey_engine
+
+    def set_journey_engine(self, engine: Any) -> None:
+        self._journey_engine = engine

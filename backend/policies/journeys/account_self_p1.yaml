@@ -1,0 +1,39 @@
+# Jornada P1 — Consulta da própria conta (Etapa M7-P3).
+#
+# Exemplo de jornada que só faz sentido par autêntica/self-service (consulta o
+# próprio perfil e um recurso privado). Como é P1, entra no allowlist apenas
+# com JOURNEY_CLASSES_DEFAULT=p1 ou superior — começa desligada no default.
+#
+# Read-only: nenhum POST; só GETs declarados pelo operador.
+id: account_self_p1
+version: "1.0.0"
+name: "Consulta da própria conta"
+priority: "P1"
+description: >
+  Fluxo self-service típico: abrir o perfil e consultar um recurso privado da
+  conta. Se anônimos (ou uma sessão sem o papel) alcançam o mesmo efeito, é
+  sinal observacional de exposição indevida; se só a sessão certa alcança,
+  o controle de acesso está sendo exercido.
+steps:
+  - name: "Abrir o perfil"
+    method: GET
+    path: /account
+    expect:
+      status_in: [200]
+      contains: "perfil"
+  - name: "Consultar recurso privado"
+    method: GET
+    path: /account/private
+    expect:
+      status_in: [200]
+      contains: "privado"
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "Jornada {name}: efeito esperado encontrado apenas em algumas sessões"
+  remediation: >
+    Confirme que recursos da conta exigem autenticação+autorização no
+    backend; evaluate se o efeito observado em sessões sem acesso é intencional.
+  references: []
+  confidence: 0.5

@@ -1,0 +1,43 @@
+# Jornada P0 — Área administrativa (Etapa M7-P3).
+#
+# Fluxo multi-step que o operador escreve para confirmar, observacionalmente,
+# que conteúdo/páginas administrativas só respondem com o efeito esperado para
+# sessões autorizadas (controle de acesso). Re-executada idêntica para anônimo
+# e para cada sessão autenticada do run; diferença de efeito vira finding
+# candidate "Comportamento / Jornada". Nada aqui é inventado: apenas GETs
+# legítimos com expectativas declaradas.
+#
+# priority P0 + default_enabled → entra no allowlist JOURNEY_CLASSES_DEFAULT=p0.
+id: admin_area_p0
+version: "1.0.0"
+name: "Área administrativa"
+priority: "P0"
+description: >
+  Fluxo administrativo típico: abrir o painel e listar recursos. Se o mesmo
+  passo só alcança o efeito esperado (HTTP + conteúdo) em algumas sessões,
+  há evidência observacional de controle de acesso por papel — sem brute
+  force e sem enumeração: só a jornada do operador é re-executada.
+steps:
+  - name: "Abrir o painel"
+    method: GET
+    path: /admin/
+    expect:
+      status_in: [200]
+      contains: "painel"
+  - name: "Listar recursos"
+    method: GET
+    path: /admin/resources
+    expect:
+      status_in: [200]
+      contains: "tabela"
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "Jornada {name}: efeito esperado encontrado apenas em algumas sessões"
+  remediation: >
+    Revise o controle de acesso das rotas da jornada: se o efeito só vale
+    para uma sessão/papel, confirme a autorização no backend (não só no menu)
+    e os redirects para login como "não autorizado" em todas as sessões.
+  references: []
+  confidence: 0.5

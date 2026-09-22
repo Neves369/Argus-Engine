@@ -223,6 +223,13 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - **Rastreabilidade**: cada registro de probe carrega `session`; o finding "Comportamento / ..." expõe `extras.sessions` (quais papéis reproduziram o sinal).
 - **Pipeline de sessão por lead**: rota do route map e vetores de entrada carregam `session`; reflexões e erros verbosos repetidos sob outra sessão **mesclam** a sessão no finding agregado (`sessions`), gerando lead por papel sem duplicar findings.
 - **Wiring no Chariot**: `_behavior_probes` puxa `scan_service.session_clients()` (keep-alive das jars em memória, nunca serializadas) e repassa ao engine; degrada para registro se qualquer passo falhar.
+
+### M7-P3 (entregue)
+- **Jornadas multi-step**: catálogo versionado `policies/journeys/*.yaml` — fluxos que o operador escreve (ex.: "área administrativa": abrir painel → listar recursos) como passos (método + path + body literal estático + efeito esperado `status_in`/`contains`). O Argus **não inventa passo**: só re-executa o que foi versionado.
+- **Re-execução por papel**: cada jornada roda idêntica para anônimo (client fresco, quando `run_anonymous`) e para cada sessão autenticada do `session_clients` do scan — resultados comparados passo a passo.
+- **Finding "Comportamento / Jornada / ..."**: quando o mesmo passo alcança o efeito esperado em um papel e não em outro, gera finding `candidate`/HITL com `extras.journey` (id/versão/sha256), `extras.divergent_steps` (`sessions_cs`/`sessions_failed`) e `extras.sessions`. Trilha de auditoria por passo (`session`, status, `effect_ok`, `skip_reason`).
+- **Guardrails idênticos aos probes M6**: kill-switch, `ALLOWED_SCOPES`, robots, rate-limit do `ScanHTTPClient`, teto `JOURNEY_MAX_STEPS_PER_SESSION`; allowlist por prioridade (`journey_classes_default=p0` → só jornadas P0). Só rodam em `depth=deep`, junto aos probes.
+- **Wiring no Chariot**: `_journeys` usa `state.journey_engine` (ou `build_journey_engine()`) e repassa `session_clients`; findings ganham id `F-...`; degrada para registro. Exemplos: `admin_area_p0` (P0, painel → recursos) e `account_self_p1` (P1, perfil → recurso privado).
 - **Próximas fatias**: M7-P3 = jornadas multi-step (login → ação → efeito observado, gravadas como fluxos e re-executadas por papel).
 
 ---
@@ -313,7 +320,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
-- [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel; P3 = jornadas multi-step)
+- [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2+P3 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel + jornadas multi-step por sessão)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
 - [ ] Pacotes e UX de política (M10)

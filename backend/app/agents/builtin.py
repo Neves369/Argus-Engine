@@ -583,9 +583,22 @@ class ChariotAgent(BaseArchetype):
             state, findings, report, existing_titles
         )
 
+        # Jornadas multi-step (Etapa M7-P3): o JourneyEngine re-executa fluxos
+        # do catálogo policies/journeys/*.yaml idênticos para anônimo e cada
+        # sessão autenticada, observando efeito dependente de papel — sem
+        # inventar passo. Findings "Comportamento / Jornada / ..." candidate.
+        journey_count, journey_records = await self._journeys(
+            state, findings, existing_titles
+        )
+
         new_confidence = min(1.0, state.confidence + 0.2)
         live = bool(
-            verified or refuted or tool_runs or reprobes or behavior_count
+            verified
+            or refuted
+            or tool_runs
+            or reprobes
+            or behavior_count
+            or journey_count
         )
         entry: dict[str, Any] = {
             "agent": self.key,
@@ -604,6 +617,9 @@ class ChariotAgent(BaseArchetype):
         if behavior_count:
             entry["behavior_signals"] = behavior_count
             entry["behavior_probes"] = len(behavior_records)
+        if journey_count:
+            entry["journey_signals"] = journey_count
+            entry["journey_steps"] = len(journey_records)
         if tool_runs:
             entry["tool_runs"] = tool_runs
         if reprobes:
@@ -707,13 +723,7 @@ class ChariotAgent(BaseArchetype):
             return 0, []
         if (state.depth or "quick") != "deep":
             return 0, []
-        session_clients = None
-        scan_service = getattr(state, "scan_service", None)
-        if scan_service is not None and callable(getattr(scan_service, "session_clients", None)):
-            try:
-                session_clients = scan_service.session_clients()
-            except Exception:  # noqa: BLE001 - probe por papel é best-effort
-                session_clients = None
+        session_clients = self._session_clients(state)
         try:
             behavior, records = await engine.run(
                 report=report,
@@ -730,6 +740,64 @@ class ChariotAgent(BaseArchetype):
                 continue
             bf["id"] = f"F-{len(state.findings) + len(findings) + 1}"
             findings.append(bf)
+            added += 1
+        return added, records
+
+    @staticmethod
+    def _session_clients(state: GraphState) -> dict[str, Any] | None:
+        """Clients por sessão do último scan (M7-P2/P3), best-effort.
+
+        Vem do ``ScanService`` no estado (jars vivas só em memória, nunca
+        serializadas). ``None``/vazio quando não há perfis — os engines então
+        caem no client default do run.
+        """
+        scan_service = getattr(state, "scan_service", None)
+        if scan_service is None or not callable(
+            getattr(scan_service, "session_clients", None)
+        ):
+            return None
+        try:
+            return scan_service.session_clients()
+        except Exception:  # noqa: BLE001 - contexto de sessão é best-effort
+            return None
+
+    async def _journeys(
+        self,
+        state: GraphState,
+        findings: list[dict[str, Any]],
+        existing_titles: set[str],
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Etapa M7-P3: re-executa jornadas multi-step por papel.
+
+        O ``JourneyEngine`` roda com o catálogo ``policies/journeys/*.yaml``
+        (fluxos que o operador versiona) idêntico para anônimo e cada sessão
+        autenticada do run, dentro dos mesmos guardrails dos probes M6. Quando
+        um passo alcança o efeito esperado em um papel e não em outro, gera
+        finding "Comportamento / Jornada / ..." candidate. Degrada para
+        registro em qualquer falha. Retorna ``(num_findings, registros)``.
+        """
+        from app.journeys.engine import build_journey_engine
+
+        if (state.depth or "quick") != "deep":
+            return 0, []
+        session_clients = self._session_clients(state)
+        try:
+            engine = state.journey_engine or build_journey_engine()
+        except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
+            return 0, []
+        try:
+            jfindings, records = await engine.run(
+                target=state.target,
+                session_clients=session_clients or {},
+            )
+        except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
+            return 0, []
+        added = 0
+        for jf in jfindings:
+            if jf["title"] in existing_titles:
+                continue
+            jf["id"] = f"F-{len(state.findings) + len(findings) + 1}"
+            findings.append(jf)
             added += 1
         return added, records
 

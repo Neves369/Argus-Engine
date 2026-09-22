@@ -204,6 +204,18 @@ class Settings(BaseSettings):
     probe_respect_robots: bool = True
     probe_classes_default: str = "p0"
 
+    # Jornadas multi-step (M7-P3): fluxos que o operador escreve no catálogo
+    # versionado (policies/journeys/*.yaml) e o run re-executa idênticos para
+    # anônimo e cada sessão autenticada, observando diferenças de efeito por
+    # papel (controle de acesso) — mesmos guards do scan/probes. Só rodam em
+    # depth=deep, junto aos probes M6. Env: JOURNEY_ENABLED /
+    # JOURNEY_MAX_STEPS_PER_SESSION / JOURNEY_RESPECT_ROBOTS /
+    # JOURNEY_CLASSES_DEFAULT.
+    journey_enabled: bool = True
+    journey_max_steps_per_session: int = 20
+    journey_respect_robots: bool = True
+    journey_classes_default: str = "p0"
+
     # Diabo controlado (Etapa M5): allowlist estrita de tools + limites duros
     # que regem o caminho do Modo Diabo. O backend de execução destrutiva segue
     # sem backend (HITL → `no_backend`, decisão de produto — ver ROADMAP Etapa
