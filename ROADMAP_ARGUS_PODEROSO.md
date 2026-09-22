@@ -13,6 +13,7 @@
 - **M6 P2 entregue (set/2026):** CSRF (POST de estado sem token) + redirect aberto reproduzível (inclui observação de redirect 3xx no scan).
 - **M6 P3 entregue (set/2026):** authn fraca — login com resposta diferencial (enumeração de usuário) com controles sentinela, sem brute force.
 - **M7 P0 entregue (set/2026):** sessão única com consciência de sessão — pages etiquetadas ("user"/"anon"), metadados de sessão no relatório e constatação de "visível apenas em sessão autenticada" via baseline anônimo (ver seção M7).
+- **M7 P1 entregue (set/2026):** múltiplos perfis de sessão (`SCAN_SESSION_PROFILES`) com clients isolados e diferença de acesso entre papéis — "acesso distinto entre sessões" (ver seção M7).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -207,7 +208,14 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - **Finding** "Conteúdo visível apenas em sessão autenticada (controle de acesso)" (categoria `Aplicação / controle de acesso`, `candidate`, `confidence=0.4`): dispara só quando a URL base é alcançada pela sessão `user` mas o baseline anônimo não a alcança (status não-2xx ou redirect para fora da base, ex. → `/login`). Nada é enumerado.
 - **Degradação graciosa**: sem credenciais → crawl anônimo (sessão `anon`), nenhum request extra; login falho degrada para anônimo com `auth_status` no relatório.
 - Route map etiqueta cada rota com a sessão (`extras.routes[].session`); export summary inclui `sessions`.
-- **Próximas fatias**: M7-P1 = múltiplos perfis (múltiplas sessões) + probes por papel; M7-P2 = jornadas multi-step.
+- **Próximas fatias**: M7-P2 = probes por papel + jornadas multi-step.
+
+### M7-P1 (entregue)
+- **Múltiplos perfis de sessão** (`SCAN_SESSION_PROFILES`, JSON list de `{name, login_url, username, password}`): substitui o `SCAN_LOGIN_*` único quando definido.
+- **Clients isolados**: o primeiro perfil reutiliza o client compartilhado do run (verifier/probes M6 seguem autenticados na sessão primária); cada perfil extra ganha client fresco com jar próprio. Injeta `client_factory` para testes compartilharem a semântica de rate limit.
+- **Crawl por papel**: cada perfil crawlea a base com seu próprio jar; `TargetPage.session` recebe o nome do perfil; órfão/login falho degrada (sessão com `auth_status` e excluída das comparações).
+- **Finding "Acesso distinto entre sessões (controle de acesso)"**: para rotas observadas sob ≥2 sessões, quando uma aparece em um papel e não em outro (`extras.routes[]` com `accessible_in`/`not_in`). Anon-blind (P0) generalizado para qualquer perfil com baseline anônimo.
+- Custo: requisições ≈ nº de perfis × orçamento do crawl; rate limit global por host mantido.
 
 ---
 
@@ -297,7 +305,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
-- [ ] Contexto de sessão/papéis (M7) — **P0 entregue** (sessão única + "visível só autenticado"; P1 = múltiplos perfis + probes por papel, P2 = jornadas)
+- [ ] Contexto de sessão/papéis (M7) — **P0+P1 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões"; P2 = probes por papel + jornadas)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
 - [ ] Pacotes e UX de política (M10)
@@ -316,7 +324,7 @@ Com M9–M10, vira **produto operável em time**.
 | +1 ciclo | M3 + M4 | Depth e confiança profissionais |
 | +1 ciclo | M5 | Stress opt-in |
 | Feito | M6 P0+ → P3 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial |
-| +2 ciclos | M7 | Authz/sessão (P0: sessão única + "visível só autenticado" — entregue) |
+| +2 ciclos | M7 | Authz/sessão (P0: sessão única + "visível só autenticado"; P1: múltiplos perfis + "acesso distinto entre sessões" — entregues) |
 | Depois | M8–M10 | API, escala, produto |
 
 ---

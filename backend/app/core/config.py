@@ -168,6 +168,14 @@ class Settings(BaseSettings):
     scan_login_url: str = ""
     scan_login_username: str = ""
     scan_login_password: str = ""
+    # Perfis de sessão adicionais (M7-P1): JSON list de perfis de login dinâmico
+    # além do `SCAN_LOGIN_*` único. Cada perfil gera um client isolado (jar de
+    # sessão próprio) no crawl e o relatório compara a visibilidade de rotas
+    # entre sessões ("visível apenas na sessão X"). Quando definido,
+    # `SCAN_SESSION_PROFILES` **substitui** `SCAN_LOGIN_*`. Credenciais vivem no
+    # env e nunca entram em log/relatório. Vazio = desligado.
+    #   SCAN_SESSION_PROFILES=[{"name":"admin","login_url":"https://...","username":"root","password":"..."}]
+    scan_session_profiles: list[dict[str, str]] = []
 
     # Execução real do Carro (Etapa 15) — verificação ativa NÃO destrutiva.
     # O Carro re-prova ao vivo os achados candidatos (sondas GET dentro dos

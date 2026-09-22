@@ -295,78 +295,173 @@ def _anon_reaches(probe: dict[str, Any], base: str) -> bool:
     return base_path == final_path
 
 
-def _session_access_findings(report: ScanReport) -> list[dict[str, Any]]:
-    """Access-difference observation: content visible only when authenticated.
-
-    M7-P0 (login único): after a successful dynamic login the crawl runs in the
-    ``user`` session and the base URL(s) are re-observed anonymously. When that
-    anonymous baseline *does not* reach the same URL that the authenticated
-    crawl did (non-2xx or redirected away), the report honestly states the
-    content is reachable only under the session — without any enumeration.
-    """
-    user_sessions = [
+def _successful_sessions(report: ScanReport) -> list[dict[str, Any]]:
+    return [
         s
         for s in report.sessions
-        if s.get("name") == "user" and s.get("auth_status") == "success"
+        if str(s.get("name") or "") and s.get("auth_status") == "success"
     ]
-    if not user_sessions or not report.anon_probe:
-        return []
-    authed = [p for p in report.pages if p.session == "user"]
-    diffs: list[dict[str, Any]] = []
-    for probe in report.anon_probe:
-        base = probe.get("url")
-        if _anon_reaches(probe, base):
-            continue
-        authed_page = next(
-            (
-                p
-                for p in authed
-                if p.url == base or (p.requested_url or "") == base
-            ),
-            None,
-        )
-        if authed_page is None or not (200 <= authed_page.status_code < 300):
-            continue
-        diffs.append(
-            {
-                "url": base,
-                "anon_status": probe.get("status_code"),
-                "anon_final_url": probe.get("final_url"),
-                "auth_status": authed_page.status_code,
-            }
-        )
-    if not diffs:
-        return []
 
-    lines = [
-        f"- GET {d['url']} -> {d['auth_status']} (sessão user); anônimo -> "
-        f"{d['anon_status']} {d['anon_final_url']}"
-        for d in diffs
-    ]
-    return [
-        _finding(
-            title="Conteúdo visível apenas em sessão autenticada (controle de acesso)",
-            description=(
-                "O crawl descobriu conteúdo (sob login dinâmico) que uma "
-                "requisição anônima ao mesmo endereço não alcançou. Sinal "
-                "observacional de controle de acesso por sessão — o relatório "
-                "apenas constata a diferença; nenhum bypass é testado. O "
-                "resultado é um lead para revisão manual."
-            ),
-            severity="info",
-            category="Aplicação / controle de acesso",
-            affected=report.target,
-            evidence="\n".join(lines)[:2000],
-            remediation=(
-                "Revise manualmente se a proteção de autenticação destas "
-                "rotas é intencional e se o conteúdo deve mesmo ser restrito "
-                "à sessão autenticada."
-            ),
-            confidence=0.4,
-            extras={
-                "sessions": list(report.sessions),
-                "asymmetric": diffs,
-                "asymmetric_count": len(diffs),
-            },
+
+def _pages_of(pages: list[TargetPage], session: str) -> list[TargetPage]:
+    return [p for p in pages if p.session == session]
+
+
+def _reaches_status(status: int) -> bool:
+    return 200 <= status < 300
+
+
+def _session_access_findings(report: ScanReport) -> list[dict[str, Any]]:
+    """Access-difference observations across sessions (M7).
+
+    Two evidence-grounded signals, both observational (no enumeration):
+    1. Anon-blind (M7-P0): a base URL is reached by some session but the
+       anonymous baseline does not reach it (non-2xx or redirected away).
+    2. Cross-session (M7-P1): a route observed under multiple profiles is
+       reachable under one session and not under another (e.g. admin vs user).
+    """
+    sessions = _successful_sessions(report)
+    if not sessions:
+        return []
+    findings: list[dict[str, Any]] = []
+
+    anon_diffs = _anon_blind_diffs(report, sessions)
+    for session in sessions:
+        diffs = anon_diffs.get(str(session["name"]) or "", [])
+        if not diffs:
+            continue
+        name = session["name"]
+        lines = [
+            f"- GET {d['url']} -> {d['auth_status']} (sessão {name}); anônimo -> "
+            f"{d['anon_status']} {d.get('anon_final_url')}"
+            for d in diffs
+        ]
+        title = (
+            "Conteúdo visível apenas em sessão autenticada (controle de acesso)"
+            if name == "user"
+            else f"Conteúdo visível apenas na sessão {name} (controle de acesso)"
         )
-    ]
+        findings.append(
+            _finding(
+                title=title,
+                description=(
+                    "O crawl descobriu conteúdo (sob login dinâmico) que uma "
+                    "requisição anônima ao mesmo endereço não alcançou. Sinal "
+                    "observacional de controle de acesso por sessão — o "
+                    "relatório apenas constata a diferença; nenhum bypass é "
+                    "testado. O resultado é um lead para revisão manual."
+                ),
+                severity="info",
+                category="Aplicação / controle de acesso",
+                affected=report.target,
+                evidence="\n".join(lines)[:2000],
+                remediation=(
+                    "Revise manualmente se a proteção de autenticação destas "
+                    "rotas é intencional e se o conteúdo deve mesmo ser "
+                    "restrito à sessão autenticada."
+                ),
+                confidence=0.4,
+                extras={
+                    "sessions": list(report.sessions),
+                    "asymmetric": diffs,
+                    "asymmetric_count": len(diffs),
+                },
+            )
+        )
+
+    routes_diff = _cross_session_diffs(report, sessions)
+    if routes_diff:
+        lines = [
+            f"- {r['url']} -> {', '.join(r['accessible_in'])} "
+            f"(não em {', '.join(r['not_in'])})"
+            for r in routes_diff
+        ]
+        findings.append(
+            _finding(
+                title="Acesso distinto entre sessões (controle de acesso)",
+                description=(
+                    "Rotas observadas sob mais de uma sessão (perfil) foram "
+                    "alcançadas em um papel e não em outro, ou o inverso. O "
+                    "relatório apenas constata a diferença entre as sessões "
+                    "observadas — sem bypass, sem enumeração. Lead para "
+                    "revisão manual de autorização por papel."
+                ),
+                severity="info",
+                category="Aplicação / controle de acesso",
+                affected=report.target,
+                evidence="\n".join(lines)[:2000],
+                remediation=(
+                    "Revise manualmente a matriz de autorização por papel "
+                    "(ou authz por rota) destes endpoints."
+                ),
+                confidence=0.4,
+                extras={
+                    "sessions": list(report.sessions),
+                    "routes": routes_diff,
+                    "route_count": len(routes_diff),
+                },
+            )
+        )
+    return findings
+
+
+def _anon_blind_diffs(
+    report: ScanReport, sessions: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
+    """Base URLs reachable in a session but not by the anonymous baseline."""
+    by_session: dict[str, list[dict[str, Any]]] = {}
+    for session in sessions:
+        name = str(session["name"])
+        pages = _pages_of(report.pages, name)
+        for probe in report.anon_probe:
+            base = probe.get("url")
+            if not base or _anon_reaches(probe, base):
+                continue
+            page = next(
+                (p for p in pages if p.url == base or (p.requested_url or "") == base),
+                None,
+            )
+            if page is None or not _reaches_status(page.status_code):
+                continue
+            by_session.setdefault(name, []).append(
+                {
+                    "url": base,
+                    "session": name,
+                    "anon_status": probe.get("status_code"),
+                    "anon_final_url": probe.get("final_url"),
+                    "auth_status": page.status_code,
+                }
+            )
+    return by_session
+
+
+def _cross_session_diffs(
+    report: ScanReport, sessions: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Routes reachable under one observed session but not another."""
+    if len(sessions) < 2:
+        return []
+    names = [str(s["name"]) for s in sessions]
+    reachable_by_url: dict[str, list[str]] = {}
+    observed_by_url: dict[str, list[str]] = {}
+    for name in names:
+        for page in _pages_of(report.pages, name):
+            if not page.url:
+                continue
+            observed_by_url.setdefault(page.url, []).append(name)
+            if _reaches_status(page.status_code):
+                reachable_by_url.setdefault(page.url, []).append(name)
+    diffs: list[dict[str, Any]] = []
+    for url, observed in observed_by_url.items():
+        blocked = [n for n in names if n in observed and n not in reachable_by_url.get(url, [])]
+        reachable = [n for n in names if n in reachable_by_url.get(url, [])]
+        if reachable and blocked:
+            diffs.append(
+                {
+                    "url": url,
+                    "accessible_in": sorted(reachable),
+                    "not_in": sorted(blocked),
+                }
+            )
+    diffs.sort(key=lambda d: (d["url"]))
+    return diffs

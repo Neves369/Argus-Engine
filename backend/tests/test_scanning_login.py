@@ -254,5 +254,143 @@ def test_access_difference_finding_when_anonymous_baseline_is_blocked():
     assert extras["asymmetric"][0]["auth_status"] == 200
 
 
+_MULTI_PROFILES = [
+    {
+        "name": "admin",
+        "login_url": "http://example.com/login",
+        "username": "admin",
+        "password": "admin-secret",
+    },
+    {
+        "name": "operator",
+        "login_url": "http://example.com/login",
+        "username": "operator",
+        "password": "op-secret",
+    },
+]
+
+
+def _multi_service(**kwargs) -> ScanService:
+    defaults: dict = {
+        "client": ScanHTTPClient(rate_limit=0),
+        "respect_robots": False,
+        "login_url": "",
+        "login_username": "",
+        "login_password": "",
+        "session_profiles": _MULTI_PROFILES,
+        "client_factory": lambda: ScanHTTPClient(rate_limit=0),
+    }
+    defaults.update(kwargs)
+    return ScanService(**defaults)
+
+
+def _cookie_aware_login(request):
+    content = request.content.decode()
+    if "admin" in content:
+        return httpx.Response(200, headers={"Set-Cookie": "admin=1; Path=/"})
+    return httpx.Response(200, headers={"Set-Cookie": "op=1; Path=/"})
+
+
+def _cookie_aware_root(request):
+    cookie = request.headers.get("Cookie") or ""
+    if "admin=1" in cookie:
+        return httpx.Response(200, text="<html><body>admin panel</body></html>")
+    if "op=1" in cookie:
+        return httpx.Response(404, text="not found")
+    return httpx.Response(302, headers={"Location": "/login"})
+
+
+@respx.mock
+def test_multiple_session_profiles_crawl_isolated_and_report_cross_session_diff():
+    respx.get("http://example.com/login").mock(
+        return_value=httpx.Response(200, text=_LOGIN_HTML)
+    )
+    respx.post("http://example.com/authenticate").mock(side_effect=_cookie_aware_login)
+    respx.get("http://example.com/").mock(side_effect=_cookie_aware_root)
+
+    report = _run(
+        _multi_service().scan({"name": "example.com", "url": "http://example.com/"})
+    )
+
+    assert {p.session for p in report.pages} == {"admin", "operator"}
+    assert report.sessions == [
+        {
+            "name": "admin",
+            "auth_status": "success",
+            "auth": "login dinâmico aplicado",
+            "auth_cookies": ["admin"],
+            "page_count": 1,
+        },
+        {
+            "name": "operator",
+            "auth_status": "success",
+            "auth": "login dinâmico aplicado",
+            "auth_cookies": ["op"],
+            "page_count": 1,
+        },
+    ]
+    assert report.anon_probe == [
+        {
+            "url": "http://example.com/",
+            "status_code": 200,
+            "final_url": "http://example.com/login",
+        }
+    ]
+
+    findings = derive_findings_from_scan(report)
+    admin_only = [f for f in findings if "apenas na sessão admin" in f["title"]]
+    assert len(admin_only) == 1
+    assert admin_only[0]["extras"]["asymmetric"][0]["session"] == "admin"
+    cross = [f for f in findings if "Acesso distinto entre sessões" in f["title"]]
+    assert len(cross) == 1
+    assert cross[0]["extras"]["routes"] == [
+        {"url": "http://example.com/", "accessible_in": ["admin"], "not_in": ["operator"]}
+    ]
+
+
+@respx.mock
+def test_secondary_profile_failed_login_degrades_and_is_excluded():
+    respx.get("http://example.com/login").mock(
+        return_value=httpx.Response(200, text=_LOGIN_HTML)
+    )
+
+    def _login_admin_only(request):
+        content = request.content.decode()
+        if "admin" in content:
+            return httpx.Response(200, headers={"Set-Cookie": "admin=1; Path=/"})
+        return httpx.Response(503)
+
+    respx.post("http://example.com/authenticate").mock(side_effect=_login_admin_only)
+    respx.get("http://example.com/").mock(side_effect=_cookie_aware_root)
+
+    report = _run(
+        _multi_service().scan({"name": "example.com", "url": "http://example.com/"})
+    )
+
+    statuses = {s["name"]: s["auth_status"] for s in report.sessions}
+    assert statuses == {"admin": "success", "operator": "failed"}
+    findings = derive_findings_from_scan(report)
+    assert any("na sessão admin" in f["title"] for f in findings)
+    assert not any("Acesso distinto entre sessões" in f["title"] for f in findings)
+
+
+def test_scan_service_skips_incomplete_session_profiles():
+    service = ScanService(
+        client=ScanHTTPClient(rate_limit=0),
+        session_profiles=[
+            {
+                "name": "admin",
+                "login_url": "http://example.com/login",
+                "username": "root",
+                "password": "p",
+            },
+            {"name": "broken"},
+        ],
+    )
+
+    assert len(service._session_profiles) == 1
+    assert service._session_profiles[0]["name"] == "admin"
+
+
 def responses_by_method(method: str) -> list[respx.models.Response]:
     return [call.response for call in respx.calls if call.request.method == method]

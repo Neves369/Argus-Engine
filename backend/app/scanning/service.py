@@ -77,6 +77,8 @@ class ScanService:
         login_url: str = "",
         login_username: str = "",
         login_password: str = "",
+        session_profiles: list[dict[str, str]] | None = None,
+        client_factory: Any | None = None,
     ) -> None:
         self._client = client or ScanHTTPClient()
         self._respect_robots = respect_robots
@@ -85,6 +87,31 @@ class ScanService:
         self._login_url = login_url
         self._login_username = login_username
         self._login_password = login_password
+        self._session_profiles = []
+        for profile in (session_profiles or []):
+            normalized = self._normalize_profile(profile)
+            if normalized is not None:
+                self._session_profiles.append(normalized)
+        self._client_factory = client_factory
+
+    def _normalize_profile(self, profile: dict[str, str]) -> dict[str, str] | None:
+        """Validate a session profile dict; ``None`` when unusable (skipped)."""
+        login_url = str(profile.get("login_url") or "").strip()
+        username = str(profile.get("username") or "").strip()
+        password = str(profile.get("password") or "")
+        name = str(profile.get("name") or "").strip()
+        if not (login_url and username and password):
+            logger.warning(
+                "scan session profile incompleto (ignorado)",
+                extra={"profile": name or "<sem nome>", "reason": "login_url/username/password"},
+            )
+            return None
+        return {
+            "name": name or "perfil",
+            "login_url": login_url,
+            "username": username,
+            "password": password,
+        }
 
     def _resolve_depth(self, depth: str | None) -> str:
         """Effective scan depth: explicit value wins, else derived from scope.
@@ -121,8 +148,12 @@ class ScanService:
             robots_respected=self._respect_robots,
             depth=self._depth,
         )
-        await self._authenticate(report)
+        channels = self._channel_profiles()
         override = self._max_pages if max_pages is None else max(1, int(max_pages))
+        if channels:
+            return await self._scan_multi(report, channels, candidates, override, derived)
+
+        await self._authenticate(report)
         session = "user" if report.auth_status == "success" else "anon"
         for base_url in candidates:
             attempt = await self._crawl(base_url, max_pages=override, session=session)
@@ -150,6 +181,110 @@ class ScanService:
         self._finalize_sessions(report, session)
         return report
 
+    async def _scan_multi(
+        self,
+        report: ScanReport,
+        channels: list[dict[str, Any]],
+        candidates: list[str],
+        override: int,
+        derived: bool,
+    ) -> ScanReport:
+        """M7-P1: crawl per session profile with isolated clients.
+
+        The base candidate is resolved by the primary profile's crawl (shared
+        client), then every other profile crawls the same base with its own
+        jar. Pages are labeled per profile; ``report.auth*`` stay the primary's
+        legacy fields, while every channel lands in ``report.sessions``.
+        """
+        profiles = channels[0]
+        await self._authenticate(
+            report,
+            client=profiles["client"],
+            login_url=profiles["login_url"],
+            login_username=profiles["username"],
+            login_password=profiles["password"],
+        )
+        extras = [
+            await self._authenticate_profile(profile) for profile in channels[1:]
+        ]
+
+        selected_base: str | None = None
+        for base_url in candidates:
+            attempt = await self._crawl(
+                base_url,
+                max_pages=override,
+                session=profiles["name"],
+                client=profiles["client"],
+            )
+            report.pages = attempt.pages
+            report.urls_skipped_by_robots += attempt.urls_skipped_by_robots
+            if attempt.robots_respected is not None:
+                report.robots_respected = attempt.robots_respected
+            if attempt.pages:
+                report.note = attempt.note
+                selected_base = base_url
+                break
+            if not derived and attempt.note:
+                report.note = attempt.note
+                break
+
+        if selected_base is None:
+            report.note = (
+                "Nenhuma página acessível retornou conteúdo dentro dos "
+                "controles de escopo."
+            )
+            self._finalize_multi_sessions(report, channels, extras)
+            return report
+
+        for profile in channels[1:]:
+            attempt = await self._crawl(
+                selected_base,
+                max_pages=override,
+                session=profile["name"],
+                client=profile["client"],
+            )
+            report.pages.extend(attempt.pages)
+            report.urls_skipped_by_robots += attempt.urls_skipped_by_robots
+            if attempt.robots_respected is not None:
+                report.robots_respected = attempt.robots_respected
+
+        if any(
+            rec["auth_status"] == "success"
+            for rec in [{"auth_status": report.auth_status}, *extras]
+        ):
+            report.anon_probe = await self._anonymous_baseline([selected_base])
+        self._finalize_multi_sessions(report, channels, extras)
+        return report
+
+    def _finalize_multi_sessions(
+        self,
+        report: ScanReport,
+        channels: list[dict[str, Any]],
+        extras: list[dict[str, Any]],
+    ) -> None:
+        """Build ``report.sessions`` from the per-profile crawl (M7-P1)."""
+        session_counts: dict[str, int] = {}
+        for page in report.pages:
+            session_counts[page.session] = session_counts.get(page.session, 0) + 1
+        report.sessions = [
+            {
+                "name": profiles["name"],
+                "auth_status": (
+                    report.auth_status
+                    if index == 0
+                    else (extras[index - 1] or {}).get("auth_status")
+                ),
+                "auth": report.auth if index == 0 else (extras[index - 1] or {}).get("auth"),
+                "auth_cookies": (
+                    list(report.auth_cookies)
+                    if index == 0
+                    else list((extras[index - 1] or {}).get("auth_cookies", []))
+                ),
+                "page_count": session_counts.get(profiles["name"], 0),
+            }
+            for index, profiles in enumerate(channels)
+        ]
+
     def _base_candidates(self, target: dict[str, Any]) -> list[str]:
         """Candidate base URLs: explicit url first, else https then http."""
         name = str(target.get("name") or "").strip()
@@ -160,7 +295,15 @@ class ScanService:
             return [url.rstrip("/") + "/"]
         return [f"https://{name}/", f"http://{name}/"]
 
-    async def _authenticate(self, report: ScanReport) -> None:
+    async def _authenticate(
+        self,
+        report: ScanReport,
+        *,
+        client: ScanHTTPClient | None = None,
+        login_url: str | None = None,
+        login_username: str | None = None,
+        login_password: str | None = None,
+    ) -> None:
         """Submit the target's login form once and reuse the session cookies.
 
         Fills ``report.auth`` (note), ``report.auth_status``
@@ -168,13 +311,24 @@ class ScanService:
         (cookie *names* only — never values, so the report stays auditable and
         redacted). A failed/partial login does NOT block the scan — the crawl
         proceeds unauthenticated and the outcome is recorded/auditable.
+
+        ``client``/``login_*`` override the instance defaults (M7-P1): each
+        session profile authenticates on its own isolated client.
         """
-        if not (self._login_url and self._login_username and self._login_password):
+        client = client or self._client
+        login_url = self._login_url if login_url is None else login_url
+        login_username = (
+            self._login_username if login_username is None else login_username
+        )
+        login_password = (
+            self._login_password if login_password is None else login_password
+        )
+        if not (login_url and login_username and login_password):
             report.auth_status = "skipped"
             return
         report.auth_status = "attempted"
         try:
-            page = await self._client.get_page(self._login_url)
+            page = await client.get_page(login_url)
         except ScanError as exc:  # noqa: BLE001 - transcribed into the report
             logger.warning("scan login: page unreachable", extra={"reason": str(exc)})
             report.auth_status = "failed"
@@ -188,13 +342,13 @@ class ScanService:
             return
 
         action = urljoin(page.url, form.action or page.url)
-        data = login_payload(form, self._login_username, self._login_password)
+        data = login_payload(form, login_username, login_password)
         try:
             if form.method == "post":
-                response = await self._client.post_page(action, data)
+                response = await client.post_page(action, data)
             else:
                 joined = urljoin(action, "?" + urlencode(data))
-                response = await self._client.get_page(joined)
+                response = await client.get_page(joined)
         except ScanError as exc:  # noqa: BLE001
             logger.warning("scan login: submission failed", extra={"reason": str(exc)})
             report.auth_status = "failed"
@@ -207,9 +361,50 @@ class ScanService:
             return
         report.auth_status = "success"
         report.auth = "login dinâmico aplicado"
-        report.auth_cookies = self._client.session_cookie_names(
-            urlparse(self._login_url).netloc
+        report.auth_cookies = client.session_cookie_names(urlparse(login_url).netloc)
+
+    async def _authenticate_profile(self, profile: dict[str, str]) -> dict[str, Any]:
+        """Authenticate one session profile; returns its session metadata.
+
+        Does not touch the report — used for the additional profiles in M7-P1.
+        """
+        probe_report = ScanReport(target="session-profile")
+        await self._authenticate(
+            probe_report,
+            client=profile["client"],
+            login_url=profile["login_url"],
+            login_username=profile["username"],
+            login_password=profile["password"],
         )
+        return {
+            "name": profile["name"],
+            "auth_status": probe_report.auth_status,
+            "auth": probe_report.auth,
+            "auth_cookies": list(probe_report.auth_cookies),
+        }
+
+    def _channel_profiles(self) -> list[dict[str, Any]] | None:
+        """Session channels for a run: ``None`` when only the single login.
+
+        Profiles from config (M7-P1) replace the single ``SCAN_LOGIN_*`` login.
+        The first profile reuses the run's shared client (so the verifier and
+        the M6 probe engine keep the primary session); every extra profile runs
+        on a fresh isolated client (its own cookie jar).
+        """
+        if not self._session_profiles:
+            return None
+        channels: list[dict[str, Any]] = []
+        for index, profile in enumerate(self._session_profiles):
+            channels.append(
+                {
+                    "name": profile["name"],
+                    "client": self._client if index == 0 else self._new_client(),
+                    "login_url": profile["login_url"],
+                    "username": profile["username"],
+                    "password": profile["password"],
+                }
+            )
+        return channels
 
     def _finalize_sessions(self, report: ScanReport, session: str) -> None:
         """Label which session(s) observed the crawl (M7: session awareness).
@@ -266,7 +461,15 @@ class ScanService:
         return probe
 
     def _new_client(self) -> ScanHTTPClient:
-        """A fresh anonymous client with the same settings (empty session jar)."""
+        """A fresh anonymous client (empty session jar) for baseline/profiles.
+
+        Uses the injected ``client_factory`` when provided (tests share the
+        run's rate-limiting semantics), else mirrors the settings.
+        """
+        if self._client_factory is not None:
+            client = self._client_factory()
+            if client is not None:
+                return client
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -280,10 +483,20 @@ class ScanService:
         )
 
     async def _crawl(
-        self, base_url: str, *, max_pages: int | None = None, session: str = "anon"
+        self,
+        base_url: str,
+        *,
+        max_pages: int | None = None,
+        session: str = "anon",
+        client: ScanHTTPClient | None = None,
     ) -> ScanReport:
         """BFS crawl of same-host pages bounded by ``max_pages`` (or the
-        instance default when omitted — ``deep`` runs may override per call)."""
+        instance default when omitted — ``deep`` runs may override per call).
+
+        ``client`` lets M7-P1 crawl each session profile with its own isolated
+        jar; default is the run's shared client.
+        """
+        client = client or self._client
         limit = max(1, int(max_pages)) if max_pages is not None else self._max_pages
         robots = (
             await self._load_robots(base_url) if self._respect_robots else RobotsRules.allow_all()
@@ -308,7 +521,7 @@ class ScanService:
                 continue
             visited.append(url)
             try:
-                page = await self._client.get_page(url)
+                page = await client.get_page(url)
             except ScanError:
                 continue
             page.tech = fingerprint(page)
@@ -362,4 +575,5 @@ def build_scan_service(client: ScanHTTPClient | None = None) -> ScanService:
         login_url=settings.scan_login_url,
         login_username=settings.scan_login_username,
         login_password=settings.scan_login_password,
+        session_profiles=settings.scan_session_profiles,
     )

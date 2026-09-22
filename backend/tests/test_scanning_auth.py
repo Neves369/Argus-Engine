@@ -81,6 +81,28 @@ def test_settings_parse_scan_auth_env(monkeypatch):
     assert settings.scan_cookies == "a=b; c=d"
 
 
+def test_settings_parse_scan_session_profiles_env(monkeypatch):
+    monkeypatch.setenv(
+        "SCAN_SESSION_PROFILES",
+        json.dumps(
+            [
+                {
+                    "name": "admin",
+                    "login_url": "http://example.com/login",
+                    "username": "root",
+                    "password": "s3cret",
+                }
+            ]
+        ),
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert len(settings.scan_session_profiles) == 1
+    assert settings.scan_session_profiles[0]["name"] == "admin"
+    assert settings.scan_session_profiles[0]["password"] == "s3cret"
+
+
 @respx.mock
 def test_headers_never_logged(caplog):
     respx.get("http://example.com/").mock(return_value=httpx.Response(200, text="ok"))
