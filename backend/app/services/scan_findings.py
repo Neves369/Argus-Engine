@@ -59,12 +59,14 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
 
     findings: list[dict[str, Any]] = []
     seen: set[str] = set()
+    per_title: dict[str, dict[str, Any]] = {}
     form_routes: list[dict[str, Any]] = []
     reflections: list[dict[str, Any]] = []
 
     for page in report.pages:
         for finding in detect_on_page(page):
             finding["probe_url"] = page.url
+            finding["session"] = page.session
             title = finding["title"]
             if title == _FORM_TITLE:
                 form_routes.extend((finding.get("extras") or {}).get("routes", []))
@@ -73,12 +75,21 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
             if title == _REFLECTION_TITLE:
                 for ref in (finding.get("extras") or {}).get("reflections", []):
                     ref.setdefault("probe_url", page.url)
+                    ref.setdefault("session", page.session)
                 reflections.extend((finding.get("extras") or {}).get("reflections", []))
                 seen.add(title)
                 continue
             if title in seen:
+                # Mesma URL observada sob outra sessão: o finding já existe,
+                # então registra a sessão adicional (probes por papel, M7-P2).
+                existing = per_title.get(title)
+                if existing is not None:
+                    sessions = existing.setdefault("sessions", [existing["session"]])
+                    if page.session not in sessions:
+                        sessions.append(page.session)
                 continue
             seen.add(title)
+            per_title[title] = finding
             findings.append(finding)
 
     aggregates: list[dict[str, Any]] = []

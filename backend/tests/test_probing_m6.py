@@ -403,6 +403,108 @@ def test_chariot_degrades_when_probe_engine_fails(monkeypatch):
     assert len(findings) == len(_reflect_findings(live_body="")[1])
 
 
+def _multi_session_error_report(*sessions: str) -> tuple[ScanReport, list[dict]]:
+    body = "<html><body>Fatal error: undefined variable foo</body></html>"
+    report = ScanReport(
+        target=TARGET,
+        pages=[
+            TargetPage(
+                url=ERROR_URL,
+                status_code=200,
+                headers={},
+                body=body,
+                session=session,
+            )
+            for session in sessions
+        ],
+    )
+    return report, derive_findings_from_scan(report)
+
+
+def test_derive_merges_sessions_for_repeated_verbose_url():
+    report, findings = _multi_session_error_report("admin", "operator")
+    verbose = [f for f in findings if "erro verboso" in f["title"].lower()]
+    assert len(verbose) == 1
+    assert sorted(verbose[0]["sessions"]) == ["admin", "operator"]
+    assert verbose[0]["session"] == "admin"
+
+
+def test_verbose_leads_probed_with_each_session_client():
+    report, findings = _multi_session_error_report("admin", "operator")
+    admin = _stub_client({ERROR_URL: _page(ERROR_URL, report.pages[0].body)})
+    operator = _stub_client({ERROR_URL: _page(ERROR_URL, report.pages[0].body)})
+    default = _stub_client({ERROR_URL: _page(ERROR_URL, report.pages[0].body)})
+    engine = ProbeEngine(client=default, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            session_clients={"admin": admin, "operator": operator},
+        )
+    )
+
+    assert sorted(r["session"] for r in records) == ["admin", "operator"]
+    assert admin.calls == [ERROR_URL]
+    assert operator.calls == [ERROR_URL]
+    assert default.calls == []
+    assert behavior[0]["status"] == "candidate"
+    assert behavior[0]["extras"]["sessions"] == ["admin", "operator"]
+
+
+def test_session_without_client_falls_back_to_default():
+    report, findings = _multi_session_error_report("user")
+    default = _stub_client({ERROR_URL: _page(ERROR_URL, report.pages[0].body)})
+    engine = ProbeEngine(client=default, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            session_clients={},
+        )
+    )
+
+    assert records[0]["session"] == "user"
+    assert default.calls == [ERROR_URL]
+    assert behavior[0]["extras"]["sessions"] == ["user"]
+
+
+def test_chariot_forwards_session_clients_to_probe_engine():
+    from app.agents import get_archetype
+    from app.orchestration.state import GraphState
+
+    report, findings = _reflect_findings(live_body="<html><body>echo: hello</body></html>")
+    client = _stub_client(
+        {REFLECT_URL: _page(REFLECT_URL, "<html><body>echo: hello</body></html>")}
+    )
+    captured: dict = {}
+
+    class Engine:
+        async def run(self, **kwargs):
+            captured.update(kwargs)
+            return [], []
+
+    class ScanService:
+        def session_clients(self):
+            return {"user": client}
+
+    state = GraphState(target={"name": TARGET}, depth="deep")
+    state.set_probe_engine(Engine())
+    state.set_scan_service(ScanService())
+
+    added, records = _run(
+        get_archetype("chariot")._behavior_probes(state, findings, report, set())
+    )
+
+    assert added == 0
+    assert records == []
+    assert captured.get("session_clients") == {"user": client}
+    assert client.calls == []
+
+
 INJECT_URL = "http://example.com/search.php"
 
 UPLOAD_URL = "http://example.com/upload.php"

@@ -73,6 +73,7 @@ class _Lead:
     method: str = "GET"
     fields: list[str] = field(default_factory=list)
     differential: bool | None = None
+    session: str = "anon"
 
 
 class ProbeEngine:
@@ -88,8 +89,10 @@ class ProbeEngine:
         respect_robots: bool = True,
         default_classes: str = "p0",
         catalog: dict[str, ProbePolicy] | None = None,
+        session_clients: dict[str, ScanHTTPClient] | None = None,
     ) -> None:
         self._client = client or ScanHTTPClient()
+        self._session_clients = session_clients or {}
         self._enabled = bool(enabled)
         self._max_probes = max(0, int(max_probes or 0))
         self._max_per_endpoint = max(1, int(max_per_endpoint or 1))
@@ -125,6 +128,7 @@ class ProbeEngine:
         findings: list[dict[str, Any]],
         target: dict[str, Any] | None = None,
         probe_classes: list[str] | None = None,
+        session_clients: dict[str, ScanHTTPClient] | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Executa as políticas liberadas; retorna (findings, registros de probe).
 
@@ -144,6 +148,8 @@ class ProbeEngine:
         classes = self.resolve_classes(probe_classes)
         if not classes:
             return [], []
+
+        self._session_clients = session_clients or {}
 
         behavior_findings: list[dict[str, Any]] = []
         records: list[dict[str, Any]] = []
@@ -186,7 +192,7 @@ class ProbeEngine:
         seen: set[str] = set()
 
         def _add(lead: _Lead) -> None:
-            key = f"{lead.url}|{lead.param or ''}"
+            key = f"{lead.url}|{lead.param or ''}|{lead.session}"
             if lead.url and key not in seen:
                 seen.add(key)
                 leads.append(lead)
@@ -203,6 +209,7 @@ class ProbeEngine:
                             detail=f"param {ref.get('param')} observado refletido",
                             param=str(ref.get("param") or "") or None,
                             value=str(ref.get("value") or ""),
+                            session=str(ref.get("session") or "anon"),
                         )
                     )
         elif lead_kind == "verbose_error":
@@ -210,7 +217,15 @@ class ProbeEngine:
                 url = str(finding.get("probe_url") or finding.get("affected") or "").strip()
                 if not url.startswith(("http://", "https://")):
                     continue
-                _add(_Lead(url=url, detail="erro verboso observado no crawl"))
+                sessions = finding.get("sessions") or [finding.get("session") or "anon"]
+                for session in sessions:
+                    _add(
+                        _Lead(
+                            url=url,
+                            detail="erro verboso observado no crawl",
+                            session=str(session or "anon"),
+                        )
+                    )
         elif lead_kind == "redirect":
             for finding in self._findings_matching(policy, findings, "superfície de rotas"):
                 extras = finding.get("extras") or {}
@@ -227,7 +242,13 @@ class ProbeEngine:
                         detail = "rota saiu para host externo no crawl"
                     else:
                         detail = "rota observada no crawl"
-                    _add(_Lead(url=url, detail=detail))
+                    _add(
+                        _Lead(
+                            url=url,
+                            detail=detail,
+                            session=str(route.get("session") or "anon"),
+                        )
+                    )
         elif lead_kind == "authn":
             for finding in self._findings_matching(policy, findings, "vetores de entrada"):
                 for route in (finding.get("extras") or {}).get("routes") or []:
@@ -248,6 +269,7 @@ class ProbeEngine:
                             detail="form de login (campo de senha) observado",
                             method="POST",
                             fields=fields,
+                            session=str(route.get("session") or "anon"),
                         )
                     )
         elif lead_kind in ("injection", "upload", "csrf"):
@@ -274,6 +296,7 @@ class ProbeEngine:
                                 param=param,
                                 value=value,
                                 method="GET",
+                                session=str(route.get("session") or "anon"),
                             )
                         )
                     else:
@@ -283,6 +306,7 @@ class ProbeEngine:
                                 detail=f"form {method} observado",
                                 method=method,
                                 fields=[str(f) for f in route.get("fields") or []],
+                                session=str(route.get("session") or "anon"),
                             )
                         )
         return leads
@@ -324,7 +348,13 @@ class ProbeEngine:
     # ------------------------------------------------------------------
     # Execução do probe + avaliação de sinal
     # ------------------------------------------------------------------
+    def _client_for(self, lead: _Lead) -> ScanHTTPClient:
+        """Client do probe: o da sessão do lead (M7-P2) ou o default do run."""
+        return self._session_clients.get(lead.session) or self._client
+
     async def _probe(self, policy: ProbePolicy, lead: _Lead) -> dict[str, Any]:
+        """Re-visita o endpoint com o client da sessão observada (M7-P2)."""
+        client = self._client_for(lead)
         host = _host(lead.url)
         blocked = await self._robots_blocked(host, lead.url)
         if blocked is not None:
@@ -336,7 +366,7 @@ class ProbeEngine:
         if needs_differential:
             return await self._probe_post(policy, lead)
         try:
-            page = await self._client.get_page(lead.url)
+            page = await client.get_page(lead.url)
         except ScanError as exc:  # noqa: BLE001 - transcrito como skip auditável
             return self._record(policy, lead, skipped=True, skip_reason=f"unreachable: {exc}")
 
@@ -360,8 +390,9 @@ class ProbeEngine:
         — nunca credenciais reais). Respostas diferentes (status ou corpo)
         indicam que a aplicação discrimina a existência de conta.
         """
+        client = self._client_for(lead)
         try:
-            page = await self._client.get_page(lead.url)
+            page = await client.get_page(lead.url)
         except ScanError as exc:  # noqa: BLE001
             return self._record(policy, lead, skipped=True, skip_reason=f"unreachable: {exc}")
 
@@ -387,10 +418,10 @@ class ProbeEngine:
             )
 
         try:
-            first = await self._client.post_page(
+            first = await client.post_page(
                 action, login_payload(form, _AUTHN_DIFFERENTIAL_USERS[0], _AUTHN_SENTINEL_PASSWORD)
             )
-            second = await self._client.post_page(
+            second = await client.post_page(
                 action, login_payload(form, _AUTHN_DIFFERENTIAL_USERS[1], _AUTHN_SENTINEL_PASSWORD)
             )
         except ScanError as exc:  # noqa: BLE001
@@ -504,6 +535,7 @@ class ProbeEngine:
             "url": lead.url,
             "final_url": final_url,
             "host": _host(lead.url),
+            "session": lead.session,
             "status_code": status_code,
             "positive": bool(positive),
             "fp_matched": bool(fp),
@@ -550,6 +582,7 @@ class ProbeEngine:
                 "policy_versions": {r["rule_id"]: r["policy_version"] for r in records},
                 "probe_class": policy.class_label,
                 "priority": policy.priority,
+                "sessions": sorted({r["session"] for r in records}),
             },
         }
 

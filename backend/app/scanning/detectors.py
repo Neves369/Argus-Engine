@@ -207,6 +207,7 @@ def _input_vectors(page: TargetPage) -> dict[str, Any] | None:
                 "fields": fields,
                 "sensitive_fields": sensitive,
                 "probe_url": page.url,
+                "session": page.session,
             }
         )
     if not routes:

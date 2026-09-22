@@ -707,12 +707,20 @@ class ChariotAgent(BaseArchetype):
             return 0, []
         if (state.depth or "quick") != "deep":
             return 0, []
+        session_clients = None
+        scan_service = getattr(state, "scan_service", None)
+        if scan_service is not None and callable(getattr(scan_service, "session_clients", None)):
+            try:
+                session_clients = scan_service.session_clients()
+            except Exception:  # noqa: BLE001 - probe por papel é best-effort
+                session_clients = None
         try:
             behavior, records = await engine.run(
                 report=report,
                 findings=findings,
                 target=state.target,
                 probe_classes=state.probe_classes,
+                session_clients=session_clients,
             )
         except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
             return 0, []

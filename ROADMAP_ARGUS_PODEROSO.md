@@ -208,7 +208,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - **Finding** "Conteúdo visível apenas em sessão autenticada (controle de acesso)" (categoria `Aplicação / controle de acesso`, `candidate`, `confidence=0.4`): dispara só quando a URL base é alcançada pela sessão `user` mas o baseline anônimo não a alcança (status não-2xx ou redirect para fora da base, ex. → `/login`). Nada é enumerado.
 - **Degradação graciosa**: sem credenciais → crawl anônimo (sessão `anon`), nenhum request extra; login falho degrada para anônimo com `auth_status` no relatório.
 - Route map etiqueta cada rota com a sessão (`extras.routes[].session`); export summary inclui `sessions`.
-- **Próximas fatias**: M7-P2 = probes por papel + jornadas multi-step.
+- **Próximas fatias**: M7-P2 = probes por papel (entregue) + jornadas multi-step (P3).
 
 ### M7-P1 (entregue)
 - **Múltiplos perfis de sessão** (`SCAN_SESSION_PROFILES`, JSON list de `{name, login_url, username, password}`): substitui o `SCAN_LOGIN_*` único quando definido.
@@ -216,6 +216,14 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - **Crawl por papel**: cada perfil crawlea a base com seu próprio jar; `TargetPage.session` recebe o nome do perfil; órfão/login falho degrada (sessão com `auth_status` e excluída das comparações).
 - **Finding "Acesso distinto entre sessões (controle de acesso)"**: para rotas observadas sob ≥2 sessões, quando uma aparece em um papel e não em outro (`extras.routes[]` com `accessible_in`/`not_in`). Anon-blind (P0) generalizado para qualquer perfil com baseline anônimo.
 - Custo: requisições ≈ nº de perfis × orçamento do crawl; rate limit global por host mantido.
+
+### M7-P2 (entregue)
+- **Probes por papel**: o `ProbeEngine` (M6) reprova cada lead com o **client da sessão que o observou** — `session_clients` (injetado via `run(session_clients=...)`), com fallback para o client default do run quando a sessão do lead não tem client próprio (ex. `anon`).
+- **Leads conscientes de sessão**: `_Lead.session`; dedupe de lead por `url|param|session` — a MESMA URL observada em papéis distintos gera um probe por papel, dentro do mesmo teto `max_probes`/`max_per_endpoint` global.
+- **Rastreabilidade**: cada registro de probe carrega `session`; o finding "Comportamento / ..." expõe `extras.sessions` (quais papéis reproduziram o sinal).
+- **Pipeline de sessão por lead**: rota do route map e vetores de entrada carregam `session`; reflexões e erros verbosos repetidos sob outra sessão **mesclam** a sessão no finding agregado (`sessions`), gerando lead por papel sem duplicar findings.
+- **Wiring no Chariot**: `_behavior_probes` puxa `scan_service.session_clients()` (keep-alive das jars em memória, nunca serializadas) e repassa ao engine; degrada para registro se qualquer passo falhar.
+- **Próximas fatias**: M7-P3 = jornadas multi-step (login → ação → efeito observado, gravadas como fluxos e re-executadas por papel).
 
 ---
 
@@ -305,7 +313,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Validação conservadora (M4)
 - [ ] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
-- [ ] Contexto de sessão/papéis (M7) — **P0+P1 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões"; P2 = probes por papel + jornadas)
+- [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel; P3 = jornadas multi-step)
 - [ ] API/GraphQL (M8)
 - [ ] Diff/CI/escala (M9)
 - [ ] Pacotes e UX de política (M10)

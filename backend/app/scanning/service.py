@@ -93,6 +93,7 @@ class ScanService:
             if normalized is not None:
                 self._session_profiles.append(normalized)
         self._client_factory = client_factory
+        self._active_channels: list[dict[str, Any]] | None = None
 
     def _normalize_profile(self, profile: dict[str, str]) -> dict[str, str] | None:
         """Validate a session profile dict; ``None`` when unusable (skipped)."""
@@ -155,6 +156,8 @@ class ScanService:
 
         await self._authenticate(report)
         session = "user" if report.auth_status == "success" else "anon"
+        if session == "user":
+            self._active_channels = [{"name": "user", "client": self._client}]
         for base_url in candidates:
             attempt = await self._crawl(base_url, max_pages=override, session=session)
             report.pages = attempt.pages
@@ -196,6 +199,7 @@ class ScanService:
         jar. Pages are labeled per profile; ``report.auth*`` stay the primary's
         legacy fields, while every channel lands in ``report.sessions``.
         """
+        self._active_channels = channels
         profiles = channels[0]
         await self._authenticate(
             report,
@@ -405,6 +409,20 @@ class ScanService:
                 }
             )
         return channels
+
+    def session_clients(self) -> dict[str, Any]:
+        """Clients dos perfis autenticados no último scan (M7-P2).
+
+        Mantém vivas as jars por perfil para que o ProbeEngine reprove os leads
+        com o client da sessão observada — primário (shared) quando single
+        profile, e o jar isolado de cada perfil extra. Nunca serializado: os
+        clients (e seus cookies) ficam apenas em memória no escopo do run.
+        """
+        return {
+            channel["name"]: channel["client"]
+            for channel in (self._active_channels or [])
+            if channel.get("name") and channel.get("client") is not None
+        }
 
     def _finalize_sessions(self, report: ScanReport, session: str) -> None:
         """Label which session(s) observed the crawl (M7: session awareness).
