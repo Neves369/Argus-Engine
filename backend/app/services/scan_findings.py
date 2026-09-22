@@ -224,6 +224,7 @@ def _route_map_finding(report: ScanReport) -> dict[str, Any] | None:
                     "title": title,
                     "static": False,
                     "probe_url": page.url,
+                    "requested_url": page.requested_url or page.url,
                 }
                 for page, title in app_pages
             ],

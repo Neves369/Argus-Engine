@@ -34,6 +34,7 @@ class TargetPage:
     body: str
     body_truncated: bool = False
     final_url: str | None = None
+    requested_url: str | None = None
     links: list[str] = field(default_factory=list)
     forms: list[HtmlForm] = field(default_factory=list)
     tech: list[str] = field(default_factory=list)
@@ -52,6 +53,7 @@ class TargetPage:
             "body": self.body,
             "body_truncated": self.body_truncated,
             "final_url": self.final_url,
+            "requested_url": self.requested_url,
             "links": list(self.links),
             "forms": [
                 {

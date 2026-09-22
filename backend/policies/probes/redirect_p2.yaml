@@ -1,0 +1,50 @@
+# Política de probe P2 — Redirecionamento para host externo (Etapa M6).
+#
+# Pré-condição: o crawl observou uma rota de aplicação que, ao ser seguida,
+# saiu para um host externo ao alvo (redirect HTTP 3xx; a URL original fica
+# em `requested_url` no mapa de rotas). O probe re-faz esse GET original (uma
+# vez) e compara o host de chegada com o host da rota.
+#
+# Sinal positivo: na resposta fresca o host final (após redirects) difere do
+# host da rota original — saída para host externo reproduzida (lead P2).
+# Sinal negativo (precedência): resposta parece página 404/página genérica.
+#
+# P2 → fora do default (probe_classes_default=p0); execute com a allowlist
+# explícita (probe_classes=["redirect_p2"] ou PROBE_CLASSES_DEFAULT=p2).
+id: redirect_p2
+version: "1.0.0"
+name: Redirecionamento para host externo (observação)
+priority: "P2"
+class_label: "Redirecionamento para host externo"
+description: >
+  Uma rota observada do alvo permanece saindo para um host externo quando
+  re-consultada ao vivo. Sinal observacional de redirecionamento aberto
+  (destino fora do alvo) — lead para revisão do operador: parâmetros de URL
+  que controlam o destino podem permitir phishing/roubo de sessão.
+precondition:
+  lead: redirect
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: redirect_external
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: medium
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} rota(s) redirecionam para host externo"
+  remediation: >
+    Não redirecione com base em URL fornecida pelo usuário; restrinja
+    destinos a uma allowlist interna ou use identificadores não-URL.
+  references:
+    - https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/11-Client-side_Testing/04-Testing_for_Client-side_URL_Redirect
+  confidence: 0.5

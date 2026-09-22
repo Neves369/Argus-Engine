@@ -80,9 +80,16 @@ def _error_findings(*, live_body: str) -> tuple[ScanReport, list[dict]]:
     return report, derive_findings_from_scan(report)
 
 
-def test_catalog_loads_the_p0_policies():
+def test_catalog_loads_all_probe_policies():
     catalog = load_catalog()
-    assert sorted(catalog) == ["injection_p1", "reflection_p0", "upload_p1", "verbose_error_p0"]
+    assert sorted(catalog) == [
+        "csrf_p2",
+        "injection_p1",
+        "redirect_p2",
+        "reflection_p0",
+        "upload_p1",
+        "verbose_error_p0",
+    ]
     assert {p.id for p in catalog.values() if p.priority == "P0"} == {
         "reflection_p0",
         "verbose_error_p0",
@@ -90,6 +97,10 @@ def test_catalog_loads_the_p0_policies():
     assert {p.id for p in catalog.values() if p.priority == "P1"} == {
         "injection_p1",
         "upload_p1",
+    }
+    assert {p.id for p in catalog.values() if p.priority == "P2"} == {
+        "csrf_p2",
+        "redirect_p2",
     }
     assert all(p.default_enabled for p in catalog.values())
 
@@ -630,6 +641,235 @@ def test_p1_only_runs_with_allowlist():
 def test_resolve_classes_p1_default_includes_p0_and_p1():
     engine = ProbeEngine(respect_robots=False, default_classes="p1")
     resolved = engine.resolve_classes(None)
+    assert {"injection_p1", "upload_p1"} <= set(resolved)
+    assert {"reflection_p0", "verbose_error_p0"} <= set(resolved)
+
+
+ACCOUNT_URL = "http://example.com/account.php"
+REDIRECT_URL = "http://example.com/redirect.php"
+EXTERNAL_FINAL = "http://evil.test/landed"
+
+
+def _csrf_finding() -> dict:
+    return _input_routes_finding(
+        {"url": ACCOUNT_URL, "method": "POST", "action": "account.php", "fields": ["email"]}
+    )
+
+
+def _redirect_routes_finding(*routes: dict) -> dict:
+    return {
+        "category": "Aplicação / superfície de rotas",
+        "extras": {"routes": list(routes)},
+    }
+
+
+def test_csrf_positive_when_post_form_lacks_token():
+    report = ScanReport(target=TARGET, pages=[_page(ACCOUNT_URL, "<html></html>")])
+    findings = [_csrf_finding()]
+    body = (
+        '<form method="POST" action="/account.php">'
+        '<input type="text" name="email">'
+        "</form>"
+    )
+    stub = _stub_client({ACCOUNT_URL: _page(ACCOUNT_URL, body)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["csrf_p2"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert behavior[0]["category"] == "Comportamento / POST sem token de estado (CSRF)"
+    assert behavior[0]["severity"] == "medium"
+    assert records[0]["rule_id"] == "csrf_p2"
+    assert records[0]["positive"] is True
+
+
+def test_csrf_negative_when_token_present():
+    report = ScanReport(target=TARGET, pages=[_page(ACCOUNT_URL, "<html></html>")])
+    findings = [_csrf_finding()]
+    body = (
+        '<form method="POST" action="/account.php">'
+        '<input type="text" name="email">'
+        '<input type="hidden" name="csrf_token" value="tok123">'
+        "</form>"
+    )
+    stub = _stub_client({ACCOUNT_URL: _page(ACCOUNT_URL, body)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["csrf_p2"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+
+
+def test_csrf_fp_when_generic_404():
+    report = ScanReport(target=TARGET, pages=[_page(ACCOUNT_URL, "<html></html>")])
+    findings = [_csrf_finding()]
+    stub = _stub_client(
+        {ACCOUNT_URL: _page(ACCOUNT_URL, "<html><body>404 not found</body></html>")}
+    )
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["csrf_p2"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+    assert records[0]["fp_matched"] is True
+
+
+def test_redirect_positive_when_route_reaches_external_host():
+    report = ScanReport(target=TARGET, pages=[_page(REDIRECT_URL, "<html></html>")])
+    findings = [
+        _redirect_routes_finding(
+            {
+                "url": EXTERNAL_FINAL,
+                "static": False,
+                "requested_url": f"{REDIRECT_URL}?next={EXTERNAL_FINAL}",
+            }
+        )
+    ]
+    stub = _stub_client(
+        {
+            f"{REDIRECT_URL}?next={EXTERNAL_FINAL}": TargetPage(
+                url=EXTERNAL_FINAL,
+                status_code=200,
+                headers={},
+                body="<html>landed</html>",
+            )
+        }
+    )
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["redirect_p2"],
+        )
+    )
+
+    assert len(behavior) == 1
+    assert behavior[0]["category"] == "Comportamento / Redirecionamento para host externo"
+    assert records[0]["rule_id"] == "redirect_p2"
+    assert records[0]["positive"] is True
+
+
+def test_redirect_negative_when_route_stays_on_target():
+    report = ScanReport(target=TARGET, pages=[_page(REDIRECT_URL, "<html></html>")])
+    findings = [
+        _redirect_routes_finding(
+            {"url": REDIRECT_URL, "static": False, "requested_url": REDIRECT_URL}
+        )
+    ]
+    stub = _stub_client({REDIRECT_URL: _page(REDIRECT_URL, "<html>home</html>")})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["redirect_p2"],
+        )
+    )
+
+    assert behavior == []
+    assert records[0]["positive"] is False
+
+
+def test_redirect_lead_ignores_static_routes():
+    report = ScanReport(target=TARGET, pages=[_page(REDIRECT_URL, "<html></html>")])
+    findings = [
+        {
+            "category": "Aplicação / superfície de rotas",
+            "extras": {
+                "static_routes": [
+                    {"url": REDIRECT_URL, "static": True, "requested_url": REDIRECT_URL}
+                ]
+            },
+        }
+    ]
+    stub = _stub_client({REDIRECT_URL: _page(REDIRECT_URL, "<html>home</html>")})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(
+            report=report,
+            findings=findings,
+            target={"name": TARGET},
+            probe_classes=["redirect_p2"],
+        )
+    )
+
+    assert behavior == []
+    assert records == []
+    assert stub.calls == []
+
+
+def test_route_map_preserves_requested_url():
+    page = TargetPage(
+        url=EXTERNAL_FINAL,
+        status_code=200,
+        headers={},
+        body="<html><head><title>landed</title></head></html>",
+        requested_url=f"{REDIRECT_URL}?next={EXTERNAL_FINAL}",
+    )
+    report = ScanReport(target=TARGET, pages=[page])
+    findings = derive_findings_from_scan(report)
+
+    route_map = next(
+        f for f in findings if f["category"] == "Aplicação / superfície de rotas"
+    )
+    route = route_map["extras"]["routes"][0]
+    assert route["url"] == EXTERNAL_FINAL
+    assert route["requested_url"] == f"{REDIRECT_URL}?next={EXTERNAL_FINAL}"
+
+
+def test_p2_only_runs_with_allowlist():
+    report = ScanReport(target=TARGET, pages=[_page(ACCOUNT_URL, "<html></html>")])
+    findings = [_csrf_finding()]
+    body = (
+        '<form method="POST" action="/account.php">'
+        '<input type="text" name="email">'
+        "</form>"
+    )
+    stub = _stub_client({ACCOUNT_URL: _page(ACCOUNT_URL, body)})
+    engine = ProbeEngine(client=stub, respect_robots=False)
+
+    behavior, records = _run(
+        engine.run(report=report, findings=findings, target={"name": TARGET})
+    )
+
+    # Default seguro: P0 apenas — CSRF (P2) fica de fora mesmo com lead ativo.
+    assert behavior == []
+    assert all(r["rule_id"] != "csrf_p2" for r in records)
+
+
+def test_resolve_classes_p2_default_includes_everything():
+    engine = ProbeEngine(respect_robots=False, default_classes="p2")
+    resolved = engine.resolve_classes(None)
+    assert {"csrf_p2", "redirect_p2"} <= set(resolved)
     assert {"injection_p1", "upload_p1"} <= set(resolved)
     assert {"reflection_p0", "verbose_error_p0"} <= set(resolved)
 

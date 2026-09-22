@@ -1,0 +1,51 @@
+# Política de probe P2 — CSRF ausente / POST sem token de estado (Etapa M6).
+#
+# Pré-condição: o crawl observou um form POST com campos editáveis (ou
+# sensíveis) apontando para a própria aplicação. O probe re-visita a página do
+# form (uma vez, GET) e avalia a resposta fresca — nenhum POST é feito, nada é
+# submetido: só observação da estrutura do formulário.
+#
+# Sinal positivo: a resposta fresca ainda contém um form POST com input
+# editável/sensível e SEM campo token (csrf/token/_token/authenticity etc.) —
+# mutação de estado sem proteção observável de CSRF (lead P2).
+# Sinal negativo (precedência): resposta parece página 404/página genérica.
+#
+# P2 → fora do default (probe_classes_default=p0); execute com a allowlist
+# explícita (probe_classes=["csrf_p2"] ou PROBE_CLASSES_DEFAULT=p2).
+id: csrf_p2
+version: "1.0.0"
+name: POST de estado sem token CSRF (observação)
+priority: "P2"
+class_label: "POST sem token de estado (CSRF)"
+description: >
+  Um form de mudança de estado (POST) observado não expõe campo token CSRF
+  em sua estrutura. Sem submeter nada, o Argus registra o comportamento
+  reproduzível como lead para revisão do operador: mutação de estado sem
+  proteção observável contra forjar de requisição entre sites.
+precondition:
+  lead: csrf
+allowed_probe:
+  tool: http_request
+  method: GET
+  max_per_endpoint: 1
+  respect_robots: true
+positive_signal:
+  - kind: missing_sensitive_field
+negative_signal:
+  - kind: body_contains
+    value: "not found"
+  - kind: body_contains
+    value: "página não encontrada"
+  - kind: body_contains
+    value: "404"
+candidate_severity: medium
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} form(s) POST sem token de estado"
+  remediation: >
+    Proteja toda mutação de estado com token CSRF por sessão (e o mesmo
+    origin/same-site) e valide-o no servidor para cada request de escrita.
+  references:
+    - https://owasp.org/www-community/attacks/csrf
+  confidence: 0.5

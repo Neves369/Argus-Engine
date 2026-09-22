@@ -181,6 +181,7 @@ class ScanHTTPClient:
                         body=body.decode(errors="replace"),
                         body_truncated=truncated,
                         final_url=str(response.url),
+                        requested_url=url,
                     )
             except httpx.HTTPError as exc:
                 logger.warning(

@@ -204,10 +204,20 @@ class ProbeEngine:
         elif lead_kind == "redirect":
             for finding in self._findings_matching(policy, findings, "superfície de rotas"):
                 extras = finding.get("extras") or {}
-                for route in [*(extras.get("routes") or []), *(extras.get("static_routes") or [])]:
-                    url = str(route.get("url") or route.get("probe_url") or "").strip()
-                    if url:
-                        _add(_Lead(url=url, detail="rota observada no crawl"))
+                for route in extras.get("routes") or []:
+                    url = str(
+                        route.get("requested_url")
+                        or route.get("probe_url")
+                        or route.get("url")
+                        or ""
+                    ).strip()
+                    if not url:
+                        continue
+                    if _host(str(route.get("url") or "")) != _host(url):
+                        detail = "rota saiu para host externo no crawl"
+                    else:
+                        detail = "rota observada no crawl"
+                    _add(_Lead(url=url, detail=detail))
         elif lead_kind in ("injection", "upload", "csrf"):
             reflection_leads = self._reflection_params(findings)
             for finding in self._findings_matching(policy, findings, "vetores de entrada"):
