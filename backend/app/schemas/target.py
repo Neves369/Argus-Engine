@@ -9,6 +9,8 @@ class TargetBase(BaseModel):
     name: str
     url: str | None = None
     notes: str | None = None
+    #: Nota de autorização/escopo (M10-P1) — quem autorizou e sob qual escopo.
+    authorization_note: str | None = None
 
 
 class TargetCreate(TargetBase):

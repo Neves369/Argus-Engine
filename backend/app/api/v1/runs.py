@@ -137,7 +137,12 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         target = await db.get(Target, payload.target_id)
         if target is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-        target_dict = {"name": target.name, "url": target.url, "notes": target.notes}
+        target_dict = {
+            "name": target.name,
+            "url": target.url,
+            "notes": target.notes,
+            "authorization_note": target.authorization_note,
+        }
 
     try:
         validate_scope(target_dict.get("name", ""))
@@ -298,6 +303,7 @@ async def stream_run(
                 name=target_name,
                 url=target_meta.get("url"),
                 notes=target_meta.get("notes"),
+                authorization_note=target_meta.get("authorization_note"),
             )
             db.add(new_target)
             await db.flush()

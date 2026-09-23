@@ -19,4 +19,8 @@ class Target(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Nota de autorização/escopo (M10-P1): quem autorizou o alvo, sob qual
+    #: escopo — registrada junto ao Target e snapshotted em cada Run para a
+    #: trilha de auditoria. Texto livre; nunca entra em log de credenciais.
+    authorization_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

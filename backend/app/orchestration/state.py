@@ -103,7 +103,7 @@ class GraphState(BaseModel):
         sources and verification never see a raw name like ``" host"`` (which
         would generate an invalid URL and break host-based sources).
         """
-        for key in ("name", "url", "notes"):
+        for key in ("name", "url", "notes", "authorization_note"):
             value = self.target.get(key)
             if isinstance(value, str):
                 self.target[key] = value.strip()

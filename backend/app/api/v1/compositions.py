@@ -128,6 +128,7 @@ async def execute_composition(
             name=target_name,
             url=target.get("url"),
             notes=target.get("notes"),
+            authorization_note=target.get("authorization_note"),
         )
         db.add(new_target)
         await db.flush()

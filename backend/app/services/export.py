@@ -257,6 +257,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
     """
     result = run.result or {}
     target = (result.get("target") or {}).get("name") or "unknown"
+    target_meta = result.get("target") or {}
 
     by_severity: dict[str, int] = {}
     for finding in findings:
@@ -266,6 +267,7 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
     return {
         "run_id": run.id,
         "target": target,
+        "authorization": target_meta.get("authorization_note"),
         "status": run.status,
         "resumable": run.status in ("cancelled", "failed") and bool(run.result),
         "generated_at": _iso(run.finished_at) or _iso(run.created_at),
@@ -350,6 +352,7 @@ def _finding_markdown_lines(finding: Finding) -> list[str]:
 def run_report_markdown(run: Run, findings: list[Finding]) -> str:
     result = run.result or {}
     target = (result.get("target") or {}).get("name") or "unknown"
+    authorization = (result.get("target") or {}).get("authorization_note")
     execu = _executive_summary(run, findings)
     auth_line = f"- **Auth:** {execu['auth']}"
     if execu.get("auth_cookie_names"):
@@ -361,6 +364,10 @@ def run_report_markdown(run: Run, findings: list[Finding]) -> str:
         f"- **Run:** #{run.id}",
         f"- **Status:** {run.status}",
         f"- **Achados:** {len(findings)}",
+    ]
+    if authorization:
+        lines.append(f"- **Autorização:** {authorization}")
+    lines += [
         "",
         "## Resumo",
         "",

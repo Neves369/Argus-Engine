@@ -12,7 +12,12 @@ router = APIRouter(prefix="/targets", tags=["targets"])
 
 @router.post("", response_model=TargetRead, status_code=status.HTTP_201_CREATED)
 async def create_target(payload: TargetCreate, db: DBSession) -> Target:
-    target = Target(name=payload.name, url=payload.url, notes=payload.notes)
+    target = Target(
+        name=payload.name,
+        url=payload.url,
+        notes=payload.notes,
+        authorization_note=payload.authorization_note,
+    )
     db.add(target)
     await db.commit()
     await db.refresh(target)

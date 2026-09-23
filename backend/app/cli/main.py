@@ -219,6 +219,7 @@ def _session_execute(composition_id: int) -> tuple[int, str]:
                     name=target_name,
                     url=target.get("url"),
                     notes=target.get("notes"),
+                    authorization_note=target.get("authorization_note"),
                 )
                 session.add(new_target)
                 await session.flush()
