@@ -11,6 +11,7 @@ from app.api.v1 import (
     findings,
     operate,
     policy,
+    presets,
     providers,
     runs,
     sources,
@@ -35,3 +36,4 @@ api_router.include_router(archetypes.router, dependencies=[Depends(require_auth)
 api_router.include_router(providers.router, dependencies=[Depends(require_auth)])
 api_router.include_router(operate.router, dependencies=[Depends(require_auth)])
 api_router.include_router(policy.router, dependencies=[Depends(require_auth)])
+api_router.include_router(presets.router, dependencies=[Depends(require_auth)])

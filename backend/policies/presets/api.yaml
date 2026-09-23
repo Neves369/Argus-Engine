@@ -1,0 +1,16 @@
+# Preset Tarot — API (Etapa M10-P3).
+#
+# Composição pronta para superfícies de API: Eremita (ingestão de OpenAPI/
+# GraphQL no scan) + Mago (síntese/correlação da superfície) + Justiça
+# (fechador). Pareado com o pacote `api-only` (deep, probes JSON/GraphQL).
+id: api
+version: "1.0.0"
+name: "API"
+description: >
+  Superfície de API: OpenAPI/Swagger/GraphQL + probes de API (JSON error/bulk
+  e introspecção GraphQL), sem classes de formulário HTML.
+archetypes:
+  - hermit
+  - magician
+  - justice
+policy_package: api-only

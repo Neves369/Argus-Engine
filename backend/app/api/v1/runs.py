@@ -17,6 +17,7 @@ from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.state import GraphState
 from app.policies.packages import run_policy
+from app.policies.presets import run_preset
 from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
@@ -45,6 +46,32 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _resolve_preset(
+    preset_id: str | None,
+    *,
+    archetypes: list[str] | None,
+    policy_package: str | None,
+) -> dict[str, Any]:
+    """Resolve o preset Tarot (M10-P3) ou passa os campos explícitos.
+
+    Um preset é autoritativo para as cartas; id desconhecido → 404, inválido → 422.
+    """
+    try:
+        return run_preset(
+            preset_id,
+            archetypes=archetypes,
+            policy_package=policy_package,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
 
 
 def _resolve_policy(
@@ -152,7 +179,13 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    archetypes = payload.archetypes
+    preset = _resolve_preset(
+        payload.preset,
+        archetypes=payload.archetypes,
+        policy_package=payload.policy_package,
+    )
+    archetypes = preset["archetypes"] or []
+    policy_package = preset["policy_package"]
     if archetypes:
         try:
             validate_sequence(archetypes)
@@ -169,7 +202,7 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
 
     depth = payload.depth or settings.depth_default
     policy = _resolve_policy(
-        payload.policy_package,
+        policy_package,
         depth=depth,
         probe_classes=payload.probe_classes,
         journey_classes=payload.journey_classes,
@@ -188,6 +221,8 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
         journey_classes=policy["journey_classes"],
         policy_package=policy["policy_package"],
         policy_resolved=policy["policy_resolved"],
+        preset=preset["preset"],
+        preset_resolved=preset["preset_resolved"],
     )
     services = _runtime_services()
     _inject_runtime(state, services)
@@ -236,6 +271,7 @@ async def stream_run(
     probe_classes: list[str] | None = None,
     journey_classes: list[str] | None = None,
     policy_package: str | None = None,
+    preset: str | None = None,
 ):
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
@@ -260,6 +296,8 @@ async def stream_run(
             journey_classes = cfg.get("journey_classes") or None
         if policy_package is None:
             policy_package = cfg.get("policy_package") or None
+        if preset is None:
+            preset = cfg.get("preset") or None
         target_meta = cfg.get("target") or {}
         devil_mode = bool(cfg.get("devil_mode", devil_mode))
         depth = str(cfg.get("depth") or depth)
@@ -285,6 +323,13 @@ async def stream_run(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
+    preset_policy = _resolve_preset(
+        preset,
+        archetypes=archetypes,
+        policy_package=policy_package,
+    )
+    archetypes = preset_policy["archetypes"] or []
+    policy_package = preset_policy["policy_package"]
     if archetypes:
         try:
             validate_sequence(archetypes)
@@ -334,6 +379,8 @@ async def stream_run(
         journey_classes=policy["journey_classes"],
         policy_package=policy["policy_package"],
         policy_resolved=policy["policy_resolved"],
+        preset=preset_policy["preset"],
+        preset_resolved=preset_policy["preset_resolved"],
     )
     services = _runtime_services()
     _inject_runtime(state, services)

@@ -1,0 +1,16 @@
+# Preset Tarot — App map (Etapa M10-P3).
+#
+# Composição pronta para mapear a aplicação: Eremita (scan de superfície) +
+# Louco (crawl/exploração de rotas/forms) + Justiça (fechador). Pareado com o
+# pacote `surface-only` (quick, sem probes de comportamento).
+id: app-map
+version: "1.0.0"
+name: "Mapa de aplicação"
+description: >
+  Mapa da aplicação: crawl de rotas/forms/parâmetros, sem probes de
+  comportamento (quick).
+archetypes:
+  - hermit
+  - fool
+  - justice
+policy_package: surface-only

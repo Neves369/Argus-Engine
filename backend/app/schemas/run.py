@@ -18,6 +18,10 @@ class RunCreate(BaseModel):
     #: depth/probe_classes/journey_classes/devil_mode do run (valores explícitos
     #: do payload são ignorados em favor do pacote versionado).
     policy_package: str | None = None
+    #: Preset Tarot (M10-P3): composição pronta de cartas. Quando definido,
+    #: é autoritativo para ``archetypes`` e pode sugerir um ``policy_package``
+    #: (um ``policy_package`` explícito no payload vence o do preset).
+    preset: str | None = None
 
 
 class RunRead(BaseModel):

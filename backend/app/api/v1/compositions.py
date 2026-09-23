@@ -13,6 +13,7 @@ from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
 from app.policies.packages import run_policy
+from app.policies.presets import run_preset
 from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
@@ -32,7 +33,23 @@ def _utcnow() -> datetime:
 @router.post("", response_model=CompositionRead, status_code=status.HTTP_201_CREATED)
 async def create_composition(payload: CompositionCreate, db: DBSession) -> Session:
     try:
-        validate_sequence(payload.archetypes)
+        preset_policy = run_preset(
+            payload.preset,
+            archetypes=payload.archetypes,
+            policy_package=payload.policy_package,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    archetypes = preset_policy["archetypes"] or []
+    try:
+        validate_sequence(archetypes)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
@@ -42,13 +59,14 @@ async def create_composition(payload: CompositionCreate, db: DBSession) -> Sessi
         name=payload.name,
         status="open",
         config={
-            "archetypes": payload.archetypes,
+            "archetypes": archetypes,
             "target": payload.target,
             "devil_mode": payload.devil_mode,
             "depth": payload.depth,
             "probe_classes": payload.probe_classes,
             "journey_classes": payload.journey_classes,
-            "policy_package": payload.policy_package,
+            "policy_package": preset_policy["policy_package"],
+            "preset": preset_policy["preset"],
         },
     )
     db.add(session)
@@ -103,7 +121,21 @@ async def execute_composition(
         )
 
     config = session.config or {}
-    archetypes = config.get("archetypes", [])
+    try:
+        preset_policy = run_preset(
+            config.get("preset"),
+            archetypes=config.get("archetypes"),
+            policy_package=config.get("policy_package"),
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    archetypes = preset_policy["archetypes"] or []
     try:
         validate_sequence(archetypes)
     except ValueError as exc:
@@ -144,7 +176,7 @@ async def execute_composition(
         )
     try:
         policy = run_policy(
-            config.get("policy_package"),
+            preset_policy["policy_package"],
             depth=depth,
             probe_classes=config.get("probe_classes") or None,
             journey_classes=config.get("journey_classes") or None,
@@ -171,6 +203,8 @@ async def execute_composition(
         journey_classes=policy["journey_classes"],
         policy_package=policy["policy_package"],
         policy_resolved=policy["policy_resolved"],
+        preset=preset_policy["preset"],
+        preset_resolved=preset_policy["preset_resolved"],
     )
     services = (
         build_sources_service(),

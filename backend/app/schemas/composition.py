@@ -16,6 +16,8 @@ class CompositionCreate(BaseModel):
     journey_classes: list[str] | None = None
     #: Pacote de política (M10-P0): autoritativo quando definido (ver RunCreate).
     policy_package: str | None = None
+    #: Preset Tarot (M10-P3): composição pronta de cartas (ver RunCreate).
+    preset: str | None = None
 
 
 class CompositionExecute(BaseModel):

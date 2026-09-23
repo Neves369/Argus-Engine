@@ -1,0 +1,15 @@
+# Preset Tarot — Recon (Etapa M10-P3).
+#
+# Composição pronta de cartas para reconhecimento de superfície: apenas o
+# Eremita (coleta de fontes + scan de superfície/config) e a Justiça (fechador).
+# Pareado com o pacote `surface-only` (quick, sem probes de comportamento).
+id: recon
+version: "1.0.0"
+name: "Recon"
+description: >
+  Reconhecimento de superfície e configuração: fontes + scan de superfície,
+  sem crawl amplo nem probes de comportamento.
+archetypes:
+  - hermit
+  - justice
+policy_package: surface-only

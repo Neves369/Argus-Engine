@@ -55,6 +55,10 @@ class GraphState(BaseModel):
     #: e reprodução. Serializado (persiste em resume e aparece no relatório).
     policy_package: str | None = None
     policy_resolved: dict[str, Any] | None = None
+    #: Preset Tarot aplicado (M10-P3): id do preset + snapshot resolvido
+    #: (archetypes/policy_package + sha256) para auditoria. Serializado.
+    preset: str | None = None
+    preset_resolved: dict[str, Any] | None = None
     #: Etapa 7 (resumo): marca que o trecho intermediário do histórico já foi
     #: resumido via LLM — a partir daí a compressão segue determinística, para
     #: limitar a 1 chamada de resumo por run. Serializado (persiste em resume).

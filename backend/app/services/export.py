@@ -294,6 +294,10 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "probe_classes": result.get("probe_classes"),
             "journey_classes": result.get("journey_classes"),
         },
+        "preset": {
+            "id": result.get("preset"),
+            "resolved": result.get("preset_resolved"),
+        },
         "findings": [finding_report(f) for f in _ordered(findings)],
         "observability": {
             "tokens_used": result.get("tokens_used", 0),

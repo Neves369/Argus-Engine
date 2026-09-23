@@ -1,0 +1,17 @@
+# Preset Tarot — Deep web (Etapa M10-P3).
+#
+# Composição pronta para avaliação profunda de aplicação web: Eremita + Louco +
+# Justiça, com o Carro entrando automaticamente pelo depth=deep (probes de
+# comportamento sob política + re-probe). Pareado com o pacote `bugbounty-web`
+# (deep, probes P0/P1 + redirect aberto, sem CSRF/authn).
+id: deep-web
+version: "1.0.0"
+name: "Deep web"
+description: >
+  Avaliação profunda de aplicação web: crawl amplo + probes de comportamento
+  sob política (P0/P1 + redirect aberto), com re-probe ao vivo.
+archetypes:
+  - hermit
+  - fool
+  - justice
+policy_package: bugbounty-web
