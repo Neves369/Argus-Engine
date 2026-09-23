@@ -255,7 +255,7 @@ class Settings(BaseSettings):
     devil_allowed_tools: list[str] = [
         "http_request",
         "form_discover",
-        "http_header_probe",
+        "header_reprobe",
         "session_login",
     ]
     devil_max_probes: int = 20

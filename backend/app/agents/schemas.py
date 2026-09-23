@@ -86,14 +86,14 @@ class ChariotOutput(ArchetypeOutputBase):
     entry records real non-destructive execution in normal mode (``mode="live"``:
     live verification probes + operator-provided non-destructive tools); a
     ``declined`` (operator rejected, devil mode) entry never reaches the LLM
-    gateway or produces findings. ``no_backend`` is reached in devil mode once
-    the action IS approved but no real execution tool is wired up (Argus Engine
-    ships without a destructive backend by design — see ADR on Devil Mode
-    scope); this action honestly reports that nothing was performed rather than
-    fabricating a success record.
+    gateway or produces findings. ``executed`` is reached in devil mode once the
+    action IS approved and the allowlisted tools actually ran within the
+    ``DevilGuard`` rails (per-step audit in ``devil_steps``). ``no_backend`` is
+    the honest fallback when the action is approved but no executor is wired or
+    the allowlist matches no registered tool.
     """
 
-    action: Literal["safety", "declined", "no_backend", "execute"]
+    action: Literal["safety", "declined", "no_backend", "execute", "executed"]
     mode: Literal["simulate", "devil", "live"]
     note: str | None = None
     findings: int | None = None

@@ -22,6 +22,7 @@
 - **M10 P1 entregue (set/2026):** trilha de autorização — `Target.authorization_note` (nota de escopo) snapshotted por run e exposta no relatório (ver seção M10).
 - **M10 P2 entregue (set/2026):** relatório executivo vs técnico — `view=executive|technical` em `/runs/{id}/report` e `/runs/{id}/export`, com `run_executive_report`/`run_executive_markdown` (resumo + top achados, sem evidência) (ver seção M10).
 - **M10 P3 entregue (set/2026):** presets Tarot (`recon`, `app-map`, `deep-web`, `api`) — composições prontas de cartas pareadas a pacotes de política, com `preset` autoritativo no run e `GET /presets` (ver seção M10).
+- **M5 entregue (set/2026):** Diabo controlado — flag + HITL + `DevilGuard` (allowlist estrita, `max_probes`/`max_duration`/`max_rate`) com backend de execução da allowlist via `ToolExecutor` após aprovação, trilha por passo e kill-switch a cada passo (ver seção M5).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -57,7 +58,7 @@ O Argus poderoso entrega, em um run autorizado:
 [Curto]        M2  Tools HTTP/sessão + re-probe (Carro)
 [Curto]        M3  depth=quick|deep
 [Médio]        M4  Justiça, FP, relatório maduro
-[Médio]        M5  Diabo controlado (HITL)
+[Feito]        M5  Diabo controlado (HITL)
 [Poder]        M6  Probes de comportamento por classe (controlados) — P0..P3 pronto
 [Poder]        M7  Sessão, papéis e fluxos multi-step
 [Poder]        M8  APIs e superfícies modernas
@@ -134,6 +135,8 @@ O Argus poderoso entrega, em um run autorizado:
 ## Fase M5 — Diabo controlado
 
 **Meta:** pressão extra só com consentimento explícito.
+
+**Status (set/2026):** **M5 entregue** — o gating já existia (flag `devil_mode` + HITL obrigatório + `DevilGuard` com allowlist estrita e limites duros); o que faltava era o **backend de execução**. Agora, uma vez aprovada a ação, o Carro executa de verdade as tools da allowlist via `ToolExecutor` (com `devil_mode=True`), dentro dos rails `max_probes`/`max_duration`/`max_rate` (throttle real entre probes), com trilha de auditoria por passo (`devil_steps`: tool, `destructive`, `outcome`, `attempted_at`, duração) e kill-switch verificado a cada passo. `no_backend` permanece apenas como fallback honesto quando não há executor injetado ou a allowlist não casa nenhuma tool registrada.
 
 **Entregas**
 - Flag `devil_mode` + HITL obrigatório.
@@ -453,7 +456,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Re-probe ao vivo (M2)
 - [ ] Profundidade explícita (M3)
 - [ ] Validação conservadora (M4)
-- [ ] Modo agressivo auditável (M5)
+- [x] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
 - [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2+P3 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel + jornadas multi-step por sessão)
 - [x] API/GraphQL (M8) — **P0+P1+P2+P3 entregues** (OpenAPI/Swagger, probes JSON, GraphQL com introspecção só autorizada + WebSocket fingerprint passivo)
@@ -472,7 +475,7 @@ Com M9–M10, vira **produto operável em time**.
 |-----------|-------|---------------------------|
 | Agora | M1b + M2 | Relatório limpo + leads revalidados |
 | +1 ciclo | M3 + M4 | Depth e confiança profissionais |
-| +1 ciclo | M5 | Stress opt-in |
+| Feito | M5 | Stress opt-in: flag + HITL + allowlist + rails, com backend de execução da allowlist |
 | Feito | M6 P0+ → P3 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial |
 | +2 ciclos | M7 | Authz/sessão (P0: sessão única + "visível só autenticado"; P1: múltiplos perfis + "acesso distinto entre sessões" — entregues) |
 | Feito | M8 | APIs modernas: OpenAPI/Swagger + probes JSON + GraphQL (introspecção só autorizada) + WebSocket fingerprint |
@@ -518,10 +521,11 @@ Com M9–M10, vira **produto operável em time**.
 
 1. ~~Fechar **M1b + M2**~~ — entregues.  
 2. ~~Implementar **M3 + M4**~~ — entregues.  
-3. ~~Abrir design formal da **M6 P0→P3**~~ — entregue (P0..P3).  
-4. ~~Expandir **M7** (sessão/papéis)~~ — entregue (P0..P3).  
-5. ~~Expandir **M8** (APIs modernas)~~ — entregue (P0: OpenAPI; P1: probes JSON; P2: GraphQL com introspecção só autorizada; P3: WebSocket fingerprint passivo).  
-6. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas).  
-7. ~~Expandir **M10**~~ — P0+P1+P2+P3 + camada de UI entregues (pacotes de política + `policy_package` autoritativo; trilha de autorização com `Target.authorization_note` snapshot por run; relatório executivo vs técnico via `view=executive|technical`; presets Tarot `recon`/`app-map`/`deep-web`/`api` com `preset` autoritativo; painel de profundidade/classes/pacotes/presets no frontend). Quando quiser escala: a parte adiada da M9 (filas/isolamento N alvos).
+3. ~~Implementar **M5**~~ — entregue (flag + HITL + `DevilGuard` + backend de execução da allowlist com throttle/teto/kill-switch e trilha por passo).  
+4. ~~Abrir design formal da **M6 P0→P3**~~ — entregue (P0..P3).  
+5. ~~Expandir **M7** (sessão/papéis)~~ — entregue (P0..P3).  
+6. ~~Expandir **M8** (APIs modernas)~~ — entregue (P0: OpenAPI; P1: probes JSON; P2: GraphQL com introspecção só autorizada; P3: WebSocket fingerprint passivo).  
+7. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas).  
+8. ~~Expandir **M10**~~ — P0+P1+P2+P3 + camada de UI entregues (pacotes de política + `policy_package` autoritativo; trilha de autorização com `Target.authorization_note` snapshot por run; relatório executivo vs técnico via `view=executive|technical`; presets Tarot `recon`/`app-map`/`deep-web`/`api` com `preset` autoritativo; painel de profundidade/classes/pacotes/presets no frontend). Quando quiser escala: a parte adiada da M9 (filas/isolamento N alvos).
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.

@@ -89,9 +89,8 @@ def test_hermit_falls_back_on_provider_error():
 
 @respx.mock
 def test_chariot_requires_approval_then_reports_no_backend():
-    """No real destructive-execution backend ships with Argus Engine by design
-    (see ADR on Devil Mode scope) — once approved, Chariot must honestly report
-    that nothing was executed rather than fabricating a success finding."""
+    """Sem executor injetado, uma ação aprovada degrada honestamente para
+    ``no_backend`` (nada foi executado) em vez de fabricar sucesso."""
     respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
         return_value=_ok_response("llama-3.3-70b-versatile")
     )
@@ -112,7 +111,7 @@ def test_chariot_requires_approval_then_reports_no_backend():
 
     entry = result["history"][-1]
     assert entry["action"] == "no_backend"
-    assert "nenhum backend" in entry["note"].lower()
+    assert "nada foi executado" in entry["note"].lower()
     # Never a fabricated success record — no finding is invented.
     assert "findings" not in result or result["findings"] == []
 

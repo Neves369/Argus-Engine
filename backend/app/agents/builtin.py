@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -963,13 +964,14 @@ class ChariotAgent(BaseArchetype):
 
     async def _controlled_execution(self, state: GraphState) -> dict:
         """Execução controlada (devil mode): ação destrutiva exige aprovação
-        humana por ação e, mesmo aprovada, não há backend de execução real
-        plugado nesta instância — registra honestamente que nada rodou.
+        humana por ação. Uma vez aprovada, o Carro executa de verdade as tools
+        da allowlist do ``DevilGuard`` via ``ToolExecutor`` (``devil_mode=True``)
+        dentro dos rails de probes/taxa/tempo, com trilha de auditoria por passo
+        e kill-switch verificado a cada passo. Sem executor/allowlist, degrada
+        honestamente para ``no_backend`` (nada rodou).
 
-        Desde a Etapa M5 os rails do Diabo (allowlist estrita de tools + limites
-        duros de probes/taxa/tempo) são codificados num ``DevilGuard`` e
-        registrados na proposta de aprovação e no entry — trilha de auditoria
-        completa do que seria permitido e de quanto seria limitado.
+        Os rails do Diabo (allowlist estrita + limites duros) são codificados no
+        ``DevilGuard`` e registrados na proposta de aprovação e no entry.
         """
         from app.services.devil_guard import build_devil_guard
 
@@ -1047,30 +1049,134 @@ class ChariotAgent(BaseArchetype):
 
         result = await self._attempt(state, devil_mode=True)
 
-        # Argus Engine ships without a real destructive-execution backend by
-        # design (see ROADMAP/ADR on Devil Mode scope) — the action IS
-        # approved at this point, but there is nothing real to run. Report
-        # that honestly instead of fabricating a success record: a security
-        # tool's audit trail must never claim an action happened when it
-        # didn't.
+        # Backend de execução controlada (M5): resolve as tools da allowlist
+        # presentes no executor e as roda dentro dos rails. A LLM NÃO decide o
+        # probe — os passos são determinísticos a partir da allowlist.
+        executor = state.tool_executor
+        allowed = (
+            [s for s in executor.registry.specs() if guard.allows(s.name)]
+            if executor is not None
+            else []
+        )
+
+        if not allowed:
+            entry = {
+                "agent": self.key,
+                "action": "no_backend",
+                "mode": "devil",
+                "note": (
+                    "Ação aprovada pelo operador, mas nenhuma tool da allowlist "
+                    "está registrada no executor — nada foi executado."
+                ),
+                "findings": 0,
+                "allowed_tools": rails["allowed_tools"],
+                "devil_guard": rails,
+            }
+            update: dict[str, Any] = {**consumed, "stop_reason": "no_backend"}
+            _apply_llm(entry, update, state, result, fallback_tokens=0)
+            entry = self.validate_entry(entry)
+            update["history"] = [*state.history, entry]
+            update.update(self._trace_update(state, entry, started_at))
+            return update
+
+        steps, probes, stop_reason = await self._execute_devil(
+            executor, allowed, guard, target, state.devil_probes_done
+        )
         entry = {
             "agent": self.key,
-            "action": "no_backend",
+            "action": "executed",
             "mode": "devil",
-            "note": (
-                "Ação aprovada pelo operador, mas nenhum backend de execução "
-                "real está configurado nesta instância — nada foi executado."
-            ),
             "findings": 0,
+            "tools_tried": len(steps),
+            "devil_probes_done": probes,
+            "devil_steps": steps,
             "allowed_tools": rails["allowed_tools"],
             "devil_guard": rails,
         }
-        update: dict[str, Any] = {**consumed, "stop_reason": "no_backend"}
+        final_reason = stop_reason or "devil_completed"
+        if final_reason == "devil_limits":
+            entry["note"] = "Execução interrompida pelo teto do DevilGuard (probes/tempo)."
+        elif final_reason == "devil_kill_switch":
+            entry["note"] = "Execução interrompida pelo kill-switch."
+        update: dict[str, Any] = {
+            **consumed,
+            "stop_reason": final_reason,
+            "devil_probes_done": probes,
+        }
         _apply_llm(entry, update, state, result, fallback_tokens=0)
         entry = self.validate_entry(entry)
         update["history"] = [*state.history, entry]
         update.update(self._trace_update(state, entry, started_at))
         return update
+
+    async def _execute_devil(
+        self,
+        executor: ToolExecutor,
+        specs: list[Any],
+        guard,
+        target: str,
+        probes_done: int,
+    ) -> tuple[list[dict[str, Any]], int, str | None]:
+        """Roda as tools da allowlist dentro dos rails do DevilGuard (M5).
+
+        Cada passo é uma tool invocada com ``devil_mode=True`` (libera o gate de
+        ``destructive`` do executor) e registrada com trilha de auditoria por
+        passo. Teto de probes/tempo, throttle de taxa e kill-switch são checados
+        a cada passo; qualquer um deles interrompe o loop e devolve um
+        ``stop_reason``. Retorna ``(passos, total_de_probes, stop_reason)``.
+        """
+        from app.core.security import is_kill_switch_active
+
+        steps: list[dict[str, Any]] = []
+        probes = probes_done
+        started = time.monotonic()
+        last_probe_at = started
+        stop_reason: str | None = None
+
+        for spec in specs:
+            now = time.monotonic()
+            if not guard.within_limits(probes, now - started):
+                stop_reason = "devil_limits"
+                break
+            if is_kill_switch_active():
+                stop_reason = "devil_kill_switch"
+                break
+            delay = guard.throttle_delay_seconds(now - last_probe_at)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            step = await self._run_devil_tool(executor, spec, target)
+            steps.append(step)
+            probes += 1
+            last_probe_at = time.monotonic()
+        return steps, probes, stop_reason
+
+    async def _run_devil_tool(
+        self, executor: ToolExecutor, spec, target: str
+    ) -> dict[str, Any]:
+        """Invoca uma tool da allowlist em devil mode, com auditoria por passo."""
+        started_at = _utcnow()
+        params = {"target": target, "url": target}
+        try:
+            result = await executor.execute(spec.name, params, devil_mode=True)
+            return {
+                "tool": spec.name,
+                "kind": spec.kind.value if isinstance(spec.kind, ToolKind) else str(spec.kind),
+                "destructive": bool(spec.destructive),
+                "outcome": "ok",
+                "attempted_at": started_at.isoformat(),
+                "duration_ms": round((_utcnow() - started_at).total_seconds() * 1000, 2),
+                "detail": self._compact_tool_result(result),
+            }
+        except Exception as exc:  # noqa: BLE001 - falha de tool degrada, nunca quebra o run
+            return {
+                "tool": spec.name,
+                "kind": spec.kind.value if isinstance(spec.kind, ToolKind) else str(spec.kind),
+                "destructive": bool(spec.destructive),
+                "outcome": "failed",
+                "attempted_at": started_at.isoformat(),
+                "duration_ms": round((_utcnow() - started_at).total_seconds() * 1000, 2),
+                "detail": {"note": str(exc)[:300]},
+            }
 
 
 class MagicianAgent(BaseArchetype):
@@ -1143,7 +1249,16 @@ class JusticeAgent(BaseArchetype):
         # Preserva uma razão de parada final já definida (ex.: estouro de
         # orçamento do run ou per-agente); não herda "pending_review" de uma
         # parada HITL anterior — o nó final sempre encerra como "completed".
-        if state.stop_reason in ("budget", "agent_budget", "confidence", "declined", "no_backend"):
+        if state.stop_reason in (
+            "budget",
+            "agent_budget",
+            "confidence",
+            "declined",
+            "no_backend",
+            "devil_completed",
+            "devil_limits",
+            "devil_kill_switch",
+        ):
             final_reason = state.stop_reason
         elif state.tokens_used >= state.budget_tokens or state.cost >= state.budget_cost:
             # Segurança do audit trail para o caso de o orçamento estourar e a

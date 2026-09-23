@@ -66,6 +66,19 @@ def test_guard_audit_is_serializable():
     }
 
 
+def test_guard_rate_throttle_delay():
+    guard = DevilGuard(allowed_tools=frozenset(), max_rate=2.0)
+    assert guard.min_interval_seconds == 30.0
+    assert guard.throttle_delay_seconds(0.0) == 30.0
+    assert guard.throttle_delay_seconds(10.0) == 20.0
+    assert guard.throttle_delay_seconds(30.0) == 0.0
+    assert guard.throttle_delay_seconds(40.0) == 0.0
+
+    off = DevilGuard(allowed_tools=frozenset(), max_rate=0.0)
+    assert off.min_interval_seconds == 0.0
+    assert off.throttle_delay_seconds(0.0) == 0.0
+
+
 # ---------------------------------------------------------------------------
 # Carro em Modo Diabo — trilha de auditoria dos rails
 # ---------------------------------------------------------------------------

@@ -1,10 +1,10 @@
 """Rails do Modo Diabo (Etapa M5): allowlist estrita + limites duros + auditoria.
 
-O Argus Engine não pluga backend de execução destrutiva (decisão de produto —
-ver ROADMAP Etapa 2); o caminho Diabo para no HITL e reporta ``no_backend``
-honestamente em vez de fabricar sucesso. Este módulo é o ponto único que
-codifica **o quê** (allowlist de tools) e **quanto** (limites de probes/taxa/
-tempo) o Diabo poderia tocar, e produz o trilho de auditoria desses rails.
+Este módulo é o ponto único que codifica **o quê** (allowlist de tools) e
+**quanto** (limites de probes/taxa/tempo) o Diabo pode tocar, e produz o trilho
+de auditoria desses rails. O backend de execução controlada (Carro em devil
+mode) aplica estes rails ao invocar, após aprovação HITL, as tools da allowlist
+via ``ToolExecutor`` — ver ``ChariotAgent._controlled_execution``.
 
 Sem ``devil_mode`` nenhum código do Diabo é alcançado — a fronteira é
 ``is_devil_mode_enabled`` em ``app/core/security.py``.
@@ -46,6 +46,27 @@ class DevilGuard:
         if self.max_duration_seconds > 0 and elapsed_seconds >= self.max_duration_seconds:
             return False
         return True
+
+    @property
+    def min_interval_seconds(self) -> float:
+        """Intervalo mínimo entre probes imposto pelo teto de taxa.
+
+        ``max_rate`` é requisições/minuto; ``0`` (ou negativo) desliga o throttle.
+        """
+        if self.max_rate <= 0:
+            return 0.0
+        return 60.0 / self.max_rate
+
+    def throttle_delay_seconds(self, elapsed_since_last: float) -> float:
+        """Quanto (segundos) dormir antes da próxima probe para respeitar a taxa.
+
+        Nunca negativo; ``0.0`` quando a última probe já está longe o bastante
+        ou quando o teto de taxa está desligado.
+        """
+        interval = self.min_interval_seconds
+        if interval <= 0:
+            return 0.0
+        return max(0.0, interval - elapsed_since_last)
 
     def audit(self) -> dict[str, Any]:
         """Rails serializáveis para a trilha de auditoria (proposal + entry)."""

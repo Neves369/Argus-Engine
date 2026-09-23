@@ -62,10 +62,11 @@ O **modo normal** do Carro inclui uma camada de execução real **não destrutiv
   (`docs/adr/0007-tool-sandbox.md`).
 
 Esta camada NÃO é Modo Diabo: é checagem/observação sobre escopo autorizado,
-não execução de scripts invasivos ou evasivos. O Modo Diabo (exploits,
-atividades evasivas) continua sem backend de execução real — por decisão de
-produto, só deve evoluir atrás da camada Diabo completa (escopo + sandbox +
-kill-switch + auditoria + HITL).
+não execução de scripts invasivos ou evasivos. O Modo Diabo executa somente a
+allowlist do `DevilGuard` após HITL, dentro de rails de probes/taxa/tempo;
+exploits e atividades evasivas seguem fora de escopo — por decisão de produto,
+só devem evoluir atrás da camada Diabo completa (escopo + sandbox + kill-switch
++ auditoria + HITL).
 
 ## Modo Diabo
 

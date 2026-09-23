@@ -9,10 +9,11 @@ O Carro é o arquétipo de execução. Até a Etapa 15, seu modo normal era
 (scan ativo, fontes, correlação CVE) e marcava candidatos
 (`requires_human_review=True`) sem tocar no alvo; no Modo Diabo, após
 aprovação HITL, registrava honestamente `no_backend` — não havia backend de
-execução real algum. O Modo Diabo continua deliberadamente sem backend (decisão
-de produto registrada na Etapa 2 do ROADMAP e em `SECURITY.md`: evoluí-lo para
-exploits depende de estar atrás da camada Diabo completa — sandbox + HITL +
-auditoria).
+execução real algum. (Nota posterior, Etapa M5: o Modo Diabo ganhou backend de
+execução da **allowlist** do `DevilGuard`; ver
+`app/services/devil_guard.py` e `ChariotAgent._controlled_execution`. Exploits
+livres seguem fora de escopo — decisão de produto registrada na Etapa 2 do
+ROADMAP e em `SECURITY.md`.)
 
 Havia, porém, uma fronteira segura e valiosa dentro do **modo normal**: o
 Argus já faz scanner ativo autorizado (ADR-0006) com controles de escopo,
@@ -83,8 +84,8 @@ sem serviços) continua produzindo `mode: "simulate"`.
   ganham confirmação/refutação ao vivo com evidência; as tools não destrutivas
   do operador finalmente têm um consumidor automático; tudo permanece auditável
   no histórico e nos exports.
-- **Negativas/limites (deliberados):** o Modo Diabo continua **sem** backend de
-  execução real — evoluí-lo para exploits segue adiado; sondas/tools só rodam se
+- **Negativas/limites (deliberados):** o Modo Diabo executa somente a allowlist
+  do `DevilGuard` (Etapa M5) — evoluí-lo para exploits segue adiado; sondas/tools só rodam se
   o alvo estiver em `ALLOWED_SCOPES` (sem escopo validado não há execução, nem
   mesmo verificação); a cap de probes e o robots podem deixar um candidato sem
   verificação — nunca como falso positivo.

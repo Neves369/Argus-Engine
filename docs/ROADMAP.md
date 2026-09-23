@@ -46,7 +46,7 @@ Estas são duas funcionalidades **separadas**:
 | Config | `.env` + pydantic-settings | Implementada |
 | Logging | Estruturado (JSON) | Implementado |
 | Sandbox | Docker | Implementado (Etapa 5) |
-| Modo Diabo | flag `DEVIL_MODE` + HITL em ações destrutivas | Implementado (gating; execução de exploits: futura) |
+| Modo Diabo | flag `DEVIL_MODE` + HITL em ações destrutivas | Implementado (gating + backend de execução da allowlist sob `DevilGuard`; exploits livres: fora de escopo) |
 | CLI | Typer/Rich | Implementada (Etapa 8) |
 
 ### Frontend
@@ -694,7 +694,8 @@ reais. Scanning ativo é funcionalidade core — sempre roda quando o alvo está
 - [x] Findings de scanning ativo têm evidência real (resposta HTTP, header, conteúdo)
 
 **Observações / pendências**
-- Scanning ativo é separado do Modo Diabo — este é para execução destrutiva/futura (exploits)
+- Scanning ativo é separado do Modo Diabo — este executa a allowlist do `DevilGuard`
+  após HITL; exploits continuam futuros/fora de escopo
 - Detecção de vulnerabilidades é passiva (análise de resposta, não injeção de payloads) —
   injeção real de payloads (SQLi, XSS) ficaria no Modo Diabo futuro
 - O módulo de scanning pode ser expandido para incluir login dinâmico:
@@ -828,9 +829,11 @@ controlada do Modo Diabo.
       em `app/api/v1/runs.py`; CLI injeta `composition=archetypes` no `GraphState`.
 - [x] Carro modo normal = **safety check** (`ChariotAgent._safety_check`): indícios
       de risco candidatos a partir de scan/fontes/correlação CVE, ação `"safety"`,
-      sem HITL; `_controlled_execution` (Modo Diabo, HITL + `no_backend`) mantido;
-      `_correlate_cves` virou função de módulo (`app/agents/builtin.py`).
-- [x] `ChariotOutput.action` — Literal `["safety","declined","no_backend","execute"]`
+      sem HITL; `_controlled_execution` (Modo Diabo, HITL + execução da allowlist
+      via `ToolExecutor` dentro dos rails do `DevilGuard`, com `no_backend` só como
+      fallback sem executor/allowlist) mantido; `_correlate_cves` virou função de
+      módulo (`app/agents/builtin.py`).
+- [x] `ChariotOutput.action` — Literal `["safety","declined","no_backend","execute","executed"]`
       (`app/agents/schemas.py`).
 - [x] Frontend: mesa vazia permitida — `handleRun` pula `createComposition` e chama
       `/runs/stream` sem archetypes, com hint "Sem cartas — o Imperador usará todas
@@ -861,9 +864,12 @@ controlada do Modo Diabo.
 
 **Observações / pendências**
 - Backend de **execução real** para o Carro já existe para o **modo normal** (Etapa 15):
-  verificação ao vivo + tools não destrutivas do operador. Fica adiado apenas o
-  **Modo Diabo** com backend destrutivo/exploits (decisão de produto registrada na
-  Etapa 2 + `SECURITY.md`); hoje o caminho Diabo segue HITL → `no_backend`.
+  verificação ao vivo + tools não destrutivas do operador. O **Modo Diabo** ganhou
+  backend de execução da allowlist sob os rails do `DevilGuard` (Etapa M5): após
+  HITL, o Carro roda as tools permitidas com `devil_mode=True`, teto de
+  probes/tempo/taxa, trilha por passo e kill-switch a cada passo; `no_backend`
+  permanece só como fallback sem executor/allowlist. Exploits livres seguem fora
+  de escopo (decisão de produto registrada na Etapa 2 + `SECURITY.md`).
 - Runs órfãos presos como `running`/`pending_review` no banco (processo morto no
   meio do run) agora são **recuperados automaticamente** para `failed` — retomável
   pela UI — quando a idade passa de `RUN_STALE_AFTER_SECONDS` (default 24h):
@@ -876,8 +882,8 @@ controlada do Modo Diabo.
 
 **Objetivo:** dar ao Carro um backend de execução real **seguro** para o modo
 normal: sondas de verificação ao vivo sobre os leads do scan + tools não
-destrutivas do operador — sem tocar no Modo Diabo (que segue deliberadamente
-sem backend destrutivo).
+destrutivas do operador — sem tocar no Modo Diabo (que na Etapa M5 ganhou
+backend de execução da allowlist, sem exploits).
 
 **Entregáveis**
 - [x] `VerificationService` (`app/scanning/verify.py`): re-prova o `probe_url`
@@ -914,8 +920,9 @@ sem backend destrutivo).
       ou do verifier degrada o run em vez de derrubá-lo.
 
 **Observações / pendências**
-- Modo Diabo (execução destrutiva/exploits) continua **sem backend** — ver
-  Etapa 2 e `docs/adr/0009-chariot-execution.md`.
+- Modo Diabo ganhou backend de execução da allowlist (Etapa M5): ver
+  `app/services/devil_guard.py` e `ChariotAgent._controlled_execution`. Exploits
+  livres seguem fora de escopo — ver Etapa 2 e `docs/adr/0009-chariot-execution.md`.
 - Recuperar `/runs/stream` e `/resume` da mesma fronteira: as sondas/tools
   rodam em todo run normal (build manual e composições) porque os serviços são
   injetados em todos os pontos de criação do Director (`app/api/v1/runs.py`,

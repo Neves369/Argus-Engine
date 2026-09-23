@@ -126,8 +126,8 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   serviço (sources/scan/verification/tools) precisa ser passado ao **`Director`
   em cada ponto de criação** (`runs.py` create/stream/resume, `compositions.py`,
   `run_executor.execute_run`), não apenas setado no estado. Tool **destrutiva
-  nunca roda** em modo normal; o Modo Diabo continua sem backend
-  (HITL → `no_backend`).
+  nunca roda** em modo normal; o Modo Diabo executa apenas a allowlist do
+  `DevilGuard` após HITL (fallback `no_backend` sem executor/allowlist).
 - **Economia de tokens (Etapa 7 — opt-in, desligado por padrão):** `CAVEMAN_PROMPTS`
   remove palavras de enchimento das mensagens outbound (`app/llm/compress.py` +
   `app/llm/client.py`); `HISTORY_COMPRESSION` trunca o histórico entre nós do grafo
@@ -152,8 +152,8 @@ Ao mudar qualquer coisa no fluxo de execução, respeite:
   sequência) e o Imperador pode **repetir** agentes. Composição vazia = time
   completo (a API trata `archetypes=[]` como ausente). O Carro, em modo normal,
   faz **safety check** (indícios candidatos a partir de scan/fontes, sem HITL);
-  em Modo Diabo mantém o fluxo de aprovação humana + `no_backend` (sem backend de
-  execução real — ver GUIA_CARTAS).
+  em Modo Diabo mantém o fluxo de aprovação humana e executa a allowlist do
+  `DevilGuard` dentro dos rails de probes/taxa/tempo (ver GUIA_CARTAS).
 
 ## Comandos
 

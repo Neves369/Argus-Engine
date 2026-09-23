@@ -210,7 +210,7 @@ As chaves ficam no arquivo de ambiente (`.env`) do operador — consulte
 | **Sem chave de API** | Fontes dependentes de chave degradam para simulado → podem não gerar achados (correto). |
 | **Alvo fora do escopo permitido** | Sem visita ao site e sem consultas; o sistema não trabalha lá. |
 | **Modo normal** | O Carro verifica ao vivo os leads do scan e roda as ferramentas de checagem do operador (não destrutivas), sem exigir aprovação. |
-| **Modo Death ligado** | O Carro vira execução controlada; cada ação exige sua aprovação (no Death, sem backend de execução destrutiva por enquanto). |
+| **Modo Death ligado** | O Carro vira execução controlada; cada ação exige sua aprovação e só roda as tools da allowlist, dentro dos limites de probes/taxa/tempo e com trilha por passo. |
 | **Interruptor de emergência** (`KILL_SWITCH`) | Interrompe o run em andamento e bloqueia novos (ação do operador — ver `RUNBOOK.md` §4). |
 
 ## 12. Problemas comuns

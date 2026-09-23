@@ -351,18 +351,26 @@ Quando M1–M4 estiverem validados ao vivo, avaliar **M5** (Diabo controlado) �
 2. ✅ Config (`DEVIL_ALLOWED_TOOLS`, `DEVIL_MAX_PROBES`, `DEVIL_MAX_RATE`,
    `DEVIL_MAX_DURATION_SECONDS`).
 3. ✅ `ChariotAgent._controlled_execution` registra os rails na **proposta de
-   aprovação** (contexto + `proposal.devil_guard`) e no entry `no_backend`
-   (`allowed_tools` + `devil_guard`) — trilha de auditoria completa.
+   aprovação** (contexto + `proposal.devil_guard`) e no entry (`allowed_tools` +
+   `devil_guard`) — trilha de auditoria completa.
 4. ✅ Fronteira preservada: sem `devil_mode`, o Carro roda só `safety_check`
-   (nenhum rail do Diabo é acionado). Backend destrutivo segue `no_backend`
-   (decisão de produto — ROADMAP Etapa 2), sem fabricar sucesso.
-5. ✅ Testes em `tests/test_devil_guard.py` (8): allowlist/resolve, limites,
-   audit serializável, proposal com rails, entry com rails, modo normal sem Diabo.
+   (nenhum rail do Diabo é acionado).
+5. ✅ **Backend de execução da allowlist**: após aprovação HITL, o Carro executa
+   as tools permitidas via `ToolExecutor` com `devil_mode=True`, dentro dos rails
+   (`max_probes`/`max_duration` + throttle real de `max_rate`), com trilha por
+   passo (`devil_steps`) e kill-switch verificado a cada passo. `no_backend` vira
+   só fallback (sem executor ou allowlist vazia). Contador `devil_probes_done`
+   serializado no `GraphState`; `stop_reason` novo `devil_completed`/
+   `devil_limits`/`devil_kill_switch`.
+6. ✅ Testes em `tests/test_devil_guard.py` e `tests/test_devil_mode.py`:
+   allowlist/resolve, throttle, execução da allowlist, tool destrutiva liberada,
+   teto `max_probes`, kill-switch no meio, fallback `no_backend`.
 
-**Decisões M5 registradas (sem ADR, por escolha do operador):** o Diabo nunca
-tem backend destrutivo (HITL → `no_backend`); a allowlist é o teto de tools
-(`http_request`/`form_discover`/`http_header_probe`/`session_login`); limites
-duros de probes/taxa/tempo são codificados e auditados, não apenas documentados.
+**Decisões M5 registradas (sem ADR, por escolha do operador):** o Diabo executa
+somente a allowlist sob os rails do `DevilGuard` (HITL obrigatório); exploração
+livre segue fora de escopo. A allowlist é o teto de tools
+(`http_request`/`form_discover`/`header_reprobe`/`session_login`); limites duros
+de probes/taxa/tempo são codificados, aplicados e auditados, não apenas documentados.
 
 **Estado final do plano:** M1–M5 implementados e testados. Pendência única
 transversal: **validação ao vivo no DVWA autorizado** (compartilhada entre as

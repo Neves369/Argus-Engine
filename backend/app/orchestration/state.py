@@ -65,6 +65,10 @@ class GraphState(BaseModel):
     history_summary_done: bool = False
 
     devil_mode: bool = False
+    #: Contador de probes do Diabo já executadas neste run (Etapa M5). Serializado
+    #: para que o teto ``devil_max_probes`` do ``DevilGuard`` valha entre re-entradas
+    #: do Carro (HITL/resume) e apareça na trilha de auditoria.
+    devil_probes_done: int = 0
 
     # Human-in-the-loop: a run awaiting operator approval halts here.
     pending_review: dict[str, Any] | None = None
