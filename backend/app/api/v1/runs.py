@@ -527,8 +527,14 @@ async def review_run(run_id: int, payload: ReviewCreate, db: DBSession) -> Run:
 
 
 @router.get("/{run_id}/report")
-async def report_run(run_id: int, db: DBSession):
-    """Structured security report: what was found, severity, exploits, remediation."""
+async def report_run(run_id: int, db: DBSession, view: str = "technical"):
+    """Relatório estruturado: ``technical`` (padrão, com evidência) ou
+    ``executive`` (resumo + top achados, sem detalhe técnico — M10-P2)."""
+    if view not in ("technical", "executive"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="view must be 'technical' or 'executive'",
+        )
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
@@ -536,13 +542,22 @@ async def report_run(run_id: int, db: DBSession):
         select(Finding).where(Finding.run_id == run_id).order_by(Finding.id)
     )
     findings = list(result.scalars().all())
+    if view == "executive":
+        from app.services.export import run_executive_report
+
+        return run_executive_report(run, findings)
     from app.services.export import run_report
 
     return run_report(run, findings)
 
 
 @router.get("/{run_id}/export")
-async def export_run(run_id: int, db: DBSession, format: str = "json"):
+async def export_run(run_id: int, db: DBSession, format: str = "json", view: str = "technical"):
+    if view not in ("technical", "executive"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="view must be 'technical' or 'executive'",
+        )
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
@@ -558,11 +573,19 @@ async def export_run(run_id: int, db: DBSession, format: str = "json"):
         return PlainTextResponse(run_findings_sarif(run, findings))
 
     if format == "json":
+        if view == "executive":
+            from app.services.export import run_executive_report
+
+            return JSONResponse(content=run_executive_report(run, findings))
         return JSONResponse(
             content=[FindingRead.model_validate(f).model_dump(mode="json") for f in findings]
         )
 
     if format == "markdown":
+        if view == "executive":
+            from app.services.export import run_executive_markdown
+
+            return PlainTextResponse(run_executive_markdown(run, findings))
         from app.services.export import run_report_markdown
 
         return PlainTextResponse(run_report_markdown(run, findings))

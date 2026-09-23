@@ -43,6 +43,9 @@ _SECTION_ORDER = (
     SECTION_CORRELACAO,
 )
 
+#: Teto de achados listados no relatório executivo (decisão, não evidência).
+EXECUTIVE_TOP_N = 10
+
 
 def finding_section(finding: Finding) -> str:
     """Classifica um finding em uma das seções do relatório.
@@ -299,6 +302,104 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "stop_reason": result.get("stop_reason"),
         },
     }
+
+
+def _executive_finding(finding: Finding) -> dict[str, Any]:
+    """Achado reduzido para o relatório executivo — decisão, sem evidência."""
+    return {
+        "title": finding.title,
+        "severity": finding.severity,
+        "category": finding.category,
+        "affected": finding.affected,
+        "status": finding.status,
+        "requires_human_review": finding.requires_human_review,
+        "remediation": finding.remediation,
+    }
+
+
+def run_executive_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
+    """Relatório executivo (M10-P2): resumo e top achados, sem detalhe técnico.
+
+    Complementa ``run_report`` (técnico, com evidência por finding): aqui o
+    operador/gestor lê contagens por seção/gravidade e os ``EXECUTIVE_TOP_N``
+    achados mais graves (título + categoria + remediação), sem evidência de
+    probe nem corpo de request/response.
+    """
+    result = run.result or {}
+    target_meta = result.get("target") or {}
+
+    by_severity: dict[str, int] = {}
+    for finding in findings:
+        key = (finding.severity or "unknown").lower()
+        by_severity[key] = by_severity.get(key, 0) + 1
+
+    top = [_executive_finding(f) for f in _ordered(findings)[:EXECUTIVE_TOP_N]]
+
+    return {
+        "run_id": run.id,
+        "target": target_meta.get("name") or "unknown",
+        "authorization": target_meta.get("authorization_note"),
+        "status": run.status,
+        "view": "executive",
+        "generated_at": _iso(run.finished_at) or _iso(run.created_at),
+        "summary": {
+            "total_findings": len(findings),
+            "by_severity": by_severity,
+            "by_section": _section_summary(findings),
+            "executive": _executive_summary(run, findings),
+        },
+        "top_findings": top,
+    }
+
+
+def run_executive_markdown(run: Run, findings: list[Finding]) -> str:
+    """Relatório executivo em Markdown (M10-P2): uma página, sem evidência."""
+    result = run.result or {}
+    target_meta = result.get("target") or {}
+    execu = _executive_summary(run, findings)
+
+    by_severity: dict[str, int] = {}
+    for finding in findings:
+        key = (finding.severity or "unknown").lower()
+        by_severity[key] = by_severity.get(key, 0) + 1
+
+    lines: list[str] = [
+        "# Relatório executivo",
+        "",
+        f"- **Alvo:** {target_meta.get('name') or 'unknown'}",
+        f"- **Run:** #{run.id}",
+        f"- **Status:** {run.status}",
+        f"- **Achados:** {len(findings)}",
+    ]
+    authorization = target_meta.get("authorization_note")
+    if authorization:
+        lines.append(f"- **Autorização:** {authorization}")
+    lines += [
+        "",
+        "## Resumo",
+        "",
+        f"- **Superfície:** {execu['superficie']}",
+        f"- **Configuração:** {execu['configuracao']}",
+        f"- **Aplicação:** {execu['aplicacao']}",
+        f"- **Comportamento:** {execu['comportamento']}",
+        f"- **Validados:** {execu['validated']} | **Candidatos:** {execu['candidate']}",
+        f"- **Profundidade:** {execu['depth']}",
+    ]
+    if by_severity:
+        lines += ["", "## Por gravidade", ""]
+        lines.extend(f"- {severity}: {count}" for severity, count in sorted(by_severity.items()))
+    top = _ordered(findings)[:EXECUTIVE_TOP_N]
+    lines += ["", "## Principais achados", ""]
+    if top:
+        for finding in top:
+            remediation = f" — {finding.remediation}" if finding.remediation else ""
+            lines.append(
+                f"- [{finding.severity.upper()}] {finding.title}{remediation}"
+            )
+    else:
+        lines.append("Nenhum achado registrado neste run.")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _finding_markdown_lines(finding: Finding) -> list[str]:
