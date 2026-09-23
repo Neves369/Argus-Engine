@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AgentRun, Decision, Finding
 from app.db.models.finding import FindingStatus
 from app.orchestration.state import GraphState
+from app.services.fingerprints import finding_fingerprint
 
 
 def _iso_to_dt(value) -> object | None:
@@ -91,6 +92,11 @@ async def persist_run_result(
                 remediation=item.get("remediation"),
                 references=item.get("references"),
                 requires_human_review=bool(item.get("requires_human_review", False)),
+                fingerprint=finding_fingerprint(
+                    str(item.get("title", "")),
+                    item.get("category"),
+                    item.get("affected"),
+                ),
                 meta=item,
             )
         )

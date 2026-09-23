@@ -192,6 +192,21 @@ class Settings(BaseSettings):
         "openapi.yaml",
     ]
 
+    # Descoberta de endpoints GraphQL (M8-P2): tenta caminhos canônicos e varre
+    # referências a GraphQL no HTML/JS das páginas crawleadas. Apenas detecção
+    # passiva de superfície — a introspecção em si é um probe sob política
+    # (policies/probes/graphql_introspection_p1.yaml), autorizado por allowlist
+    # de classes e depth=deep. Fail-closed: nada casa → nota, sem superfície.
+    # Env: SCAN_GRAPHQL_ENABLED (desligado por padrão; introspecção é ativa,
+    # opt-in) / SCAN_GRAPHQL_PATHS (json list de caminhos canônicos).
+    scan_graphql_enabled: bool = False
+    scan_graphql_paths: list[str] = [
+        "/graphql",
+        "/graphql/",
+        "/gql",
+        "/api/graphql",
+    ]
+
     # Execução real do Carro (Etapa 15) — verificação ativa NÃO destrutiva.
     # O Carro re-prova ao vivo os achados candidatos (sondas GET dentro dos
     # controles do scanning ativo) e pode invocar tools NÃO destrutivas do

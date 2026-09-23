@@ -28,6 +28,7 @@ class FindingRead(BaseModel):
     status: str
     score: float | None
     requires_human_review: bool
+    fingerprint: str | None
     validated_at: datetime | None
     meta: dict | None
     created_at: datetime

@@ -1,0 +1,52 @@
+# Política de probe P1 — Introspecção GraphQL aberta (Etapa M8-P2).
+#
+# Pré-condição: o scan detectou passivamente um endpoint GraphQL (caminho
+# canônico ou referência em HTML/JS, M8-P2). O probe só roda sob autorização
+# (allowlist de classes + depth=deep + SCAN_GRAPHQL_ENABLED) e envia uma query
+# de introspecção MÍNIMA e versionada (apenas os tipos de operação root) — nunca
+# um dump completo do schema, nunca credenciais, nunca payload.
+#
+# Sinal positivo: a resposta é JSON contendo ``__schema``/``queryType`` → a
+# introspecção está aberta (exposição de schema).
+#
+# Sinal negativo (precedência): a resposta traz ``errors`` (introspecção
+# desabilitada/negada) ou status 400/401/403 → descarta.
+id: graphql_introspection_p1
+version: "1.0.0"
+name: Introspecção GraphQL aberta
+priority: "P1"
+class_label: "Introspecção GraphQL aberta"
+description: >
+  Um endpoint GraphQL detectado passivamente respondeu à query de introspecção
+  mínima (tipos de operação root) com o schema exposto (``__schema``). Isso
+  revela a estrutura de queries/mutations do alvo. O probe é observacional e
+  minimamente invasivo: uma única query versionada, sem dump completo, sem
+  valores inventados e sem enumeração de dados.
+precondition:
+  lead: graphql
+allowed_probe:
+  tool: http_request
+  method: POST
+  max_per_endpoint: 1
+  respect_robots: true
+  json_body:
+    query: "{ __schema { queryType { name } mutationType { name } subscriptionType { name } } }"
+positive_signal:
+  - kind: graphql_introspection
+negative_signal:
+  - kind: json_contains
+    value: "errors"
+  - kind: status_in
+    value: [400, 401, 403]
+candidate_severity: low
+requires_hitl: true
+default_enabled: true
+reporting:
+  title_template: "{count} endpoint GraphQL com introspecção aberta"
+  remediation: >
+    Desabilite a introspecção GraphQL em produção (ou restrinja a operadores
+    autorizados) e remova a exposição do schema para usuários não privilegiados.
+  references:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/12-API_Testing/01-Testing_GraphQL
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+  confidence: 0.55

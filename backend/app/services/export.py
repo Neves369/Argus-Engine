@@ -185,15 +185,20 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
     errors = 0
     routes = 0
     api_endpoints = 0
+    graphql_endpoints = 0
     for finding in applied:
         extras = (finding.meta or {}).get("extras") or {}
         category = (finding.category or "")
+        title = (finding.title or "")
         if category == "Aplicação / informação sensível em erro":
             errors += 1
         if category == "Aplicação / superfície de rotas":
             routes += int(extras.get("app_route_count") or 1)
         if category == "Aplicação / superfície de API":
-            api_endpoints += int(extras.get("endpoint_count") or 0)
+            if "graphql" in title.lower():
+                graphql_endpoints += int(extras.get("endpoint_count") or 0)
+            else:
+                api_endpoints += int(extras.get("endpoint_count") or 0)
         forms += int(extras.get("form_count") or 0)
         reflections += int(extras.get("reflection_count") or 0)
 
@@ -211,6 +216,7 @@ def _executive_summary(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "verbose_errors": errors,
             "routes": routes,
             "api_endpoints": api_endpoints,
+            "graphql_endpoints": graphql_endpoints,
         },
         "validated": validated,
         "candidate": len(findings) - validated,
@@ -495,22 +501,28 @@ def run_findings_sarif(run: Run, findings: list[Finding]) -> str:
         if finding.remediation:
             properties["remediation"] = finding.remediation
 
-        results.append(
-            {
-                "ruleId": rule_id,
-                "ruleIndex": rule_index[rule_id],
-                "level": _sarif_level(severity),
-                "message": {"text": finding.title},
-                "properties": properties,
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": {"uri": target},
-                        }
+        result_entry: dict[str, Any] = {
+            "ruleId": rule_id,
+            "ruleIndex": rule_index[rule_id],
+            "level": _sarif_level(severity),
+            "message": {"text": finding.title},
+            "properties": properties,
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": target},
                     }
-                ],
+                }
+            ],
+        }
+        if finding.fingerprint:
+            # Assinatura estável (M9-P0) — permite que o consumidor de SARIF
+            # (CI) case o MESMO achado entre runs/snapshot.
+            result_entry["partialFingerprints"] = {
+                "argusFingerprint/v1": finding.fingerprint,
             }
-        )
+
+        results.append(result_entry)
 
     doc: dict[str, Any] = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",

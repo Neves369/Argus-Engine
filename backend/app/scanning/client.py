@@ -119,6 +119,14 @@ class ScanHTTPClient:
         """Submit form-encoded data (used by dynamic login), bounded and logged."""
         return await self._send("POST", url, data=data)
 
+    async def post_json(self, url: str, payload: dict) -> TargetPage:
+        """Submit a JSON body (used by the GraphQL introspection probe, M8-P2).
+
+        Sends ``Content-Type: application/json`` with the serialized payload —
+        same rate-limit/timeout/teto-de-bytes/logging controls as ``get_page``.
+        """
+        return await self._send("POST", url, json=payload)
+
     async def fetch_no_rate_limit(self, url: str) -> TargetPage:
         """Fetch a single page bypassing rate limiting (used for robots.txt)."""
         return await self._send("GET", url, skip_rate_limit=True)
@@ -143,6 +151,7 @@ class ScanHTTPClient:
         url: str,
         *,
         data: dict[str, str] | None = None,
+        json: dict | None = None,
         skip_rate_limit: bool = False,
     ) -> TargetPage:
         host = urlparse(url).netloc
@@ -150,6 +159,8 @@ class ScanHTTPClient:
             self._check_rate_limit(host)
 
         headers = {"User-Agent": self.user_agent, **self._extra_headers}
+        if json is not None:
+            headers["Content-Type"] = "application/json"
         cookie = self._cookie_header(host)
         if cookie:
             headers["Cookie"] = cookie
@@ -163,7 +174,7 @@ class ScanHTTPClient:
             started = time.monotonic()
             try:
                 async with client.stream(
-                    method, url, headers=headers, data=data
+                    method, url, headers=headers, data=data, json=json
                 ) as response:
                     body = b""
                     truncated = False

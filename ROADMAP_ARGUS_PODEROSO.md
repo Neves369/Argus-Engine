@@ -14,6 +14,10 @@
 - **M6 P3 entregue (set/2026):** authn fraca — login com resposta diferencial (enumeração de usuário) com controles sentinela, sem brute force.
 - **M7 P0 entregue (set/2026):** sessão única com consciência de sessão — pages etiquetadas ("user"/"anon"), metadados de sessão no relatório e constatação de "visível apenas em sessão autenticada" via baseline anônimo (ver seção M7).
 - **M7 P1 entregue (set/2026):** múltiplos perfis de sessão (`SCAN_SESSION_PROFILES`) com clients isolados e diferença de acesso entre papéis — "acesso distinto entre sessões" (ver seção M7).
+- **M7 P2+P3 entregue (set/2026):** probes por papel (client por sessão) e jornadas multi-step re-executadas por papel (ver seção M7).
+- **M8 P0+P1 entregue (set/2026):** superfície de API via OpenAPI/Swagger + probes de política adaptados a JSON (ver seção M8).
+- **M8 P2+P3 entregue (set/2026):** GraphQL — detecção passiva de endpoint + introspecção só autorizada sob política (`graphql_introspection_p1`, allowlist + deep) — e fingerprint passivo de WebSocket (detecção de upgrade, sem handshake) (ver seção M8).
+- **M9 P0–P3 entregue (set/2026):** fingerprint estável de finding + diff entre runs + `argus ci` (exit code/gate/SARIF) + métricas de negócio (FP rate, tempo até 1º lead, custo por finding útil); filas/isolamento N alvos adiados (ver seção M9).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -263,6 +267,34 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
   allowlist) — findings "Comportamento / ...".
 - Suíte `tests/test_probing_m8.py` (13).
 
+**Checklist M8-P2 (GraphQL: detecção passiva + introspecção sob política): entregue.**
+- Descoberta passiva `ScanService._discover_graphql`: caminhos canônicos
+  (`/graphql`, `/graphql/`, `/gql`, `/api/graphql`, `SCAN_GRAPHQL_PATHS`) via
+  GET + referências a `graphql` no HTML/JS das páginas; heurística conservadora
+  (`_looks_like_graphql`, marcadores de "query missing"); fail-closed (nada
+  casa → nota); robots/rate-limit/timeout/teto do client; ctrl
+  `SCAN_GRAPHQL_ENABLED` (default desligado — introspecção é ativa, opt-in).
+- `ScanReport.graphql_endpoints` (`url`/`method`/`session`/`detected_by`) +
+  `to_dict`; finding agregado "endpoint(s) GraphQL detectado(s)" em
+  `Aplicação / superfície de API`, com `extras.endpoints[]` servindo de lead ao
+  probe; breakdown/sumário `graphql_endpoints`.
+- Introspecção **só autorizada**: política `graphql_introspection_p1.yaml`
+  (P1, allowlist, `default_enabled`), rodando no `ProbeEngine` apenas em
+  `deep` + `SCAN_GRAPHQL_ENABLED`; POST com query de introspecção **mínima e
+  versionada** (`json_body` literal no `AllowedProbe`, nunca interpolado);
+  sinal `graphql_introspection` (JSON com `__schema`/`queryType`) com negativo
+  `errors`/4xx; finding "Comportamento / Introspecção GraphQL aberta".
+- `ScanHTTPClient.post_json` (POST com `Content-Type: application/json`).
+- Suíte `tests/test_graphql_m8.py`.
+
+**Checklist M8-P3 (fingerprint de WebSocket): entregue.**
+- Detector passivo `_websocket_upgrade`: header `upgrade: websocket`/
+  `connection: upgrade`/`sec-websocket-accept`, ou `ws://`/`wss://` e
+  `new WebSocket(...)` no HTML/JS; **sem handshake** (testes profundos depois).
+- Agregação por run `_aggregate_websockets` → finding "endpoint(s) WebSocket
+  detectado(s)" em `Aplicação / superfície de API`, `candidate`.
+- Suíte `tests/test_websocket_m8.py`.
+
 **Entregas**
 - Ingestão de OpenAPI/Swagger quando disponível.
 - Mapeamento de endpoints, métodos e parâmetros.
@@ -273,6 +305,8 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 **Aceite**
 - Alvo com OpenAPI gera superfície de API no relatório.
 - Sem especificação, fallback para links e calls observados no crawl.
+- Endpoint GraphQL detectado vira superfície; introspecção só roda sob
+  allowlist + deep; WebSocket vira fingerprint (sem handshake).
 
 ---
 
@@ -290,6 +324,36 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 **Aceite**
 - Segundo run no mesmo alvo destaca *novos* e *resolvidos*.
 - CI consome SARIF sem intervenção manual.
+
+### M9-P0 (entregue) — fingerprint estável de finding
+- `Finding.fingerprint` (coluna + índice, migração `c9d1e2f3a4b5`): sha256 de
+  título+categoria+afetado normalizados (`app/services/fingerprints.py`),
+  calculado em `persist_run_result`. Assinatura estável entre runs — sem
+  id/run/severity/confidence.
+- `FindingRead.fingerprint`; SARIF expõe `partialFingerprints.argusFingerprint/v1`.
+
+### M9-P1 (entregue) — baseline e diff entre runs
+- `app/services/run_diff.py::compare_runs`: classifica por fingerprint em
+  `new`/`resolved`/`unchanged`/`changed` (severidade/status/confiança).
+- `GET /runs/{id}/diff?against={baseline_id}` (mesmo alvo obrigatório; 400 em
+  alvos distintos).
+
+### M9-P2 (entregue) — modo CI
+- Novo comando `argus ci`: `--composition` ou `--target`+`--archetype`,
+  `--depth`, `--fail-on <severidade>` (default `high`), `--format sarif|json`,
+  `--out <file>`. Exit code: 0 limpo, 1 findings acima do limiar, 2 erro
+  operacional. Só conta `candidate`/`validated` (ignora FP/discarded).
+
+### M9-P3 (entregue) — métricas de negócio (decisão do operador)
+- `app/services/quality_metrics.py`: FP rate (`false_positive / (false_positive
+  + validated)`), tempo até primeiro lead (severidade >= low), custo/tokens por
+  finding útil (candidate/validated).
+- `GET /dashboard/quality` (global + por alvo).
+
+### Adiado
+- Filas / isolamento para N alvos: o lock global de run único
+  (`ensure_no_active_run`) permanece; serialização por alvo e teto de
+  concorrência ficam para um próximo ciclo.
 
 ---
 
@@ -346,8 +410,8 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Modo agressivo auditável (M5)
 - [x] Comportamento sob política (M6) — **P0..P3 entregues** (reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial) ← **principal salto de poder**
 - [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2+P3 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel + jornadas multi-step por sessão)
-- [ ] API/GraphQL (M8)
-- [ ] Diff/CI/escala (M9)
+- [x] API/GraphQL (M8) — **P0+P1+P2+P3 entregues** (OpenAPI/Swagger, probes JSON, GraphQL com introspecção só autorizada + WebSocket fingerprint passivo)
+- [x] Diff/CI/escala (M9) — **P0+P1+P2+P3 entregues** (fingerprint estável, diff entre runs, `argus ci` com gate, métricas de negócio); filas/isolamento N alvos adiados
 - [ ] Pacotes e UX de política (M10)
 
 Sem M6, o Argus é um **excelente mapeador e priorizador**.  
@@ -365,7 +429,9 @@ Com M9–M10, vira **produto operável em time**.
 | +1 ciclo | M5 | Stress opt-in |
 | Feito | M6 P0+ → P3 | Seção Comportamento: reflexão, erro verboso, injeção replay, upload, CSRF, redirect aberto, authn diferencial |
 | +2 ciclos | M7 | Authz/sessão (P0: sessão única + "visível só autenticado"; P1: múltiplos perfis + "acesso distinto entre sessões" — entregues) |
-| Depois | M8–M10 | API, escala, produto |
+| Feito | M8 | APIs modernas: OpenAPI/Swagger + probes JSON + GraphQL (introspecção só autorizada) + WebSocket fingerprint |
+| Feito | M9 P0–P3 | Fingerprint + diff + `argus ci` + métricas (concorrência N alvos adiada) |
+| Depois | M10 | Produto e política |
 
 ---
 
@@ -404,9 +470,11 @@ Com M9–M10, vira **produto operável em time**.
 
 ## Próxima ação recomendada
 
-1. Fechar **M1b + M2** (já especificados).  
-2. Implementar **M3 + M4** para profissionalizar depth e validação.  
-3. ~~Abrir design formal da **M6 P0→P3**~~ — **P0+P1 entregues** (reflexão, erro verboso, injeção replay controlado, upload por observação), **P2 entregue** (CSRF de estado sem token + redirect aberto reproduzível com observação de redirect 3xx no scan) e **P3 entregue** (authn fraca: login com resposta diferencial e controles sentinela, sem brute force), sempre dentro dos guardrails da 6.3. Próximo: design formal da **M7** (sessão/papéis).  
-4. Só então expandir M7–M8.
+1. ~~Fechar **M1b + M2**~~ — entregues.  
+2. ~~Implementar **M3 + M4**~~ — entregues.  
+3. ~~Abrir design formal da **M6 P0→P3**~~ — entregue (P0..P3).  
+4. ~~Expandir **M7** (sessão/papéis)~~ — entregue (P0..P3).  
+5. ~~Expandir **M8** (APIs modernas)~~ — entregue (P0: OpenAPI; P1: probes JSON; P2: GraphQL com introspecção só autorizada; P3: WebSocket fingerprint passivo).  
+6. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas). Próximo: **M10** (pacotes de política + UX) e, quando quiser escala, a parte adiada da M9 (filas/isolamento N alvos).
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.

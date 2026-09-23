@@ -390,6 +390,30 @@ async def list_run_findings(run_id: int, db: DBSession) -> list[Finding]:
     return list(result.scalars().all())
 
 
+@router.get("/{run_id}/diff")
+async def diff_run(run_id: int, db: DBSession, against: int):
+    """Diff de findings entre o run atual e um run baseline (M9-P1).
+
+    Ambos precisam pertencer ao mesmo alvo; a comparação é feita por
+    fingerprint estável (M9-P0) e classifica cada assinatura em
+    ``new``/``resolved``/``unchanged``/``changed``.
+    """
+    from app.services.run_diff import compare_runs
+
+    current = await db.get(Run, run_id)
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    baseline = await db.get(Run, against)
+    if baseline is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Baseline run not found"
+        )
+    try:
+        return await compare_runs(db, baseline, current)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.get("/{run_id}/decisions", response_model=list[DecisionRead])
 async def list_run_decisions(run_id: int, db: DBSession) -> list[Decision]:
     result = await db.execute(

@@ -89,3 +89,12 @@ async def dashboard_runs(db: DBSession):
         }
         rows.append(row)
     return rows
+
+
+@router.get("/quality")
+async def dashboard_quality(db: DBSession):
+    """Métricas de negócio (M9-P3): FP rate, tempo até 1º lead e custo/tokens
+    por finding útil — derivados da decisão do operador (status dos findings)."""
+    from app.services.quality_metrics import compute_quality_metrics
+
+    return await compute_quality_metrics(db)

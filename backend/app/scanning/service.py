@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlparse
@@ -42,6 +43,9 @@ class ScanReport:
     api_spec: dict[str, Any] | None = None
     #: Endpoints mapeados do spec: {method, path, params, session}.
     api_endpoints: list[dict[str, Any]] = field(default_factory=list)
+    #: Endpoints GraphQL detectados passivamente (M8-P2):
+    #: {url, session, detected_by} — lead para o probe de introspecção.
+    graphql_endpoints: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +61,7 @@ class ScanReport:
             "anon_probe": list(self.anon_probe),
             "api_spec": self.api_spec,
             "api_endpoints": list(self.api_endpoints),
+            "graphql_endpoints": list(self.graphql_endpoints),
             "pages": [p.to_dict() for p in self.pages],
         }
 
@@ -90,6 +95,8 @@ class ScanService:
         client_factory: Any | None = None,
         openapi_enabled: bool = False,
         openapi_discovery_paths: list[str] | None = None,
+        graphql_enabled: bool = False,
+        graphql_discovery_paths: list[str] | None = None,
     ) -> None:
         self._client = client or ScanHTTPClient()
         self._respect_robots = respect_robots
@@ -111,6 +118,12 @@ class ScanService:
             for p in (openapi_discovery_paths or [])
             if str(p).strip()
         ] or ["/openapi.json", "/swagger.json", "/openapi.yaml"]
+        self._graphql_enabled = bool(graphql_enabled)
+        self._graphql_paths = [
+            f"/{str(p).strip().lstrip('/')}"
+            for p in (graphql_discovery_paths or [])
+            if str(p).strip()
+        ] or ["/graphql", "/graphql/", "/gql", "/api/graphql"]
 
     def _normalize_profile(self, profile: dict[str, str]) -> dict[str, str] | None:
         """Validate a session profile dict; ``None`` when unusable (skipped)."""
@@ -187,6 +200,9 @@ class ScanService:
                 if report.auth_status == "success":
                     report.anon_probe = await self._anonymous_baseline(candidates)
                 await self._discover_openapi(
+                    report, base_url, client=self._client, session=session
+                )
+                await self._discover_graphql(
                     report, base_url, client=self._client, session=session
                 )
                 return report
@@ -278,6 +294,9 @@ class ScanService:
         ):
             report.anon_probe = await self._anonymous_baseline([selected_base])
         await self._discover_openapi(
+            report, selected_base, client=profiles["client"], session=profiles["name"]
+        )
+        await self._discover_graphql(
             report, selected_base, client=profiles["client"], session=profiles["name"]
         )
         self._finalize_multi_sessions(report, channels, extras)
@@ -379,6 +398,116 @@ class ScanService:
     @staticmethod
     def _note_append(note: str | None, extra: str) -> str | None:
         return f"{note}\n{extra}" if note else extra
+
+    async def _discover_graphql(
+        self,
+        report: ScanReport,
+        base_url: str,
+        *,
+        client: ScanHTTPClient,
+        session: str,
+    ) -> None:
+        """M8-P2: detecta endpoints GraphQL por caminhos canônicos + referências.
+
+        Detecção passiva de superfície — nenhuma introspecção aqui (isso é um
+        probe sob política). Tenta cada caminho canônico via GET (mesmos
+        guardrails do client: rate-limit, timeout, teto de bytes, robots) e
+        varre o HTML/JS das páginas crawleadas por referências a ``graphql``.
+        Fail-closed: nada casa → nota no relatório, sem superfície.
+        """
+        if not self._graphql_enabled or not base_url:
+            return
+        robots = (
+            await self._load_robots(base_url)
+            if self._respect_robots
+            else RobotsRules.allow_all()
+        )
+        host = urlparse(base_url).netloc
+        endpoints: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for rel in self._graphql_paths:
+            url = urljoin(base_url, rel.lstrip("/"))
+            if urlparse(url).netloc != host:
+                continue
+            if not robots.is_allowed(urlparse(url).path or "/"):
+                report.urls_skipped_by_robots += 1
+                continue
+            try:
+                page = await client.get_page(url)
+            except ScanError as exc:
+                report.note = self._note_append(
+                    report.note, f"graphql {rel}: indisponível ({exc})"
+                )
+                continue
+            if not self._looks_like_graphql(page.status_code, page.body):
+                continue
+            if url not in seen:
+                seen.add(url)
+                endpoints.append(
+                    {"url": url, "method": "POST", "session": session, "detected_by": "path"}
+                )
+
+        for page in report.pages:
+            for ref in self._graphql_references(page.body):
+                resolved = urljoin(page.url, ref)
+                if urlparse(resolved).netloc != host:
+                    continue
+                if resolved not in seen:
+                    seen.add(resolved)
+                    endpoints.append(
+                        {
+                            "url": resolved,
+                            "method": "POST",
+                            "session": page.session,
+                            "detected_by": "reference",
+                        }
+                    )
+
+        if not endpoints:
+            report.note = self._note_append(
+                report.note, "graphql: nenhum endpoint detectado"
+            )
+            return
+        report.graphql_endpoints = endpoints
+
+    @staticmethod
+    def _looks_like_graphql(status_code: int, body: str) -> bool:
+        """Heurística conservadora de que uma resposta é um endpoint GraphQL.
+
+        Só casa com marcadores explícitos (nunca "parece GraphQL" por acaso):
+        erros de falta de query, ou conteúdo JSON com ``errors`` típico de um
+        GraphQL server rejeitando GET sem query.
+        """
+        lowered = body.lower()
+        markers = (
+            "must provide query string",
+            "query missing",
+            "get query missing",
+            "graphql query",
+        )
+        if any(m in lowered for m in markers):
+            return True
+        if "graphql" not in lowered:
+            return False
+        return status_code in (400, 405) and ("query" in lowered or "errors" in lowered)
+
+    @staticmethod
+    def _graphql_references(body: str) -> list[str]:
+        """URLs do próprio host referenciadas como GraphQL no HTML/JS.
+
+        Varre atributos/strings como ``/graphql``, ``graphql?query=`` em tags
+        e scripts — apenas observação, sem execução.
+        """
+        matches: list[str] = []
+        for m in re.findall(r"""[-\w./]*graphql[-\w./?#&=]*""", body, re.IGNORECASE):
+            candidate = m.strip()
+            if not candidate or candidate.lower() == "graphql":
+                continue
+            if any(token in candidate.lower() for token in (".js", ".css", ".png", ".svg")):
+                continue
+            matches.append(candidate)
+        return matches
 
     def _finalize_multi_sessions(
         self,
@@ -716,4 +845,6 @@ def build_scan_service(client: ScanHTTPClient | None = None) -> ScanService:
         session_profiles=settings.scan_session_profiles,
         openapi_enabled=settings.scan_openapi_enabled,
         openapi_discovery_paths=settings.scan_openapi_discovery_paths,
+        graphql_enabled=settings.scan_graphql_enabled,
+        graphql_discovery_paths=settings.scan_graphql_paths,
     )

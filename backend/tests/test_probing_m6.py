@@ -96,6 +96,7 @@ def test_catalog_loads_all_probe_policies():
         "api_json_error_p0",
         "authn_p3",
         "csrf_p2",
+        "graphql_introspection_p1",
         "injection_p1",
         "redirect_p2",
         "reflection_p0",
@@ -109,6 +110,7 @@ def test_catalog_loads_all_probe_policies():
     }
     assert {p.id for p in catalog.values() if p.priority == "P1"} == {
         "api_bulk_p1",
+        "graphql_introspection_p1",
         "injection_p1",
         "upload_p1",
     }

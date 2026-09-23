@@ -20,6 +20,7 @@ class Precondition(BaseModel):
         "redirect",
         "authn",
         "api",
+        "graphql",
     ]
     #: Matcher opcional sobre o título/categoria do finding de origem.
     title_contains: str | None = None
@@ -33,6 +34,10 @@ class AllowedProbe(BaseModel):
     method: Literal["GET", "POST"] = "GET"
     max_per_endpoint: int = 1
     respect_robots: bool = True
+    #: Corpo JSON literal e estático do probe (ex.: query de introspecção
+    #: GraphQL). Nenhum valor é interpolado em runtime — o que está versionado
+    #: aqui é exatamente o que o motor envia.
+    json_body: dict | None = None
 
 
 class SignalRule(BaseModel):
@@ -54,6 +59,7 @@ class SignalRule(BaseModel):
         "json_response",
         "json_has_array",
         "json_contains",
+        "graphql_introspection",
     ]
     value: str | int | list[str] | list[int] | None = None
 

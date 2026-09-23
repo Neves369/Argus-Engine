@@ -54,6 +54,9 @@ class Finding(Base):
     )
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     requires_human_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Assinatura estável do finding (M9-P0): título + categoria + afetado
+    #: normalizados — base para diff entre runs e dedup global.
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

@@ -160,3 +160,28 @@ def test_tools_example_manifest_is_safe():
     names = [s.name for s in specs]
     assert {"http_status", "security_headers", "robots_check"} <= set(names)
     assert all(not s.destructive for s in specs), "manifest de exemplo não pode ter tool destrutiva"
+
+
+def test_ci_requires_composition_or_target():
+    result = _invoke("ci")
+    assert result.exit_code == 2
+    assert "--composition ou --target" in result.output
+
+
+def test_ci_rejects_invalid_fail_on():
+    result = _invoke("ci", "--target", "example.com", "--archetype", "hermit", "--fail-on", "bogus")
+    assert result.exit_code == 2
+    assert "--fail-on" in result.output
+
+
+def test_ci_rejects_invalid_format():
+    result = _invoke(
+        "ci", "--target", "example.com", "--archetype", "hermit", "--format", "xml"
+    )
+    assert result.exit_code == 2
+    assert "--format" in result.output
+
+
+def test_ci_composition_not_found():
+    result = _invoke("ci", "--composition", "99999")
+    assert result.exit_code == 2

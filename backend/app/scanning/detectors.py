@@ -355,7 +355,6 @@ _META_REFRESH_RE = re.compile(
 )
 _META_REFRESH_URL_RE = re.compile(r'url\s*=\s*["\']?([^"\'>\s]+)', re.IGNORECASE)
 
-
 def _open_redirect_meta(page: TargetPage) -> dict[str, Any] | None:
     """CWE-601 lead: a meta-refresh observed pointing at an external host.
 
@@ -488,6 +487,61 @@ def _permissive_cors(page: TargetPage) -> dict[str, Any] | None:
     )
 
 
+_WS_URL_RE = re.compile(r"wss?://[^\s\"'<>]+", re.IGNORECASE)
+_WS_CTOR_RE = re.compile(r"new\s+WebSocket\s*\(", re.IGNORECASE)
+
+
+def _websocket_upgrade(page: TargetPage) -> dict[str, Any] | None:
+    """Superfície lead: endpoint WebSocket detectado (upgrade), observacional.
+
+    Detecção passiva: header de upgrade/connection/``sec-websocket-accept`` na
+    resposta, ou referências ``ws://``/``wss://`` e ``new WebSocket(...)`` no
+    HTML/JS. Nenhuma handshake é feita aqui (testes profundos ficam para
+    depois) — é fingerprint de superfície, ``candidate``.
+    """
+    lower_headers = {k.lower(): v.lower() for k, v in page.headers.items()}
+    signals: list[str] = []
+    if "sec-websocket-accept" in lower_headers:
+        signals.append("header sec-websocket-accept")
+    if lower_headers.get("upgrade") == "websocket":
+        signals.append("header upgrade: websocket")
+    elif "upgrade" in lower_headers.get("connection", ""):
+        signals.append("header connection: upgrade")
+
+    urls = _WS_URL_RE.findall(page.body)
+    for url in urls:
+        signals.append(f"url {url}")
+    if _WS_CTOR_RE.search(page.body):
+        signals.append("new WebSocket(...)")
+
+    if not signals:
+        return None
+    return _finding(
+        title="WebSocket endpoint detectado (upgrade)",
+        description=(
+            "A página observada sinaliza um endpoint WebSocket (header de "
+            "upgrade na resposta ou referência a ``ws://``/``wss://``/"
+            "``new WebSocket(...)`` no HTML/JS). Registrado como fingerprint de "
+            "superfície — nenhuma handshake ou teste profundo é executado nesta "
+            "etapa."
+        ),
+        severity="info",
+        category="Aplicação / superfície de API",
+        affected=page.host,
+        evidence=f"GET {page.url} -> " + "; ".join(signals),
+        remediation=(
+            "Revise a exposição do endpoint WebSocket: exija autenticação/"
+            "autorização, valide origem (Origin) e restrinja mensagens ao "
+            "protocolo esperado."
+        ),
+        confidence=0.5,
+        extras={
+            "websocket_urls": sorted(set(urls)),
+            "signals": signals,
+        },
+    )
+
+
 _DETECTORS = (
     _server_banner,
     _missing_security_headers,
@@ -500,6 +554,7 @@ _DETECTORS = (
     _open_redirect_meta,
     _directory_listing,
     _tech_identified,
+    _websocket_upgrade,
 )
 
 

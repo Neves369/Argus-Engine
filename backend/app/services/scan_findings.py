@@ -25,6 +25,7 @@ from app.scanning.spec import TargetPage
 
 _FORM_TITLE = "Formulários com entrada de dados encontrados"
 _REFLECTION_TITLE = "Parâmetro refletido no corpo da resposta"
+_WEBSOCKET_TITLE = "WebSocket endpoint detectado (upgrade)"
 AGGREGATE_FORM_TITLE = "formulário(s) com entrada de dados observados no crawl"
 AGGREGATE_REFLECTION_TITLE = "parâmetro(s) refletido(s) no corpo da resposta"
 
@@ -54,7 +55,7 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
     the Carro can re-probe each lead. Verbose errors keep their URL-specific
     titles; misconfig findings are deduped by title (one per host).
     """
-    if not report.pages and not report.api_endpoints:
+    if not report.pages and not report.api_endpoints and not report.graphql_endpoints:
         return []
 
     findings: list[dict[str, Any]] = []
@@ -62,6 +63,7 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
     per_title: dict[str, dict[str, Any]] = {}
     form_routes: list[dict[str, Any]] = []
     reflections: list[dict[str, Any]] = []
+    websocket_endpoints: list[dict[str, Any]] = []
 
     for page in report.pages:
         for finding in detect_on_page(page):
@@ -77,6 +79,13 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
                     ref.setdefault("probe_url", page.url)
                     ref.setdefault("session", page.session)
                 reflections.extend((finding.get("extras") or {}).get("reflections", []))
+                seen.add(title)
+                continue
+            if title == _WEBSOCKET_TITLE:
+                for url in (finding.get("extras") or {}).get("websocket_urls") or []:
+                    websocket_endpoints.append(
+                        {"url": url, "page_url": page.url, "session": page.session}
+                    )
                 seen.add(title)
                 continue
             if title in seen:
@@ -97,12 +106,17 @@ def derive_findings_from_scan(report: ScanReport) -> list[dict[str, Any]]:
         aggregates.append(_aggregate_forms(form_routes))
     if reflections:
         aggregates.append(_aggregate_reflections(reflections))
+    if websocket_endpoints:
+        aggregates.append(_aggregate_websockets(websocket_endpoints))
     route_map = _route_map_finding(report)
     if route_map is not None:
         aggregates.append(route_map)
     api_surface = _api_surface_finding(report)
     if api_surface is not None:
         aggregates.append(api_surface)
+    graphql_surface = _graphql_surface_finding(report)
+    if graphql_surface is not None:
+        aggregates.append(graphql_surface)
 
     return [*findings, *aggregates, *_session_access_findings(report)]
 
@@ -174,6 +188,34 @@ def _aggregate_reflections(reflections: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         confidence=0.5,
         extras={"reflections": reflections, "reflection_count": count},
+    )
+
+
+def _aggregate_websockets(endpoints: list[dict[str, Any]]) -> dict[str, Any]:
+    """One per-run finding for every observed WebSocket endpoint (M8-P3)."""
+    count = len(endpoints)
+    lines = [
+        f"- {e['url']} (observado em {e['page_url']})" for e in endpoints
+    ]
+    sessions = sorted({e.get("session") or "anon" for e in endpoints})
+    return _finding(
+        title=f"{count} endpoint(s) WebSocket detectado(s)",
+        description=(
+            "O crawl observou referências a endpoints WebSocket (header de "
+            "upgrade ou ``ws://``/``wss://``/``new WebSocket(...)`` no HTML/JS). "
+            "Fingerprint de superfície apenas — nenhuma handshake ou teste "
+            "profundo é executado nesta etapa."
+        ),
+        severity="info",
+        category="Aplicação / superfície de API",
+        affected=_routes_host(endpoints),
+        evidence=f"{count} endpoint(s) WebSocket:\n" + "\n".join(lines),
+        remediation=(
+            "Revise a exposição dos endpoints WebSocket (autenticação, origem e "
+            "protocolo de mensagens)."
+        ),
+        confidence=0.5,
+        extras={"endpoints": endpoints, "endpoint_count": count, "sessions": sessions},
     )
 
 
@@ -302,6 +344,51 @@ def _api_surface_finding(report: ScanReport) -> dict[str, Any] | None:
             "sessions": sessions,
             "spec_url": spec.get("url"),
             "spec_sha256": spec.get("sha256"),
+        },
+    )
+
+
+def _graphql_surface_finding(report: ScanReport) -> dict[str, Any] | None:
+    """GraphQL surface from passive endpoint detection (M8-P2).
+
+    Endpoints detectados por caminho canônico ou referência em HTML/JS são a
+    superfície do próprio alvo — nenhuma introspecção acontece aqui (isso é um
+    probe sob política). Cada endpoint fica em ``extras`` para servir de lead à
+    política de introspecção (``graphql_introspection_p1``).
+    """
+    endpoints = list(report.graphql_endpoints)
+    if not endpoints:
+        return None
+    host = report.target
+    sessions = sorted({e.get("session") or "anon" for e in endpoints})
+    lines = [
+        f"- {e['url']} (detecção: {e.get('detected_by') or 'path'})"
+        + f" | sessão {e.get('session') or 'anon'}"
+        for e in sorted(endpoints, key=lambda ep: ep["url"])
+    ]
+    return _finding(
+        title=f"{len(endpoints)} endpoint(s) GraphQL detectado(s)",
+        description=(
+            "O alvo expõe um endpoint GraphQL detectado de forma passiva "
+            "(caminho canônico ou referência em HTML/JS). Nenhuma introspecção "
+            "foi executada aqui — a exposição do schema é avaliada apenas sob "
+            "política autorizada (probe de introspecção, M8-P2). O detalhe por "
+            "endpoint fica em ``extras``."
+        ),
+        severity="info",
+        category="Aplicação / superfície de API",
+        affected=host,
+        evidence="\n".join(lines)[:2000],
+        remediation=(
+            "Revise a exposição do endpoint GraphQL: exija autenticação quando "
+            "aplicável e desabilite a introspecção em produção se não for "
+            "necessária."
+        ),
+        confidence=0.5,
+        extras={
+            "endpoints": endpoints,
+            "endpoint_count": len(endpoints),
+            "sessions": sessions,
         },
     )
 

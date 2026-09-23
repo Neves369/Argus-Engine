@@ -295,6 +295,25 @@ class ProbeEngine:
                         session=str(route.get("session") or "anon"),
                     )
                 )
+        elif lead_kind == "graphql":
+            # M8-P2: leads vêm dos endpoints GraphQL detectados passivamente.
+            # O probe envia apenas a query de introspecção mínima versionada na
+            # política (never valores inventados, never dump completo).
+            for endpoint in report.graphql_endpoints:
+                url = str(endpoint.get("url") or "").strip()
+                if not url.startswith(("http://", "https://")):
+                    continue
+                _add(
+                    _Lead(
+                        url=url,
+                        detail=(
+                            f"endpoint GraphQL detectado por "
+                            f"{endpoint.get('detected_by') or 'path'}"
+                        ),
+                        method="POST",
+                        session=str(endpoint.get("session") or "anon"),
+                    )
+                )
         elif lead_kind in ("injection", "upload", "csrf"):
             reflection_leads = self._reflection_params(findings)
             for finding in self._findings_matching(policy, findings, "vetores de entrada"):
@@ -388,6 +407,8 @@ class ProbeEngine:
         )
         if needs_differential:
             return await self._probe_post(policy, lead)
+        if policy.allowed_probe.json_body is not None:
+            return await self._probe_graphql(policy, lead)
         try:
             page = await client.get_page(lead.url)
         except ScanError as exc:  # noqa: BLE001 - transcrito como skip auditável
@@ -395,6 +416,33 @@ class ProbeEngine:
 
         page.forms = parse_html(page.url, page.body)["forms"]
         positive, fp, detail = self._evaluate(policy, page, lead)
+        return self._record(
+            policy,
+            lead,
+            positive=positive,
+            fp=fp,
+            status_code=page.status_code,
+            detail=detail,
+            final_url=page.url,
+        )
+
+    async def _probe_graphql(self, policy: ProbePolicy, lead: _Lead) -> dict[str, Any]:
+        """Probe M8-P2: envia a query de introspecção mínima versionada.
+
+        POST com corpo JSON literal da política (nunca interpolado). A resposta
+        é avaliada pelos sinais da política — ``graphql_introspection`` casa
+        quando o JSON parseado expõe ``__schema``/``queryType``.
+        """
+        client = self._client_for(lead)
+        try:
+            page = await client.post_json(lead.url, policy.allowed_probe.json_body or {})
+        except ScanError as exc:  # noqa: BLE001
+            return self._record(policy, lead, skipped=True, skip_reason=f"unreachable: {exc}")
+
+        positive, fp, _ = self._evaluate(policy, page, lead)
+        detail = (
+            "sinal reproduzido (introspecção aberta)" if positive else "sinal não confirmado"
+        )
         return self._record(
             policy,
             lead,
@@ -540,6 +588,13 @@ class ProbeEngine:
             # Estrutural (JSON-adaptado): o valor é procurado em chaves e
             # strings do JSON parseado — não em substring do corpo cru.
             return _json_contains(_json_value(page.body), str(rule.value or ""))
+        if kind == "graphql_introspection":
+            # Introspecção aberta: o JSON parseado expõe ``__schema`` (ou pelo
+            # menos o tipo de query) na resposta da query mínima.
+            data = _json_value(page.body)
+            return bool(data) and (
+                _json_has_key(data, "__schema") or _json_has_key(data, "queryType")
+            )
         return False
 
     def _record(
@@ -654,6 +709,21 @@ def _json_value(body: str) -> Any | None:
     except (ValueError, TypeError):
         return None
     return data if isinstance(data, (dict, list)) else None
+
+
+def _json_has_key(value: Any | None, key: str) -> bool:
+    """True se ``key`` aparece como chave em qualquer nível do JSON parseado."""
+    if value is None or not key:
+        return False
+    if isinstance(value, dict):
+        for k, item in value.items():
+            if key.lower() in str(k).lower():
+                return True
+            if _json_has_key(item, key):
+                return True
+    elif isinstance(value, list):
+        return any(_json_has_key(item, key) for item in value)
+    return False
 
 
 def _json_has_list(value: Any | None) -> bool:

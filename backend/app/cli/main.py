@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -595,6 +596,137 @@ def tools_run(
         console.print(result["stdout"])
     else:
         console.print(f"[yellow]sem saída / egress bloqueado:[/yellow] {result['stderr'] or '-'}")
+
+
+_SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+_CI_FAIL_STATUSES = ("candidate", "validated")
+
+
+@app.command("ci")
+def ci_cmd(
+    composition: Annotated[
+        int | None, typer.Option("--composition", help="ID da composição salva")
+    ] = None,
+    target: Annotated[
+        str | None, typer.Option("--target", help="Alvo autorizado (scope)")
+    ] = None,
+    url: Annotated[str | None, typer.Option("--url")] = None,
+    archetypes: Annotated[
+        list[str] | None,
+        typer.Option("--archetype", help="Sequência de arquétipos (última deve ser justice)"),
+    ] = None,
+    depth: Annotated[
+        str, typer.Option("--depth", help="Profundidade do run (quick|deep)")
+    ] = "quick",
+    fail_on: Annotated[
+        str,
+        typer.Option(
+            "--fail-on",
+            help="Severidade mínima para falhar: critical|high|medium|low|info",
+        ),
+    ] = "high",
+    format: Annotated[
+        str, typer.Option("--format", help="Formato da saída: sarif|json")
+    ] = "sarif",
+    out: Annotated[
+        str | None, typer.Option("--out", help="Caminho do arquivo; default stdout")
+    ] = None,
+) -> None:
+    """Rodar um run e reportar findings em modo CI (exit code + SARIF/JSON).
+
+    Exit code: 0 = nenhum finding acima do limiar; 1 = findings acima do
+    limiar; 2 = erro operacional (scope/kill-switch/run falhou/revisão pendente).
+    """
+    fail_on = (fail_on or "high").lower()
+    if fail_on not in _SEVERITY_RANK:
+        console.print(f"[red]--fail-on deve ser um de: {', '.join(_SEVERITY_RANK)}[/red]")
+        raise typer.Exit(code=2)
+    if format not in ("sarif", "json"):
+        console.print("[red]--format deve ser 'sarif' ou 'json'[/red]")
+        raise typer.Exit(code=2)
+    if depth not in ("quick", "deep"):
+        console.print("[red]--depth deve ser 'quick' ou 'deep'[/red]")
+        raise typer.Exit(code=2)
+    if composition is None and not (target and archetypes):
+        console.print("[red]Informe --composition ou --target + --archetype.[/red]")
+        raise typer.Exit(code=2)
+
+    try:
+        if composition is not None:
+            session_id = composition
+        else:
+            session_id = _session_create(
+                f"ci-{target}", list(archetypes or []), target, url, False, depth
+            )
+        run_id, status = _session_execute(session_id)
+    except (ValueError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    if status == "failed":
+        console.print("[red]Run falhou[/red] — consulte o run para o erro.")
+        raise typer.Exit(code=2)
+    if status == "pending_review":
+        console.print(
+            "[yellow]Run aguarda decisão humana[/yellow] — resolva a revisão antes do gate de CI."
+        )
+        raise typer.Exit(code=2)
+
+    run, findings = _ci_load_run(run_id)
+    threshold = _SEVERITY_RANK[fail_on]
+    violations = [
+        f
+        for f in findings
+        if (f.status or "") in _CI_FAIL_STATUSES
+        and _SEVERITY_RANK.get((f.severity or "info").lower(), 0) >= threshold
+    ]
+
+    if format == "sarif":
+        from app.services.export import run_findings_sarif
+
+        payload = run_findings_sarif(run, findings)
+    else:
+        from app.schemas.finding import FindingRead
+
+        payload = json.dumps(
+            [FindingRead.model_validate(f).model_dump(mode="json") for f in findings],
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    if out:
+        with open(out, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        console.print(f"[green]CI export[/green] run #{run_id} -> {out} ({format})")
+    else:
+        console.print(payload)
+
+    if violations:
+        console.print(
+            f"[red]Gate reprovado[/red]: {len(violations)} finding(s) com severidade >= {fail_on}."
+        )
+        raise typer.Exit(code=1)
+    console.print(f"[green]Gate aprovado[/green]: nenhum finding >= {fail_on}.")
+    raise typer.Exit(code=0)
+
+
+def _ci_load_run(run_id: int) -> tuple[object, list[object]]:
+    from sqlalchemy import select
+
+    from app.db.models import Finding, Run
+    from app.db.session import async_session_factory
+
+    async def _run() -> tuple[object, list[object]]:
+        async with async_session_factory() as session:
+            run = await session.get(Run, run_id)
+            if run is None:
+                raise ValueError(f"Run #{run_id} not found")
+            result = await session.execute(
+                select(Finding).where(Finding.run_id == run_id).order_by(Finding.id)
+            )
+            return run, list(result.scalars().all())
+
+    return asyncio.run(_run())
 
 
 if __name__ == "__main__":
