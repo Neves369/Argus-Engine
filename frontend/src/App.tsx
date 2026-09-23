@@ -14,6 +14,7 @@ import Login from "./components/Login";
 import Modal from "./components/Modal";
 import PlayedArea from "./components/PlayedArea";
 import RunPanel from "./components/RunPanel";
+import RunConfig, { type RunPolicyState } from "./components/RunConfig";
 import Sessions from "./components/Sessions";
 import Settings from "./components/Settings";
 import {
@@ -21,6 +22,7 @@ import {
   createComposition,
   getActiveRun,
   getReport,
+  listPresets,
   logout,
   reviewRun,
   runStream,
@@ -36,19 +38,19 @@ import {
   type StreamEvent,
   type RunEndSignal,
   type Report,
+  type TarotPreset,
 } from "./api/client";
 import type { CardNodeType } from "./components/CardNode";
 import { CARD_AGENT_IDS } from "./data/agents";
 import { useUIStore, type UIModal } from "./store/ui";
 import "./App.css";
 
-const IMPERIAL_TEAM_CARDS: ReadonlyArray<{ id: number; key: string }> = [
-  { id: 0, key: "fool" },
-  { id: 1, key: "hermit" },
-  { id: 4, key: "magician" },
-  { id: 3, key: "justice" },
+const IMPERIAL_TEAM_ARCHETYPES: readonly string[] = [
+  'fool',
+  'hermit',
+  'magician',
+  'justice',
 ];
-const IMPERIAL_TEAM_ARCHETYPES = IMPERIAL_TEAM_CARDS.map((card) => card.key);
 
 function formatLogEntry(entry: HistoryEntry): string {
   const parts: string[] = [];
@@ -89,6 +91,13 @@ function App() {
   const [handHidden, setHandHidden] = useState(false);
   const [deathMode, setDeathMode] = useState(false);
   const [enemyInfo, setEnemyInfo] = useState({ name: '', url: '', notes: '' });
+  const [runPolicy, setRunPolicy] = useState<RunPolicyState>({
+    depth: 'quick',
+    probeClasses: [],
+    policyPackage: null,
+    preset: null,
+  });
+  const [presets, setPresets] = useState<TarotPreset[]>([]);
   const [returnedCard, setReturnedCard] = useState<number | undefined>(undefined);
   const [activeArchetype, setActiveArchetype] = useState<string | null>(null);
   const [runEnded, setRunEnded] = useState(false);
@@ -186,6 +195,18 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    listPresets()
+      .then((data) => {
+        if (!cancelled) setPresets(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function handleCardPlayed(id: number) {
     setActiveArchetype(null);
     setRunEnded(false);
@@ -229,6 +250,7 @@ function App() {
     setActiveArchetype(null);
     setRunEnded(false);
     setEnemyInfo({ name: '', url: '', notes: '' });
+    setRunPolicy({ depth: 'quick', probeClasses: [], policyPackage: null, preset: null });
     setRunId(null);
     setHistoryRunId(null);
     setRunPanelOpen(false);
@@ -395,22 +417,39 @@ function seedReport(report: Report) {
     }
   }
 
+  function buildCardNodes(archetypes: readonly string[]): CardNodeType[] {
+    const nodes: CardNodeType[] = [];
+    archetypes.forEach((key, index) => {
+      const id = CARD_AGENT_IDS.indexOf(key as (typeof CARD_AGENT_IDS)[number]);
+      if (id < 0) return;
+      nodes.push({
+        id: `card-${id}`,
+        type: 'card',
+        position: { x: 80 + index * 60, y: -100 + (id % 3) * 20 },
+        data: { id, onReturn: handleCardReturn },
+      });
+    });
+    return nodes;
+  }
+
+  function handleApplyPreset(preset: TarotPreset) {
+    setActiveArchetype(null);
+    setRunEnded(false);
+    setNodes(buildCardNodes(preset.archetypes));
+    setEdges([]);
+    setRunResult(`Preset "${preset.name}" aplicado: ${preset.archetypes.join(' → ')}.`);
+  }
+
   function placeImperialTeam() {
     setActiveArchetype(null);
     setRunEnded(false);
-    setNodes(
-      IMPERIAL_TEAM_CARDS.map((card, index): CardNodeType => ({
-        id: `card-${card.id}`,
-        type: 'card',
-        position: { x: 80 + index * 60, y: -100 + (card.id % 3) * 20 },
-        data: { id: card.id, onReturn: handleCardReturn },
-      })),
-    );
+    setNodes(buildCardNodes(IMPERIAL_TEAM_ARCHETYPES));
   }
 
   async function handleRun() {
     const archetypes = currentArchetypes();
-    const imperialTurn = archetypes.length === 0;
+    const presetActive = runPolicy.preset != null;
+    const imperialTurn = archetypes.length === 0 && !presetActive;
     if (activeRun.active) {
       setRunResult(
         `Aguarde o run #${activeRun.run_id} (${activeRun.status}) concluir antes de iniciar outro.`,
@@ -433,6 +472,10 @@ function seedReport(report: Report) {
             ? { name: enemyInfo.name, url: enemyInfo.url, notes: enemyInfo.notes }
             : null,
           devil_mode: deathMode,
+          depth: runPolicy.depth,
+          probe_classes: runPolicy.probeClasses.length > 0 ? runPolicy.probeClasses : undefined,
+          policy_package: runPolicy.policyPackage,
+          preset: runPolicy.preset,
         });
       }
 
@@ -443,10 +486,20 @@ function seedReport(report: Report) {
       if (enemyInfo.url.trim()) {
         params.set('url', enemyInfo.url.trim());
       }
-      params.set(
-        'archetypes',
-        (imperialTurn ? IMPERIAL_TEAM_ARCHETYPES : archetypes).join(','),
-      );
+      const streamArchetypes = imperialTurn ? IMPERIAL_TEAM_ARCHETYPES : archetypes;
+      if (streamArchetypes.length > 0) {
+        params.set('archetypes', streamArchetypes.join(','));
+      }
+      params.set('depth', runPolicy.depth);
+      if (runPolicy.probeClasses.length > 0) {
+        params.set('probe_classes', runPolicy.probeClasses.join(','));
+      }
+      if (runPolicy.policyPackage) {
+        params.set('policy_package', runPolicy.policyPackage);
+      }
+      if (runPolicy.preset) {
+        params.set('preset', runPolicy.preset);
+      }
 
       const signal = await runStream(`/runs/stream?${params.toString()}`, ingestEvent, {
         onStart: setRunId,
@@ -512,31 +565,28 @@ function seedReport(report: Report) {
   function loadComposition(composition: Composition) {
     setActiveArchetype(null);
     setRunEnded(false);
-    const archetypes = composition.config?.archetypes ?? [];
-    const idByArchetype: Record<string, number> = {};
-    for (const [strId, key] of Object.entries(CARD_AGENT_IDS)) {
-      idByArchetype[key] = Number(strId);
-    }
-
-    const loaded: CardNodeType[] = archetypes.map((key, index) => {
-      const id = idByArchetype[key] ?? index;
-      return {
-        id: `card-${id}`,
-        type: 'card',
-        position: { x: 80 + index * 60, y: -80 + (id % 3) * 20 },
-        data: { id, onReturn: handleCardReturn },
-      };
-    });
+    const config = composition.config ?? {};
+    const archetypes = config.archetypes ?? [];
+    const presetId = config.preset ?? null;
+    const preset = presetId != null ? presets.find((p) => p.id === presetId) : undefined;
+    const loaded: CardNodeType[] =
+      preset != null ? buildCardNodes(preset.archetypes) : buildCardNodes(archetypes);
 
     setNodes(loaded);
     setEdges([]);
-    const target = composition.config?.target;
+    const target = config.target;
     setEnemyInfo({
       name: target?.name ?? '',
       url: target?.url ?? '',
       notes: target?.notes ?? '',
     });
-    if (composition.config?.devil_mode) {
+    setRunPolicy({
+      depth: config.depth ?? 'quick',
+      probeClasses: config.probe_classes ?? [],
+      policyPackage: config.policy_package ?? null,
+      preset: presetId,
+    });
+    if (config.devil_mode) {
       setDeathMode(true);
     }
     setRunResult(`Composição "${composition.name}" carregada no grafo.`);
@@ -681,10 +731,28 @@ function seedReport(report: Report) {
       </AnimatePresence>
       <Modal
         open={enemyModalOpen}
-        title="Informações do Alvo"
+        title="Alvo e Política do Run"
         onClose={() => setEnemyModalOpen(false)}
+        size="wide"
       >
-        <EnemyForm value={enemyInfo} onSave={setEnemyInfo} onClose={() => setEnemyModalOpen(false)} />
+        <div className="run-config-layout">
+          <div className="run-config-layout-target">
+            <EnemyForm
+              value={enemyInfo}
+              onSave={setEnemyInfo}
+              onClose={() => setEnemyModalOpen(false)}
+            />
+          </div>
+          <div className="run-config-layout-policy">
+            <RunConfig
+              value={runPolicy}
+              presets={presets}
+              onChange={setRunPolicy}
+              onApplyPreset={handleApplyPreset}
+              disabled={busy}
+            />
+          </div>
+        </div>
       </Modal>
       <Modal
         open={playerModalOpen}

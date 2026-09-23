@@ -198,16 +198,23 @@ export interface RunStreamOptions {
   onStart?: (runId: number) => void;
 }
 
+export interface CompositionConfig {
+  archetypes?: string[];
+  target?: { name?: string; url?: string; notes?: string } | null;
+  devil_mode?: boolean;
+  depth?: RunDepth;
+  probe_classes?: string[];
+  journey_classes?: string[];
+  policy_package?: string | null;
+  preset?: string | null;
+}
+
 export interface Composition {
   id: number;
   name: string;
   target_id?: number | null;
   status: string;
-  config?: {
-    archetypes?: string[];
-    target?: { name?: string; url?: string; notes?: string } | null;
-    devil_mode?: boolean;
-  } | null;
+  config?: CompositionConfig | null;
   created_at: string;
 }
 
@@ -261,6 +268,53 @@ export interface ProviderConfig {
 export interface ProvidersResponse {
   providers: ProviderConfig[];
   has_encryption_configured: boolean;
+}
+
+export type RunDepth = 'quick' | 'deep';
+
+export interface PolicyPackage {
+  id: string;
+  version: string;
+  name: string;
+  description: string;
+  depth: RunDepth;
+  probe_classes: string[];
+  journey_classes: string[];
+  devil_mode: boolean;
+  sha256: string;
+}
+
+export interface TarotPreset {
+  id: string;
+  version: string;
+  name: string;
+  description: string;
+  archetypes: string[];
+  policy_package: string | null;
+  sha256: string;
+}
+
+export interface ProbeClass {
+  id: string;
+  version: string;
+  name: string;
+  priority: string;
+  class_label: string;
+  description: string;
+  default_enabled: boolean;
+  requires_hitl: boolean;
+}
+
+export function listPolicyPackages(): Promise<PolicyPackage[]> {
+  return request<PolicyPackage[]>('/policy/packages');
+}
+
+export function listPresets(): Promise<TarotPreset[]> {
+  return request<TarotPreset[]>('/presets');
+}
+
+export function listProbes(): Promise<ProbeClass[]> {
+  return request<ProbeClass[]>('/policy/probes');
 }
 
 export function listProviders(): Promise<ProvidersResponse> {
@@ -334,10 +388,19 @@ export function createTarget(input: {
   return request<Target>('/targets', { method: 'POST', body: JSON.stringify(input) });
 }
 
+export interface RunPolicyOptions {
+  depth?: RunDepth;
+  probe_classes?: string[];
+  journey_classes?: string[];
+  policy_package?: string | null;
+  preset?: string | null;
+}
+
 export function createRun(input: {
   target?: { name: string; url?: string; notes?: string };
   devil_mode?: boolean;
-}): Promise<Run> {
+  archetypes?: string[];
+} & RunPolicyOptions): Promise<Run> {
   return request<Run>('/runs', { method: 'POST', body: JSON.stringify(input) });
 }
 
@@ -410,7 +473,7 @@ export function createComposition(input: {
   archetypes: string[];
   target?: { name: string; url?: string; notes?: string } | null;
   devil_mode?: boolean;
-}): Promise<Composition> {
+} & RunPolicyOptions): Promise<Composition> {
   return request<Composition>('/compositions', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -444,10 +507,26 @@ export function streamRun(
   archetypes: string[],
   onEvent: (event: StreamEvent) => void,
   onDone: (runId: number, status: string) => void,
+  options: RunPolicyOptions = {},
 ): () => void {
   const params = new URLSearchParams({ target, devil_mode: String(devilMode) });
   if (archetypes.length > 0) {
     params.set('archetypes', archetypes.join(','));
+  }
+  if (options.depth) {
+    params.set('depth', options.depth);
+  }
+  if (options.probe_classes && options.probe_classes.length > 0) {
+    params.set('probe_classes', options.probe_classes.join(','));
+  }
+  if (options.journey_classes && options.journey_classes.length > 0) {
+    params.set('journey_classes', options.journey_classes.join(','));
+  }
+  if (options.policy_package) {
+    params.set('policy_package', options.policy_package);
+  }
+  if (options.preset) {
+    params.set('preset', options.preset);
   }
   const controller = new AbortController();
   void runStream(`/runs/stream?${params.toString()}`, onEvent, { signal: controller.signal }).then(

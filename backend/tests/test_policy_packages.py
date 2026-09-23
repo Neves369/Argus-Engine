@@ -135,3 +135,18 @@ def test_policy_package_endpoint(client):
 
 def test_policy_package_endpoint_not_found(client):
     assert client.get("/api/v1/policy/packages/nope").status_code == 404
+
+
+def test_policy_probes_endpoint(client):
+    resp = client.get("/api/v1/policy/probes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body
+    ids = {p["id"] for p in body}
+    assert "reflection_p0" in ids
+    assert "authn_p3" in ids
+    for entry in body:
+        assert {"id", "name", "priority", "class_label", "description"} <= set(entry)
+        assert "default_enabled" in entry
+    priorities = [p["priority"] for p in body]
+    assert priorities == sorted(priorities)

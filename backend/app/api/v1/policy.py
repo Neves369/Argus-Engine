@@ -3,8 +3,15 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.policies.packages import PolicyPackageRead, list_packages, resolve_package
+from app.probing.catalog import probe_manifest
 
 router = APIRouter(prefix="/policy", tags=["policy"])
+
+
+@router.get("/probes")
+async def get_probe_catalog() -> list[dict]:
+    """Catálogo de classes de probe M6 disponíveis (para escolher o allowlist)."""
+    return probe_manifest()
 
 
 @router.get("/packages", response_model=list[PolicyPackageRead])

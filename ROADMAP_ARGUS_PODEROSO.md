@@ -383,7 +383,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - `policy_package` é **autoritativo** em `POST /runs`, `GET /runs/stream` e `POST /compositions`: quando definido, governa `depth`/`probe_classes`/`journey_classes`/`devil_mode` (campos explícitos são ignorados). `journey_classes` passou a trafegar por `GraphState` → Carro (`_journeys`) para liberar jornadas por run.
 - `GraphState.policy_package`/`policy_resolved` persistidos no estado (resume) e expostos no relatório (`run_report` → `policy`), tornando a política reproduzível/exportável.
 - Suíte `tests/test_policy_packages.py` (15).
-- **Próximas fatias**: M10-P1 = trilha de autorização (nota de escopo no Target/Run); M10-P2 = relatório executivo vs técnico; M10-P3 = presets Tarot (composições prontas); e a camada de UI (escolher depth/classes/perfis/HITL).
+- **Próximas fatias**: M10-P1 = trilha de autorização (nota de escopo no Target/Run); M10-P2 = relatório executivo vs técnico; M10-P3 = presets Tarot (composições prontas); e a camada de UI (escolher depth/classes/perfis/HITL). A camada de UI foi entregue (ver **M10 — camada de UI**).
 
 ### M10-P1 (entregue) — trilha de autorização (nota de escopo)
 - `Target.authorization_note` (coluna `Text`, migração `d5f6a7b8c9e0`): nota de autorização/escopo (quem autorizou, sob qual escopo) registrada junto ao alvo.
@@ -392,7 +392,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - `GraphState` normaliza (`_trim_target_fields`) `authorization_note` junto a `name`/`url`/`notes`.
 - Relatório expõe a autorização: `run_report` → `authorization` (JSON) e linha `- **Autorização:**` no Markdown (quando presente).
 - Suíte `tests/test_authorization_m10.py` (6).
-- **Próximas fatias**: M10-P2 = relatório executivo vs técnico; M10-P3 = presets Tarot (composições prontas); e a camada de UI.
+- **Próximas fatias**: M10-P2 = relatório executivo vs técnico; M10-P3 = presets Tarot (composições prontas); e a camada de UI. A camada de UI foi entregue (ver **M10 — camada de UI**).
 
 ### M10-P2 (entregue) — relatório executivo vs técnico
 - `run_executive_report` (`app/services/export.py`): relatório **executivo** — resumo (por seção/gravidade + sumário executivo) e os `EXECUTIVE_TOP_N` (10) achados mais graves com título/categoria/afetado/status/remediação, **sem** evidência de probe, `probe_url` nem descrição técnica.
@@ -400,7 +400,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - `run_report`/`run_report_markdown` seguem como o relatório **técnico** (padrão, com evidência por finding).
 - `GET /runs/{id}/report?view=executive|technical` (default `technical`) e `GET /runs/{id}/export?format=json|markdown&view=executive|technical`; `view` inválido → 400.
 - Suíte `tests/test_executive_report_m10.py` (8).
-- **Próximas fatias**: M10-P3 = presets Tarot (composições prontas); e a camada de UI.
+- **Próximas fatias**: M10-P3 = presets Tarot (composições prontas); e a camada de UI. A camada de UI foi entregue (ver **M10 — camada de UI**).
 
 ### M10-P3 (entregue) — presets Tarot (composições prontas)
 - Catálogo versionado `policies/presets/*.yaml` com 4 presets: `recon` (hermit+justice, `surface-only`), `app-map` (hermit+fool+justice, `surface-only`), `deep-web` (hermit+fool+justice, `bugbounty-web` — depth deep adiciona o Carro) e `api` (hermit+magician+justice, `api-only`).
@@ -409,7 +409,14 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - `preset` é **autoritativo** para `archetypes` em `POST /runs`, `GET /runs/stream` e `POST /compositions`; um `policy_package` explícito vence o do preset. O preset pareia as cartas ao pacote de política (M10-P0), que por sua vez governa depth/probes/jornadas.
 - `GraphState.preset`/`preset_resolved` persistidos no estado (resume) e expostos no relatório (`run_report` → `preset`).
 - Suíte `tests/test_presets_m10.py` (14).
-- **Próxima fatia**: a camada de UI (escolher depth, classes M6, perfis de sessão, presets/pacotes e HITL no frontend).
+
+### M10 — camada de UI (entregue)
+- **`GET /policy/probes`** (`app/api/v1/policy.py` + `probe_manifest` em `app/probing/catalog.py`): expõe o catálogo de classes M6 (id/nome/prioridade/label/descrição/`default_enabled`) para a UI renderizar o allowlist sem inventar classe.
+- **Client do frontend** (`frontend/src/api/client.ts`): `listPolicyPackages()`/`listPresets()`/`listProbes()` + `RunPolicyOptions` trafegando `depth`/`probe_classes`/`journey_classes`/`policy_package`/`preset` em `createRun`, `createComposition` e `streamRun`.
+- **`RunConfig`** (`frontend/src/components/RunConfig.tsx` + `.css`): painel "Política do run" no modal do Alvo — seletor de preset Tarot (aplica as cartas ao tabuleiro e paíra o pacote), seletor de pacote de política (autoritativo: governa depth/classes/jornadas, desabilita os controles manuais), seletor de profundidade (`quick`/`deep`) e checkboxes de classes M6 por prioridade (default seguro P0 quando vazio).
+- **Wiring**: `handleRun` envia a política em `POST /compositions` e em `/runs/stream`; `loadComposition` restaura `depth`/`probe_classes`/`policy_package`/`preset` da composição salva (preset recoloca as cartas); nova sessão zera a política. A persistência de `probe_classes`/`preset` em composições permite re-executar uma política de run sem editar YAML.
+- Suíte frontend (`npm test`/`npm run build`/`npm run lint`) verde.
+- **Observação**: perfis de sessão (`SCAN_SESSION_PROFILES`) permanecem configurados por env (M7-P1) — não há override por run no backend ainda; os presets/pacotes escolhidos na UI são a superfície operável de política de run.
 
 ---
 
@@ -451,7 +458,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2+P3 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel + jornadas multi-step por sessão)
 - [x] API/GraphQL (M8) — **P0+P1+P2+P3 entregues** (OpenAPI/Swagger, probes JSON, GraphQL com introspecção só autorizada + WebSocket fingerprint passivo)
 - [x] Diff/CI/escala (M9) — **P0+P1+P2+P3 entregues** (fingerprint estável, diff entre runs, `argus ci` com gate, métricas de negócio); filas/isolamento N alvos adiados
-- [ ] Pacotes e UX de política (M10) — **P0+P1+P2+P3 entregues** (pacotes de política + trilha de autorização + relatório executivo/técnico + presets Tarot); resta a camada de UI
+- [x] Pacotes e UX de política (M10) — **P0+P1+P2+P3 + camada de UI entregues** (pacotes de política + trilha de autorização + relatório executivo/técnico + presets Tarot + painel de profundidade/classes/pacotes/presets no frontend)
 
 Sem M6, o Argus é um **excelente mapeador e priorizador**.  
 Com M6–M8, vira **plataforma poderosa de avaliação**.  
@@ -515,6 +522,6 @@ Com M9–M10, vira **produto operável em time**.
 4. ~~Expandir **M7** (sessão/papéis)~~ — entregue (P0..P3).  
 5. ~~Expandir **M8** (APIs modernas)~~ — entregue (P0: OpenAPI; P1: probes JSON; P2: GraphQL com introspecção só autorizada; P3: WebSocket fingerprint passivo).  
 6. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas).  
-7. **Expandir M10** — P0+P1+P2+P3 entregues (pacotes de política + `policy_package` autoritativo; trilha de autorização com `Target.authorization_note` snapshot por run; relatório executivo vs técnico via `view=executive|technical`; presets Tarot `recon`/`app-map`/`deep-web`/`api` com `preset` autoritativo). Próximo: **camada de UI** (escolher depth/classes/perfis/presets/HITL no frontend) — e, quando quiser escala, a parte adiada da M9 (filas/isolamento N alvos).
+7. ~~Expandir **M10**~~ — P0+P1+P2+P3 + camada de UI entregues (pacotes de política + `policy_package` autoritativo; trilha de autorização com `Target.authorization_note` snapshot por run; relatório executivo vs técnico via `view=executive|technical`; presets Tarot `recon`/`app-map`/`deep-web`/`api` com `preset` autoritativo; painel de profundidade/classes/pacotes/presets no frontend). Quando quiser escala: a parte adiada da M9 (filas/isolamento N alvos).
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.

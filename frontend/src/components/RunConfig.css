@@ -1,0 +1,114 @@
+.run-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 2px;
+}
+
+.run-config-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.run-config-layout-target {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding-right: 24px;
+}
+
+@media (max-width: 760px) {
+  .run-config-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .run-config-layout-target {
+    border-right: none;
+    padding-right: 0;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+.run-config-title {
+  font-family: var(--heading);
+  font-weight: 600;
+  font-size: 15px;
+  color: #e6d7b0;
+}
+
+.run-config-select {
+  width: 100%;
+  appearance: auto;
+}
+
+.run-config-select option {
+  background: #17140f;
+  color: #e6d7b0;
+}
+
+.run-config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.run-config-block.is-governed {
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.run-config-radios {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.run-config-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e6d7b0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.run-config-radio:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.run-config-probes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.run-config-probe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e6d7b0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.run-config-probe-badge {
+  flex: 0 0 auto;
+  min-width: 34px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #2e2a26;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  text-align: center;
+}
+
+.run-config-probe-name {
+  line-height: 1.35;
+}

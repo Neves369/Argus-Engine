@@ -64,6 +64,32 @@ def default_probe_classes(limit: str = "p0") -> list[str]:
     )
 
 
+def probe_manifest() -> list[dict]:
+    """Catálogo de classes de probe M6 resolvido para a UI/CLI.
+
+    Retorna uma lista pronta para renderizar checkboxes de allowlist (id, nome,
+    prioridade, label de classe, descrição e flags) em ordem de prioridade —
+    a UI nunca inventa classe, só escolhe entre as já aprovadas/versionadas.
+    """
+    catalog = load_catalog()
+    return [
+        {
+            "id": policy.id,
+            "version": policy.version,
+            "name": policy.name,
+            "priority": policy.priority,
+            "class_label": policy.class_label,
+            "description": policy.description,
+            "default_enabled": policy.default_enabled,
+            "requires_hitl": policy.requires_hitl,
+        }
+        for policy in sorted(
+            catalog.values(),
+            key=lambda p: (_PRIORITY_ORDER.get(p.priority.lower(), 99), p.id),
+        )
+    ]
+
+
 def catalog_manifest() -> dict:
     """Versão + digest por política, para registrar que catálogo governou o run."""
     catalog = load_catalog()
