@@ -282,6 +282,13 @@ def run_report(run: Run, findings: list[Finding]) -> dict[str, Any]:
             "pending_review": sum(1 for f in findings if f.requires_human_review),
             "executive": _executive_summary(run, findings),
         },
+        "policy": {
+            "package": result.get("policy_package"),
+            "resolved": result.get("policy_resolved"),
+            "depth": result.get("depth"),
+            "probe_classes": result.get("probe_classes"),
+            "journey_classes": result.get("journey_classes"),
+        },
         "findings": [finding_report(f) for f in _ordered(findings)],
         "observability": {
             "tokens_used": result.get("tokens_used", 0),

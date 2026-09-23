@@ -1,0 +1,33 @@
+# Pacote de política — laboratório autorizado (Etapa M10-P0).
+#
+# Uso EXCLUSIVO em alvos de laboratório autorizados (ex.: DVWA local). Expande
+# a política do run para profundidade `deep` com TODAS as classes de probe de
+# comportamento (P0..P3) e as jornadas multi-step por papel — o máximo de sinal
+# que o Argus produz sem virar exploit kit.
+#
+# O operador escolhe este pacote pelo id; nunca edita YAML na mão. Cada classe
+# aqui referenciada precisa existir no catálogo versionado (policies/probes/*.yaml
+# e policies/journeys/*.yaml) — referência desconhecida aborta a resolução.
+id: lab
+version: "1.0.0"
+name: "Laboratório autorizado (lab)"
+description: >
+  Profundidade deep com todas as classes de probe de comportamento (P0..P3) e
+  jornadas multi-step por papel. Destinado a alvos de laboratório autorizados
+  (ex.: DVWA) — nunca a alvos reais sem consentimento e escopo explícitos.
+depth: deep
+probe_classes:
+  - reflection_p0
+  - verbose_error_p0
+  - api_json_error_p0
+  - injection_p1
+  - upload_p1
+  - api_bulk_p1
+  - graphql_introspection_p1
+  - csrf_p2
+  - redirect_p2
+  - authn_p3
+journey_classes:
+  - admin_area_p0
+  - account_self_p1
+devil_mode: false

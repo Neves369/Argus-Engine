@@ -12,6 +12,7 @@ from app.core.security import is_kill_switch_active, validate_scope
 from app.db.models import Run, Session, Target
 from app.orchestration.compose import validate_sequence
 from app.orchestration.state import GraphState
+from app.policies.packages import run_policy
 from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
@@ -46,6 +47,8 @@ async def create_composition(payload: CompositionCreate, db: DBSession) -> Sessi
             "devil_mode": payload.devil_mode,
             "depth": payload.depth,
             "probe_classes": payload.probe_classes,
+            "journey_classes": payload.journey_classes,
+            "policy_package": payload.policy_package,
         },
     )
     db.add(session)
@@ -138,15 +141,35 @@ async def execute_composition(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="depth must be 'quick' or 'deep'",
         )
+    try:
+        policy = run_policy(
+            config.get("policy_package"),
+            depth=depth,
+            probe_classes=config.get("probe_classes") or None,
+            journey_classes=config.get("journey_classes") or None,
+            devil_mode=bool(config.get("devil_mode", False)),
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Policy package not found"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    depth = policy["depth"]
     budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target,
-        devil_mode=bool(config.get("devil_mode", False)),
+        devil_mode=policy["devil_mode"],
         budget_tokens=budget_tokens,
         budget_cost=budget_cost,
         composition=archetypes,
         depth=depth,
-        probe_classes=config.get("probe_classes") or None,
+        probe_classes=policy["probe_classes"],
+        journey_classes=policy["journey_classes"],
+        policy_package=policy["policy_package"],
+        policy_resolved=policy["policy_resolved"],
     )
     services = (
         build_sources_service(),

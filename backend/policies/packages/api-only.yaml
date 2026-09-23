@@ -1,0 +1,23 @@
+# Pacote de política — API-only (Etapa M10-P0).
+#
+# Focado em superfícies de API modernas: apenas os probes adaptados a JSON
+# (P0/P1) e a introspecção GraphQL (P1, opt-in via allowlist). Nenhuma jornada
+# multi-step, nenhuma classe de formulário HTML (upload/injeção/CSRF/authn).
+#
+# A descoberta de OpenAPI/GraphQL depende dos settings globais de scan
+# (SCAN_OPENAPI_ENABLED / SCAN_GRAPHQL_ENABLED); este pacote apenas libera as
+# classes de probe da superfície de API quando o scan as observa.
+id: api-only
+version: "1.0.0"
+name: "API-only"
+description: >
+  Deep com apenas probes de API: JSON error/bulk (P0/P1) e introspecção GraphQL
+  (P1, opt-in). Para alvos com superfície de API (OpenAPI/Swagger/GraphQL), sem
+  classes de formulário HTML.
+depth: deep
+probe_classes:
+  - api_json_error_p0
+  - api_bulk_p1
+  - graphql_introspection_p1
+journey_classes: []
+devil_mode: false

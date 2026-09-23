@@ -10,6 +10,7 @@ from app.api.v1 import (
     dashboard,
     findings,
     operate,
+    policy,
     providers,
     runs,
     sources,
@@ -33,3 +34,4 @@ api_router.include_router(dashboard.router, dependencies=[Depends(require_auth)]
 api_router.include_router(archetypes.router, dependencies=[Depends(require_auth)])
 api_router.include_router(providers.router, dependencies=[Depends(require_auth)])
 api_router.include_router(operate.router, dependencies=[Depends(require_auth)])
+api_router.include_router(policy.router, dependencies=[Depends(require_auth)])

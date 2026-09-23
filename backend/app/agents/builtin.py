@@ -789,6 +789,7 @@ class ChariotAgent(BaseArchetype):
             jfindings, records = await engine.run(
                 target=state.target,
                 session_clients=session_clients or {},
+                journey_ids=state.journey_classes,
             )
         except Exception:  # noqa: BLE001 - comportamento nunca derruba o run
             return 0, []

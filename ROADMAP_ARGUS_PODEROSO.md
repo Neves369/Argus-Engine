@@ -18,6 +18,7 @@
 - **M8 P0+P1 entregue (set/2026):** superfície de API via OpenAPI/Swagger + probes de política adaptados a JSON (ver seção M8).
 - **M8 P2+P3 entregue (set/2026):** GraphQL — detecção passiva de endpoint + introspecção só autorizada sob política (`graphql_introspection_p1`, allowlist + deep) — e fingerprint passivo de WebSocket (detecção de upgrade, sem handshake) (ver seção M8).
 - **M9 P0–P3 entregue (set/2026):** fingerprint estável de finding + diff entre runs + `argus ci` (exit code/gate/SARIF) + métricas de negócio (FP rate, tempo até 1º lead, custo por finding útil); filas/isolamento N alvos adiados (ver seção M9).
+- **M10 P0 entregue (set/2026):** pacotes de política versionados (`lab`, `bugbounty-web`, `api-only`, `surface-only`) + resolução autoritativa em `policy_package` no run + `GET /policy/packages` + política resolvida no relatório (ver seção M10).
 
 **Princípios**
 1. Uso apenas em alvos autorizados, com escopo e kill-switch.
@@ -372,6 +373,15 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - Operador configura um run poderoso sem editar YAML na mão.
 - Política do run exportável e reproduzível.
 
+### M10-P0 (entregue) — pacotes de política
+- Catálogo versionado `policies/packages/*.yaml` com 4 pacotes: `lab` (deep + P0..P3 + jornadas), `bugbounty-web` (deep + P0/P1 + redirect aberto, sem CSRF/authn), `api-only` (deep + probes JSON/GraphQL) e `surface-only` (quick, sem probes/jornadas).
+- `app/policies/packages.py`: schema (`PolicyPackage`/`PolicyPackageRead`) + loader fail-closed + `resolve_package` (valida referências contra os catálogos M6/M7; id desconhecido → `KeyError`, referência inválida → `ValueError`) + `apply_package`/`run_policy` (snapshot resolvido com `sha256` para auditoria).
+- `GET /policy/packages` e `GET /policy/packages/{id}` (`app/api/v1/policy.py`, registrado com guard de auth no router).
+- `policy_package` é **autoritativo** em `POST /runs`, `GET /runs/stream` e `POST /compositions`: quando definido, governa `depth`/`probe_classes`/`journey_classes`/`devil_mode` (campos explícitos são ignorados). `journey_classes` passou a trafegar por `GraphState` → Carro (`_journeys`) para liberar jornadas por run.
+- `GraphState.policy_package`/`policy_resolved` persistidos no estado (resume) e expostos no relatório (`run_report` → `policy`), tornando a política reproduzível/exportável.
+- Suíte `tests/test_policy_packages.py` (15).
+- **Próximas fatias**: M10-P1 = trilha de autorização (nota de escopo no Target/Run); M10-P2 = relatório executivo vs técnico; M10-P3 = presets Tarot (composições prontas); e a camada de UI (escolher depth/classes/perfis/HITL).
+
 ---
 
 ## Arquitetura alvo (visão)
@@ -412,7 +422,7 @@ Probes são **políticas versionadas** (YAML/JSON), não prompts soltos do LLM i
 - [ ] Contexto de sessão/papéis (M7) — **P0+P1+P2+P3 entregues** (sessão única "visível só autenticado" + múltiplos perfis com "acesso distinto entre sessões" + probes por papel + jornadas multi-step por sessão)
 - [x] API/GraphQL (M8) — **P0+P1+P2+P3 entregues** (OpenAPI/Swagger, probes JSON, GraphQL com introspecção só autorizada + WebSocket fingerprint passivo)
 - [x] Diff/CI/escala (M9) — **P0+P1+P2+P3 entregues** (fingerprint estável, diff entre runs, `argus ci` com gate, métricas de negócio); filas/isolamento N alvos adiados
-- [ ] Pacotes e UX de política (M10)
+- [ ] Pacotes e UX de política (M10) — **P0 entregue** (pacotes de política versionados + `policy_package` autoritativo + política resolvida/exportável); restam trilha de autorização, relatório exec/técnico, presets Tarot e a UI
 
 Sem M6, o Argus é um **excelente mapeador e priorizador**.  
 Com M6–M8, vira **plataforma poderosa de avaliação**.  
@@ -475,6 +485,7 @@ Com M9–M10, vira **produto operável em time**.
 3. ~~Abrir design formal da **M6 P0→P3**~~ — entregue (P0..P3).  
 4. ~~Expandir **M7** (sessão/papéis)~~ — entregue (P0..P3).  
 5. ~~Expandir **M8** (APIs modernas)~~ — entregue (P0: OpenAPI; P1: probes JSON; P2: GraphQL com introspecção só autorizada; P3: WebSocket fingerprint passivo).  
-6. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas). Próximo: **M10** (pacotes de política + UX) e, quando quiser escala, a parte adiada da M9 (filas/isolamento N alvos).
+6. ~~Expandir **M9**~~ — entregue (P0: fingerprint; P1: diff; P2: `argus ci`; P3: métricas).  
+7. **Expandir M10** — P0 entregue (pacotes de política `lab`/`bugbounty-web`/`api-only`/`surface-only` + `policy_package` autoritativo no run + política resolvida no relatório). Próximo: **M10-P1** (trilha de autorização), **M10-P2** (relatório executivo vs técnico), **M10-P3** (presets Tarot) e a camada de UI — e, quando quiser escala, a parte adiada da M9 (filas/isolamento N alvos).
 
 Este é o caminho para o Argus ser **poderoso de verdade**: não por quantidade de findings, e sim por **mapa + comportamento reproduzível + política + confiança calibrada**.

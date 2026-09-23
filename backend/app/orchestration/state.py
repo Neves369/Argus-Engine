@@ -47,6 +47,14 @@ class GraphState(BaseModel):
     #: Serializado (persiste em resume); validação contra o catálogo é feita no
     #: motor (só libera classes existentes/versionadas).
     probe_classes: list[str] | None = None
+    #: Jornadas multi-step liberadas (M7-P3), por id do catálogo. ``None`` →
+    #: default em ``journey_classes_default``. Serializado (persiste em resume).
+    journey_classes: list[str] | None = None
+    #: Pacote de política aplicado (M10-P0): id do pacote + snapshot resolvido
+    #: (depth/probe_classes/journey_classes/devil_mode + sha256) para auditoria
+    #: e reprodução. Serializado (persiste em resume e aparece no relatório).
+    policy_package: str | None = None
+    policy_resolved: dict[str, Any] | None = None
     #: Etapa 7 (resumo): marca que o trecho intermediário do histórico já foi
     #: resumido via LLM — a partir daí a compressão segue determinística, para
     #: limitar a 1 chamada de resumo por run. Serializado (persiste em resume).

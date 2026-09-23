@@ -1,0 +1,15 @@
+# Pacote de política — superfície apenas (Etapa M10-P0).
+#
+# O perfil mais conservador: profundidade `quick`, nenhuma classe de probe de
+# comportamento e nenhuma jornada — só fontes + scan de superfície + config.
+# É o "recon + mapa de aplicação" sem qualquer sinal ativo além do crawl.
+id: surface-only
+version: "1.0.0"
+name: "Superfície apenas"
+description: >
+  Quick sem probes de comportamento nem jornadas: só recon, superfície e
+  configuração (crawl + headers/forms/rotas). Default seguro para alvos reais.
+depth: quick
+probe_classes: []
+journey_classes: []
+devil_mode: false

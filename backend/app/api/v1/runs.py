@@ -16,6 +16,7 @@ from app.metrics import record_run_start, record_run_terminal
 from app.orchestration.compose import validate_sequence
 from app.orchestration.director import Director
 from app.orchestration.state import GraphState
+from app.policies.packages import run_policy
 from app.probing.engine import build_probe_engine
 from app.scanning.service import build_scan_service
 from app.scanning.verify import build_verification_service
@@ -44,6 +45,36 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _resolve_policy(
+    policy_package: str | None,
+    *,
+    depth: str,
+    probe_classes: list[str] | None,
+    journey_classes: list[str] | None,
+    devil_mode: bool,
+) -> dict[str, Any]:
+    """Resolve o pacote de política (M10-P0) ou passa os campos explícitos.
+
+    Um pacote é autoritativo; id desconhecido → 404, referência inválida → 422.
+    """
+    try:
+        return run_policy(
+            policy_package,
+            depth=depth,
+            probe_classes=probe_classes,
+            journey_classes=journey_classes,
+            devil_mode=devil_mode,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Policy package not found"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
 
 
 def _runtime_services() -> tuple[Any, Any, Any, Any, Any]:
@@ -132,15 +163,26 @@ async def create_run(payload: RunCreate, db: DBSession) -> Run:
     record_run_start(run.started_at.timestamp() if run.started_at else None)
 
     depth = payload.depth or settings.depth_default
+    policy = _resolve_policy(
+        payload.policy_package,
+        depth=depth,
+        probe_classes=payload.probe_classes,
+        journey_classes=payload.journey_classes,
+        devil_mode=payload.devil_mode,
+    )
+    depth = policy["depth"]
     budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target_dict,
         budget_tokens=budget_tokens,
         budget_cost=budget_cost,
-        devil_mode=payload.devil_mode,
+        devil_mode=policy["devil_mode"],
         composition=archetypes or [],
         depth=depth,
-        probe_classes=payload.probe_classes,
+        probe_classes=policy["probe_classes"],
+        journey_classes=policy["journey_classes"],
+        policy_package=policy["policy_package"],
+        policy_resolved=policy["policy_resolved"],
     )
     services = _runtime_services()
     _inject_runtime(state, services)
@@ -187,6 +229,8 @@ async def stream_run(
     archetypes: list[str] | None = None,
     depth: str = "quick",
     probe_classes: list[str] | None = None,
+    journey_classes: list[str] | None = None,
+    policy_package: str | None = None,
 ):
     if is_kill_switch_active():
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Kill switch is active")
@@ -207,6 +251,10 @@ async def stream_run(
             archetypes = cfg.get("archetypes") or None
         if probe_classes is None:
             probe_classes = cfg.get("probe_classes") or None
+        if journey_classes is None:
+            journey_classes = cfg.get("journey_classes") or None
+        if policy_package is None:
+            policy_package = cfg.get("policy_package") or None
         target_meta = cfg.get("target") or {}
         devil_mode = bool(cfg.get("devil_mode", devil_mode))
         depth = str(cfg.get("depth") or depth)
@@ -260,15 +308,26 @@ async def stream_run(
     await db.refresh(run)
     record_run_start(run.started_at.timestamp() if run.started_at else None)
 
+    policy = _resolve_policy(
+        policy_package,
+        depth=depth,
+        probe_classes=probe_classes,
+        journey_classes=journey_classes,
+        devil_mode=devil_mode,
+    )
+    depth = policy["depth"]
     budget_tokens, budget_cost = budget_for_depth(depth)
     state = GraphState(
         target=target_meta,
         budget_tokens=budget_tokens,
         budget_cost=budget_cost,
-        devil_mode=devil_mode,
+        devil_mode=policy["devil_mode"],
         composition=archetypes or [],
         depth=depth,
-        probe_classes=probe_classes,
+        probe_classes=policy["probe_classes"],
+        journey_classes=policy["journey_classes"],
+        policy_package=policy["policy_package"],
+        policy_resolved=policy["policy_resolved"],
     )
     services = _runtime_services()
     _inject_runtime(state, services)

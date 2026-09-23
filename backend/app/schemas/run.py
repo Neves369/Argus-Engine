@@ -13,6 +13,11 @@ class RunCreate(BaseModel):
     archetypes: list[str] | None = None
     depth: Literal["quick", "deep"] = "quick"
     probe_classes: list[str] | None = None
+    journey_classes: list[str] | None = None
+    #: Pacote de política (M10-P0): quando definido, é autoritativo para
+    #: depth/probe_classes/journey_classes/devil_mode do run (valores explícitos
+    #: do payload são ignorados em favor do pacote versionado).
+    policy_package: str | None = None
 
 
 class RunRead(BaseModel):

@@ -1,0 +1,27 @@
+# Pacote de política — bug bounty web (Etapa M10-P0).
+#
+# Perfil conservador para programas de bug bounty web: profundidade `deep`, mas
+# apenas classes de probe de comportamento observacional (P0) e de replay
+# controlado (P1), além de redirect aberto (P2, não muta estado). Ficam de fora
+# as classes que envolvem mudança de estado (CSRF) e authn diferencial (P3).
+#
+# Jornadas limitadas à "área administrativa" (P0) para observar controle de
+# acesso sem enumeração agressiva.
+id: bugbounty-web
+version: "1.0.0"
+name: "Bug bounty web"
+description: >
+  Deep com probes observacionais (P0), replay controlado (P1) e redirect aberto
+  (P2) — sem CSRF nem authn diferencial. Para programas de bug bounty web com
+  escopo autorizado.
+depth: deep
+probe_classes:
+  - reflection_p0
+  - verbose_error_p0
+  - api_json_error_p0
+  - injection_p1
+  - upload_p1
+  - redirect_p2
+journey_classes:
+  - admin_area_p0
+devil_mode: false

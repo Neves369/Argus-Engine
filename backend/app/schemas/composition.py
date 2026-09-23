@@ -13,6 +13,9 @@ class CompositionCreate(BaseModel):
     devil_mode: bool = False
     depth: Literal["quick", "deep"] = "quick"
     probe_classes: list[str] | None = None
+    journey_classes: list[str] | None = None
+    #: Pacote de política (M10-P0): autoritativo quando definido (ver RunCreate).
+    policy_package: str | None = None
 
 
 class CompositionExecute(BaseModel):
